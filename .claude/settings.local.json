@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:binary.ninja)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:docs.hex-rays.com)",
+      "WebFetch(domain:book.rizin.re)",
+      "Read(//c/Program Files \\(x86\\)/Windows Kits/10/Debuggers/x64//**)"
+    ]
+  }
+}

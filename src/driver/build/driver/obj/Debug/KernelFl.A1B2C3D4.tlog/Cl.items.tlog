@@ -1,0 +1,8 @@
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\driver\main.c;C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\driver\build\driver\obj\Debug\main.obj
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\driver\ioctl.c;C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\driver\build\driver\obj\Debug\ioctl.obj
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\driver\memory.c;C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\driver\build\driver\obj\Debug\memory.obj
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\driver\breakpoint.c;C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\driver\build\driver\obj\Debug\breakpoint.obj
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\driver\singlestep.c;C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\driver\build\driver\obj\Debug\singlestep.obj
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\driver\registers.c;C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\driver\build\driver\obj\Debug\registers.obj
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\driver\modules.c;C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\driver\build\driver\obj\Debug\modules.obj
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\driver\threads.c;C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\driver\build\driver\obj\Debug\threads.obj

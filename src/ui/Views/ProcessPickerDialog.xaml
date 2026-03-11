@@ -1,0 +1,47 @@
+<Window x:Class="KernelFlirt.UI.Views.ProcessPickerDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Select Process"
+        Width="600" Height="500"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource BgBrush}"
+        Foreground="{StaticResource FgBrush}"
+        FontFamily="Consolas" FontSize="13"
+        ShowInTaskbar="False"
+        ResizeMode="CanResizeWithGrip">
+
+    <DockPanel Margin="8">
+        <!-- Search bar -->
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <TextBlock Text="Filter:" VerticalAlignment="Center" Margin="0,0,6,0" />
+            <TextBox x:Name="FilterBox" TextChanged="OnFilterChanged"
+                     VerticalAlignment="Center" />
+        </DockPanel>
+
+        <!-- Buttons -->
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
+                    HorizontalAlignment="Right" Margin="0,8,0,0">
+            <Button Content="Refresh" Click="OnRefreshClick" Width="80" Margin="0,0,8,0" />
+            <Button Content="Attach" Click="OnAttachClick" Width="80" Margin="0,0,8,0"
+                    IsDefault="True" />
+            <Button Content="Cancel" Click="OnCancelClick" Width="80" IsCancel="True" />
+        </StackPanel>
+
+        <!-- Process list -->
+        <DataGrid x:Name="ProcessGrid" AutoGenerateColumns="False" IsReadOnly="True"
+                  SelectionMode="Single" MouseDoubleClick="OnProcessDoubleClick"
+                  BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="PID" Width="70" Binding="{Binding ProcessId}">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Name" Width="180" Binding="{Binding Name}" />
+                <DataGridTextColumn Header="Session" Width="*" Binding="{Binding SessionId}" />
+            </DataGrid.Columns>
+        </DataGrid>
+    </DockPanel>
+</Window>
