@@ -1,0 +1,568 @@
+<Window x:Class="KernelFlirt.UI.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:KernelFlirt.UI.ViewModels"
+        xmlns:conv="clr-namespace:KernelFlirt.UI.Converters"
+        xmlns:ctrl="clr-namespace:KernelFlirt.UI.Controls"
+        Title="KernelFlirt - Kernel Debugger"
+        Width="1400" Height="900"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource BgBrush}"
+        Foreground="{StaticResource FgBrush}"
+        FontFamily="Consolas" FontSize="13">
+
+    <Window.DataContext>
+        <vm:MainViewModel />
+    </Window.DataContext>
+
+    <Window.Resources>
+        <conv:HexValueConverter x:Key="HexConv" />
+        <conv:BoolToVisibilityConverter x:Key="BoolVisConv" />
+    </Window.Resources>
+
+    <Window.InputBindings>
+        <KeyBinding Key="F2" Command="{Binding ToggleBreakpointCommand}" />
+        <KeyBinding Key="F4" Command="{Binding RunToCursorCommand}" />
+        <KeyBinding Key="F5" Command="{Binding ContinueExecutionCommand}" />
+        <KeyBinding Key="F7" Command="{Binding StepInCommand}" />
+        <KeyBinding Key="F8" Command="{Binding StepOverCommand}" />
+        <KeyBinding Key="F9" Command="{Binding RunCommand}" />
+        <KeyBinding Key="F12" Command="{Binding PauseCommand}" />
+        <KeyBinding Modifiers="Ctrl" Key="G" Command="{Binding GoToRipCommand}" />
+        <KeyBinding Modifiers="Ctrl" Key="F9" Command="{Binding StepOutCommand}" />
+        <KeyBinding Modifiers="Ctrl" Key="F" Command="{Binding SearchBinaryCommand}" />
+    </Window.InputBindings>
+
+    <DockPanel>
+        <!-- Menu Bar -->
+        <Menu DockPanel.Dock="Top" Background="{StaticResource BgLightBrush}">
+            <MenuItem Header="_File">
+                <MenuItem Header="_Open Process..." Command="{Binding OpenProcessCommand}" />
+                <MenuItem Header="_Connect Kernel..." Command="{Binding ConnectKernelCommand}" />
+                <Separator />
+                <MenuItem Header="E_xit" Click="OnExitClick" />
+            </MenuItem>
+            <MenuItem Header="_Debug">
+                <MenuItem Header="_Attach (by PID)" Command="{Binding AttachProcessCommand}" />
+                <MenuItem Header="_Detach" Command="{Binding DetachProcessCommand}" />
+                <Separator />
+                <MenuItem Header="_Run" Command="{Binding RunCommand}" InputGestureText="F9" />
+                <MenuItem Header="_Pause" Command="{Binding PauseCommand}" InputGestureText="F12" />
+                <MenuItem Header="_Continue" Command="{Binding ContinueExecutionCommand}" InputGestureText="F5" />
+                <Separator />
+                <MenuItem Header="Step _Into" Command="{Binding StepInCommand}" InputGestureText="F7" />
+                <MenuItem Header="Step _Over" Command="{Binding StepOverCommand}" InputGestureText="F8" />
+                <MenuItem Header="Step O_ut" Command="{Binding StepOutCommand}" InputGestureText="Ctrl+F9" />
+                <MenuItem Header="Run to _Cursor" Command="{Binding RunToCursorCommand}" InputGestureText="F4" />
+                <Separator />
+                <MenuItem Header="Toggle _Breakpoint" Command="{Binding ToggleBreakpointCommand}" InputGestureText="F2" />
+                <MenuItem Header="Toggle _HW Breakpoint" Command="{Binding ToggleHwBreakpointCommand}" />
+                <MenuItem Header="Toggle HW _Write Watch" Command="{Binding ToggleHwWriteBreakpointCommand}" />
+                <MenuItem Header="Toggle HW _R/W Watch" Command="{Binding ToggleHwRwBreakpointCommand}" />
+                <MenuItem Header="Toggle _Memory Breakpoint" Command="{Binding ToggleMemoryBreakpointCommand}" />
+                <MenuItem Header="Set _Conditional Breakpoint..." Command="{Binding SetConditionalBreakpointCommand}" />
+                <MenuItem Header="Set _Log Breakpoint..." Command="{Binding SetLogBreakpointCommand}" />
+                <MenuItem Header="Remove _All Breakpoints" Command="{Binding RemoveAllBreakpointsCommand}" />
+                <Separator />
+            </MenuItem>
+            <MenuItem Header="_Search">
+                <MenuItem Header="_Binary Pattern..." Command="{Binding SearchBinaryCommand}" InputGestureText="Ctrl+F" />
+                <MenuItem Header="_String References..." Command="{Binding SearchStringsCommand}" />
+                <MenuItem Header="_Intermodular Calls" Command="{Binding SearchIntermodularCallsCommand}" />
+            </MenuItem>
+            <MenuItem Header="_View">
+                <MenuItem Header="_Refresh All" Click="OnRefreshAllClick" />
+                <MenuItem Header="Go to _RIP" Command="{Binding GoToRipCommand}" InputGestureText="Ctrl+G" />
+                <MenuItem Header="Add _Bookmark..." Command="{Binding AddBookmarkCommand}" />
+                <Separator />
+                <MenuItem Header="Refresh _SEH Chain" Click="OnRefreshSehClick" />
+                <MenuItem Header="Restore All _Patches" Command="{Binding RestoreAllPatchesCommand}" />
+            </MenuItem>
+        </Menu>
+
+        <!-- Toolbar -->
+        <Border DockPanel.Dock="Top" Background="{StaticResource ToolbarBgBrush}" Padding="4,2">
+            <WrapPanel>
+                <Button Content="Open" Command="{Binding OpenProcessCommand}"
+                        ToolTip="Select process to attach" />
+                <Button Content="Connect" Command="{Binding ConnectKernelCommand}"
+                        ToolTip="Connect to kernel via named pipe" />
+
+                <Rectangle Width="1" Fill="{StaticResource BorderBrush}" Margin="8,2" />
+
+                <TextBlock Text="PID:" VerticalAlignment="Center" Margin="4,0" />
+                <TextBox x:Name="PidBox" Width="80" VerticalAlignment="Center"
+                         Text="{Binding TargetPid, UpdateSourceTrigger=PropertyChanged}" />
+                <Button Content="Attach" Command="{Binding AttachProcessCommand}"
+                        ToolTip="Attach to process by PID" />
+                <Button Content="Detach" Command="{Binding DetachProcessCommand}" />
+
+                <Rectangle Width="1" Fill="{StaticResource BorderBrush}" Margin="8,2" />
+
+                <Button Content="Run" Command="{Binding RunCommand}" ToolTip="Run (F9)" />
+                <Button Content="Pause" Command="{Binding PauseCommand}" ToolTip="Pause (F12)" />
+                <Button Content="F5" Command="{Binding ContinueExecutionCommand}" ToolTip="Continue (F5)" />
+                <Button Content="F7" Command="{Binding StepInCommand}" ToolTip="Step Into (F7)" />
+                <Button Content="F8" Command="{Binding StepOverCommand}" ToolTip="Step Over (F8)" />
+                <Button Content="Out" Command="{Binding StepOutCommand}" ToolTip="Step Out (Ctrl+F9)" />
+                <Button Content="F4" Command="{Binding RunToCursorCommand}" ToolTip="Run to Cursor (F4)" />
+
+                <Rectangle Width="1" Fill="{StaticResource BorderBrush}" Margin="8,2" />
+
+                <Button Content="BP" Command="{Binding ToggleBreakpointCommand}" ToolTip="Toggle breakpoint (F2)" />
+                <Button Content="HW" Command="{Binding ToggleHwBreakpointCommand}" ToolTip="Toggle hardware breakpoint" />
+                <Button Content="WW" Command="{Binding ToggleHwWriteBreakpointCommand}" ToolTip="Toggle HW write watchpoint" />
+                <Button Content="RW" Command="{Binding ToggleHwRwBreakpointCommand}" ToolTip="Toggle HW read/write watchpoint" />
+                <Button Content="Mem" Command="{Binding ToggleMemoryBreakpointCommand}" ToolTip="Toggle memory breakpoint (PAGE_GUARD)" />
+
+                <Rectangle Width="1" Fill="{StaticResource BorderBrush}" Margin="8,2" />
+
+                <TextBlock Text="Addr:" VerticalAlignment="Center" Margin="4,0" />
+                <TextBox x:Name="GoToBox" Width="160" VerticalAlignment="Center"
+                         KeyDown="OnGoToKeyDown" />
+                <Button Content="Go" Click="OnGoToClick" ToolTip="Go to address" />
+            </WrapPanel>
+        </Border>
+
+        <!-- Status Bar -->
+        <StatusBar DockPanel.Dock="Bottom">
+            <StatusBarItem>
+                <TextBlock Text="{Binding StatusText}" />
+            </StatusBarItem>
+            <Separator />
+            <StatusBarItem HorizontalAlignment="Right">
+                <TextBlock>
+                    <Run Text="PID: " />
+                    <Run Text="{Binding TargetPid, Mode=OneWay}" />
+                    <Run Text="  TID: " />
+                    <Run Text="{Binding SelectedThreadId, Mode=OneWay}" />
+                </TextBlock>
+            </StatusBarItem>
+        </StatusBar>
+
+        <!-- Main Content -->
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="3*" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="1.5*" />
+            </Grid.RowDefinitions>
+
+            <!-- Top: TabControl with all panels -->
+            <TabControl Grid.Row="0">
+
+                <!-- Tab: Disassembly + Registers -->
+                <TabItem Header="Disassembly" IsSelected="True">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="3*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="1.2*" />
+                        </Grid.ColumnDefinitions>
+
+                        <ctrl:DisasmView x:Name="DisasmControl" Grid.Column="0" />
+
+                        <GridSplitter Grid.Column="1" Width="3" Background="{StaticResource BorderBrush}"
+                                      HorizontalAlignment="Center" VerticalAlignment="Stretch" />
+
+                        <!-- Registers -->
+                        <DockPanel Grid.Column="2">
+                            <Border DockPanel.Dock="Top" Background="{StaticResource ToolbarBgBrush}" Padding="4,2">
+                                <TextBlock Text="Registers" FontWeight="SemiBold" />
+                            </Border>
+                            <DataGrid x:Name="RegistersGrid" ItemsSource="{Binding Registers}" IsReadOnly="True"
+                                      AutoGenerateColumns="False" HeadersVisibility="None"
+                                      BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                                <DataGrid.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Copy All Registers" Command="{Binding CopyRegisterValueCommand}" />
+                                        <MenuItem Header="Follow in Dump" Click="OnRegisterFollowInDump" />
+                                        <MenuItem Header="Follow in Disassembler" Click="OnRegisterFollowInDisasm" />
+                                    </ContextMenu>
+                                </DataGrid.ContextMenu>
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Reg" Width="60" Binding="{Binding Name}">
+                                        <DataGridTextColumn.ElementStyle>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{StaticResource RegisterBrush}" />
+                                                <Setter Property="FontWeight" Value="Bold" />
+                                            </Style>
+                                        </DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Value" Width="*" Binding="{Binding ValueHex}">
+                                        <DataGridTextColumn.ElementStyle>
+                                            <Style TargetType="TextBlock">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Changed}" Value="True">
+                                                        <Setter Property="Foreground" Value="{StaticResource ValueChangedBrush}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </DockPanel>
+                    </Grid>
+                </TabItem>
+
+                <!-- Tab: Breakpoints -->
+            <TabItem Header="Breakpoints">
+                <DataGrid x:Name="BpGrid" ItemsSource="{Binding Breakpoints}" IsReadOnly="True"
+                          AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
+                          MouseDoubleClick="OnBreakpointDoubleClick">
+                    <DataGrid.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Go to Address" Click="OnBreakpointGoTo" />
+                            <MenuItem Header="Follow in Dump" Click="OnBreakpointFollowInDump" />
+                            <MenuItem Header="Remove" Click="OnBreakpointRemove" />
+                            <MenuItem Header="Remove All" Command="{Binding RemoveAllBreakpointsCommand}" />
+                        </ContextMenu>
+                    </DataGrid.ContextMenu>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Handle" Width="60" Binding="{Binding Handle}" />
+                        <DataGridTextColumn Header="Address" Width="160" Binding="{Binding AddressHex}">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Type" Width="70" Binding="{Binding TypeName}" />
+                        <DataGridTextColumn Header="Status" Width="50" Binding="{Binding StatusText}" />
+                        <DataGridTextColumn Header="Hits" Width="50" Binding="{Binding HitCount}" />
+                        <DataGridTextColumn Header="Condition" Width="120" Binding="{Binding Condition}" />
+                        <DataGridTextColumn Header="Module" Width="*" Binding="{Binding ModuleName}" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <!-- Tab: Modules -->
+            <TabItem Header="Modules">
+                <DataGrid x:Name="ModulesGrid" ItemsSource="{Binding Modules}" IsReadOnly="True"
+                          AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
+                          MouseDoubleClick="OnModuleDoubleClick">
+                    <DataGrid.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Follow in Disassembler" Click="OnModuleFollowInDisasm" />
+                            <MenuItem Header="Follow in Dump" Click="OnModuleFollowInDump" />
+                            <MenuItem Header="Copy Base Address" Click="OnModuleCopyBase" />
+                            <Separator />
+                            <MenuItem Header="Show Imports" Click="OnModuleShowImports" />
+                        </ContextMenu>
+                    </DataGrid.ContextMenu>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Base" Width="160" Binding="{Binding BaseHex}">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Size" Width="100" Binding="{Binding SizeHex}" />
+                        <DataGridTextColumn Header="Name" Width="*" Binding="{Binding Name}" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <!-- Tab: Kernel Modules -->
+            <TabItem Header="Kernel Modules">
+                <DataGrid ItemsSource="{Binding KernelModules}" IsReadOnly="True"
+                          AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Base" Width="160" Binding="{Binding BaseHex}">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Size" Width="100" Binding="{Binding SizeHex}" />
+                        <DataGridTextColumn Header="Index" Width="60" Binding="{Binding LoadOrder}" />
+                        <DataGridTextColumn Header="Name" Width="*" Binding="{Binding Name}" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <!-- Tab: Threads -->
+            <TabItem Header="Threads">
+                <DataGrid x:Name="ThreadsGrid" ItemsSource="{Binding Threads}" IsReadOnly="True"
+                          AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
+                          MouseDoubleClick="OnThreadDoubleClick">
+                    <DataGrid.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Switch to Thread" Click="OnThreadSwitch" />
+                            <MenuItem Header="Suspend" Click="OnThreadSuspend" />
+                            <MenuItem Header="Resume" Click="OnThreadResume" />
+                            <MenuItem Header="Follow Start Address" Click="OnThreadFollowStart" />
+                        </ContextMenu>
+                    </DataGrid.ContextMenu>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="TID" Width="80" Binding="{Binding ThreadId}" />
+                        <DataGridTextColumn Header="Start Address" Width="160" Binding="{Binding StartAddressHex}">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="State" Width="120" Binding="{Binding StateText}" />
+                        <DataGridTextColumn Header="Priority" Width="80" Binding="{Binding Priority}" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <!-- Tab: Call Stack -->
+            <TabItem Header="Call Stack">
+                <DataGrid x:Name="CallStackGrid" ItemsSource="{Binding CallStack}" IsReadOnly="True"
+                          AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
+                          MouseDoubleClick="OnCallStackDoubleClick">
+                    <DataGrid.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Follow in Disassembler" Click="OnCallStackFollowDisasm" />
+                            <MenuItem Header="Follow in Dump" Click="OnCallStackFollowDump" />
+                            <MenuItem Header="Copy Address" Click="OnCallStackCopy" />
+                        </ContextMenu>
+                    </DataGrid.ContextMenu>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="#" Width="40" Binding="{Binding Index}" />
+                        <DataGridTextColumn Header="Return Address" Width="160" Binding="{Binding ReturnAddressHex}">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Stack" Width="160" Binding="{Binding StackAddressHex}" />
+                        <DataGridTextColumn Header="Symbol" Width="*" Binding="{Binding Symbol}">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource CommentBrush}" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <!-- Tab: Bookmarks -->
+            <TabItem Header="Bookmarks">
+                <DataGrid x:Name="BookmarksGrid" ItemsSource="{Binding Bookmarks}" IsReadOnly="True"
+                          AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
+                          MouseDoubleClick="OnBookmarkDoubleClick">
+                    <DataGrid.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Go to Bookmark" Click="OnBookmarkGoTo" />
+                            <MenuItem Header="Follow in Dump" Click="OnBookmarkFollowDump" />
+                            <MenuItem Header="Remove" Click="OnBookmarkRemove" />
+                        </ContextMenu>
+                    </DataGrid.ContextMenu>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Address" Width="160" Binding="{Binding AddressHex}">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Label" Width="200" Binding="{Binding Label}" />
+                        <DataGridTextColumn Header="Module" Width="*" Binding="{Binding ModuleName}" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <!-- Tab: Patches -->
+            <TabItem Header="Patches">
+                <DataGrid x:Name="PatchesGrid" ItemsSource="{Binding Patches}" IsReadOnly="True"
+                          AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}">
+                    <DataGrid.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Restore Original" Click="OnPatchRestore" />
+                            <MenuItem Header="Restore All" Command="{Binding RestoreAllPatchesCommand}" />
+                            <MenuItem Header="Go to Address" Click="OnPatchGoTo" />
+                        </ContextMenu>
+                    </DataGrid.ContextMenu>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Address" Width="160" Binding="{Binding AddressHex}">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Size" Width="50" Binding="{Binding Size}" />
+                        <DataGridTextColumn Header="Original" Width="200" Binding="{Binding OriginalHex}" />
+                        <DataGridTextColumn Header="Patched" Width="200" Binding="{Binding PatchedHex}" />
+                        <DataGridTextColumn Header="Module" Width="*" Binding="{Binding ModuleName}" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <!-- Tab: SEH Chain -->
+            <TabItem Header="SEH Chain">
+                <DataGrid ItemsSource="{Binding SehChain}" IsReadOnly="True"
+                          AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="#" Width="40" Binding="{Binding Index}" />
+                        <DataGridTextColumn Header="Handler" Width="160" Binding="{Binding HandlerHex}">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Next" Width="200" Binding="{Binding NextHex}" />
+                        <DataGridTextColumn Header="Symbol" Width="*" Binding="{Binding Symbol}">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource CommentBrush}" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <!-- Tab: Search -->
+            <TabItem Header="Search">
+                <DataGrid x:Name="SearchGrid" ItemsSource="{Binding SearchResults}" IsReadOnly="True"
+                          AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
+                          MouseDoubleClick="OnSearchResultDoubleClick">
+                    <DataGrid.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Follow in Disassembler" Click="OnSearchFollowDisasm" />
+                            <MenuItem Header="Follow in Dump" Click="OnSearchFollowDump" />
+                            <MenuItem Header="Set Breakpoint" Click="OnSearchSetBp" />
+                        </ContextMenu>
+                    </DataGrid.ContextMenu>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Address" Width="160" Binding="{Binding AddressHex}">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Module" Width="120" Binding="{Binding ModuleName}" />
+                        <DataGridTextColumn Header="Preview" Width="*" Binding="{Binding Preview}" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <!-- Tab: Imports -->
+            <TabItem Header="Imports">
+                <DataGrid x:Name="ImportsGrid" ItemsSource="{Binding Imports}" IsReadOnly="True"
+                          AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
+                          MouseDoubleClick="OnImportDoubleClick">
+                    <DataGrid.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Follow in Disassembler" Click="OnImportFollowDisasm" />
+                            <MenuItem Header="Follow in Dump" Click="OnImportFollowDump" />
+                            <MenuItem Header="Set Breakpoint on Function" Click="OnImportSetBp" />
+                            <MenuItem Header="Copy Address" Click="OnImportCopy" />
+                        </ContextMenu>
+                    </DataGrid.ContextMenu>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Module" Width="140" Binding="{Binding Module}" />
+                        <DataGridTextColumn Header="Function" Width="220" Binding="{Binding Display}" />
+                        <DataGridTextColumn Header="IAT Address" Width="160" Binding="{Binding IatHex}">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Resolved" Width="*" Binding="{Binding ResolvedHex}">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource HexBrush}" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <!-- Tab: Log -->
+            <TabItem Header="Log">
+                <ListBox x:Name="LogList" ItemsSource="{Binding LogMessages}"
+                         BorderBrush="{StaticResource BorderBrush}">
+                    <ListBox.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Copy All" Click="OnLogCopyAll" />
+                            <MenuItem Header="Clear" Click="OnLogClear" />
+                        </ContextMenu>
+                    </ListBox.ContextMenu>
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Foreground" Value="{StaticResource CommentBrush}" />
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                </ListBox>
+            </TabItem>
+
+            </TabControl>
+
+            <GridSplitter Grid.Row="1" Height="3" Background="{StaticResource BorderBrush}"
+                          HorizontalAlignment="Stretch" VerticalAlignment="Center" />
+
+            <!-- Bottom: Hex Dump (left) + Stack (right) -->
+            <Grid Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="3*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="1.2*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Hex Dump -->
+                <DockPanel Grid.Column="0">
+                    <Border DockPanel.Dock="Top" Background="{StaticResource ToolbarBgBrush}" Padding="4,2">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Hex Dump" FontWeight="SemiBold" Margin="0,0,12,0" />
+                            <TextBlock Text="Address:" VerticalAlignment="Center" Margin="0,0,4,0" />
+                            <TextBox x:Name="HexAddrBox" Width="160" VerticalAlignment="Center"
+                                     KeyDown="OnHexAddrKeyDown" />
+                            <Button Content="Go" Click="OnHexGoClick" Margin="4,0" />
+                        </StackPanel>
+                    </Border>
+                    <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                            <TextBlock x:Name="HexDumpText" FontFamily="Consolas" Padding="4"
+                                       Foreground="{StaticResource HexBrush}">
+                                <TextBlock.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Copy Hex" Click="OnHexCopy" />
+                                        <MenuItem Header="Follow in Disassembler" Click="OnHexFollowInDisasm" />
+                                        <Separator />
+                                        <MenuItem Header="Search Binary..." Command="{Binding SearchBinaryCommand}" />
+                                        <MenuItem Header="Search String..." Command="{Binding SearchStringsCommand}" />
+                                    </ContextMenu>
+                                </TextBlock.ContextMenu>
+                            </TextBlock>
+                        </ScrollViewer>
+                    </Border>
+                </DockPanel>
+
+                <GridSplitter Grid.Column="1" Width="3" Background="{StaticResource BorderBrush}"
+                              HorizontalAlignment="Center" VerticalAlignment="Stretch" />
+
+                <!-- Stack -->
+                <DockPanel Grid.Column="2">
+                    <Border DockPanel.Dock="Top" Background="{StaticResource ToolbarBgBrush}" Padding="4,2">
+                        <TextBlock Text="Stack" FontWeight="SemiBold" />
+                    </Border>
+                    <ListBox x:Name="StackList" ItemsSource="{Binding StackEntries}"
+                             BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                        <ListBox.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Follow in Dump" Click="OnStackFollowInDump" />
+                                <MenuItem Header="Follow in Disassembler" Click="OnStackFollowInDisasm" />
+                                <MenuItem Header="Copy" Click="OnStackCopy" />
+                            </ContextMenu>
+                        </ListBox.ContextMenu>
+                    </ListBox>
+                </DockPanel>
+            </Grid>
+        </Grid>
+    </DockPanel>
+</Window>
