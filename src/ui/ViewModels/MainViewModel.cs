@@ -53,6 +53,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public MainViewModel()
     {
         _symbols = new SymbolService(_driver);
+        _symbols.LogMessage += msg => Application.Current.Dispatcher.Invoke(() => Log(msg));
     }
 
     /* ================================================================== */
@@ -128,6 +129,37 @@ public partial class MainViewModel : ObservableObject, IDisposable
         KernelModules.Clear();
         foreach (var m in mods) KernelModules.Add(m);
         Log($"Found {mods.Count} kernel modules");
+
+        // Initialize symbol engine and load kernel module symbols
+        Log("Initializing symbol engine...");
+        var symErr = _symbols.Initialize();
+        if (symErr == null)
+        {
+            Log($"Symbol engine OK, path: {_symbols.SymbolPath}");
+            Log($"Loading symbols for {mods.Count} kernel modules...");
+            int loaded = 0;
+            await Task.Run(() =>
+            {
+                foreach (var m in mods)
+                {
+                    if (_symbols.LoadModule(0, m.Name, m.BaseAddress, m.Size))
+                        loaded++;
+                }
+            });
+            Log($"Symbols: {loaded}/{mods.Count} kernel modules loaded");
+
+            // Test resolve on first kernel module base
+            if (mods.Count > 0)
+            {
+                var testMod = mods[0];
+                var sym = _symbols.ResolveViaDbgHelp(testMod.BaseAddress);
+                Log($"Symbol test: {testMod.Name}+0 = {sym ?? "(no symbol)"}");
+            }
+        }
+        else
+        {
+            Log($"Symbol engine FAILED: {symErr}");
+        }
     }
 
     /* ================================================================== */
@@ -194,6 +226,17 @@ public partial class MainViewModel : ObservableObject, IDisposable
         catch (Exception ex) { Log($"EnumModules error: {ex.Message}"); StatusText = "Attach failed"; return; }
         Log($"Found {modules.Count} modules");
 
+        // Load module symbols
+        Log($"Loading symbols for {modules.Count} user modules...");
+        int symLoaded = 0;
+        await Task.Run(() =>
+        {
+            foreach (var m in modules)
+                if (_symbols.LoadModule(pid, m.Name, m.BaseAddress, m.Size))
+                    symLoaded++;
+        });
+        Log($"Symbols: {symLoaded}/{modules.Count} user modules loaded");
+
         Threads.Clear();
         foreach (var t in threads) Threads.Add(t);
         Modules.Clear();
@@ -251,6 +294,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             {
                 var instrs = _disasm.Disassemble(disasmData, disasmAddr);
                 Log($"Disassembled {instrs.Count} instructions");
+                AnnotateInstructionsWithSymbols(instrs);
                 Instructions.Clear();
                 foreach (var instr in instrs)
                 {
@@ -307,7 +351,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                         Index = frameIdx++,
                         ReturnAddress = val,
                         StackAddress = rspReg.Value + (ulong)i,
-                        ModuleName = $"{mod.Name}+0x{val - mod.BaseAddress:X}"
+                        ModuleName = _symbols.ResolveAddress(pid, val, Modules.ToList())
+                                     ?? $"{mod.Name}+0x{val - mod.BaseAddress:X}"
                     });
                 }
             }
@@ -1084,6 +1129,48 @@ public partial class MainViewModel : ObservableObject, IDisposable
         return ulong.TryParse(s, System.Globalization.NumberStyles.HexNumber, null, out address);
     }
 
+    /// <summary>
+    /// Annotate disassembly instructions with symbol comments for call/jmp targets
+    /// and for the instruction's own address (function start).
+    /// </summary>
+    private void AnnotateInstructionsWithSymbols(List<Instruction> instrs)
+    {
+        var moduleList = Modules.ToList();
+        var pid = TargetPid;
+
+        foreach (var instr in instrs)
+        {
+            // Resolve the instruction's own address to show function name
+            var addrSym = _symbols.ResolveViaDbgHelp(instr.Address);
+            if (addrSym != null && !addrSym.Contains("+0x"))
+            {
+                // Exact function start — show as label
+                instr.Comment = addrSym;
+            }
+
+            // For call/jmp, resolve the target operand address
+            if (!string.IsNullOrEmpty(instr.Operands) && IsBranchMnemonic(instr.Mnemonic))
+            {
+                if (TryParseAddress(instr.Operands, out ulong target))
+                {
+                    var sym = _symbols.ResolveAddress(pid, target, moduleList);
+                    if (sym != null)
+                        instr.Comment = sym;
+                }
+            }
+        }
+    }
+
+    private static bool IsBranchMnemonic(string mnemonic) => mnemonic switch
+    {
+        "call" or "jmp" or "je" or "jne" or "jz" or "jnz" or
+        "jg" or "jge" or "jl" or "jle" or "ja" or "jae" or
+        "jb" or "jbe" or "jo" or "jno" or "js" or "jns" or
+        "jp" or "jnp" or "jcxz" or "jecxz" or "jrcxz" or
+        "loop" or "loope" or "loopne" => true,
+        _ => false,
+    };
+
     private static string TruncateString(string s, int maxLen)
     {
         var sb = new StringBuilder();
@@ -1316,6 +1403,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (data == null) return;
 
         var instrs = _disasm.Disassemble(data, addr);
+        AnnotateInstructionsWithSymbols(instrs);
         Instructions.Clear();
         foreach (var instr in instrs)
         {
@@ -1711,6 +1799,92 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    /* ================================================================== */
+    /*  Symbols                                                            */
+    /* ================================================================== */
+
+    [RelayCommand]
+    private async Task LoadAllSymbolsAsync()
+    {
+        Log("Initializing symbol engine...");
+        var err = _symbols.Initialize();
+        if (err != null)
+        {
+            Log($"Symbol engine FAILED: {err}");
+            return;
+        }
+        Log($"Symbol path: {_symbols.SymbolPath}");
+
+        int total = 0, loaded = 0;
+
+        // Load kernel modules
+        var kMods = KernelModules.ToList();
+        if (kMods.Count > 0)
+        {
+            Log($"Loading symbols for {kMods.Count} kernel modules...");
+            await Task.Run(() =>
+            {
+                foreach (var m in kMods)
+                {
+                    total++;
+                    if (_symbols.LoadModule(0, m.Name, m.BaseAddress, m.Size))
+                        loaded++;
+                }
+            });
+            Log($"Kernel symbols: {loaded}/{kMods.Count}");
+        }
+
+        // Load user modules
+        var uMods = Modules.ToList();
+        var curPid = TargetPid;
+        if (uMods.Count > 0)
+        {
+            int uLoaded = 0;
+            Log($"Loading symbols for {uMods.Count} user modules...");
+            await Task.Run(() =>
+            {
+                foreach (var m in uMods)
+                {
+                    total++;
+                    if (_symbols.LoadModule(curPid, m.Name, m.BaseAddress, m.Size))
+                    {
+                        loaded++;
+                        uLoaded++;
+                    }
+                }
+            });
+            Log($"User symbols: {uLoaded}/{uMods.Count}");
+        }
+
+        if (total == 0)
+            Log("No modules loaded yet — connect and attach first");
+
+        _symbols.ClearCache();
+        Log($"Symbols: {loaded}/{total} modules loaded");
+        StatusText = $"Symbols: {loaded}/{total} modules loaded";
+    }
+
+    [RelayCommand]
+    private void SetSymbolPath()
+    {
+        var current = _symbols.SymbolPath;
+        var result = PromptInput("Symbol Path",
+            "Enter symbol path (srv*<cache>*<server>):");
+        if (!string.IsNullOrEmpty(result) && result != current)
+        {
+            _symbols.SymbolPath = result;
+            _symbols.ClearCache();
+            Log($"Symbol path changed to: {result}");
+        }
+    }
+
+    [RelayCommand]
+    private void ClearSymbolCache()
+    {
+        _symbols.Reset();
+        Log("Symbol cache cleared — modules unloaded");
+    }
+
     private void Log(string message)
     {
         string entry = $"[{DateTime.Now:HH:mm:ss}] {message}";
@@ -1720,6 +1894,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         StopDebugListener();
+        _symbols.Dispose();
         _driver.Dispose();
         _disasm.Dispose();
         GC.SuppressFinalize(this);

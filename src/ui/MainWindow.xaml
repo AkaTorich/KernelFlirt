@@ -78,6 +78,15 @@
                 <MenuItem Header="Refresh _SEH Chain" Click="OnRefreshSehClick" />
                 <MenuItem Header="Restore All _Patches" Command="{Binding RestoreAllPatchesCommand}" />
             </MenuItem>
+            <MenuItem Header="_Symbols">
+                <MenuItem Header="_Load All Symbols" Command="{Binding LoadAllSymbolsCommand}" />
+                <MenuItem Header="Set Symbol _Path..." Command="{Binding SetSymbolPathCommand}" />
+                <Separator />
+                <MenuItem Header="_Clear Symbol Cache" Command="{Binding ClearSymbolCacheCommand}" />
+            </MenuItem>
+            <MenuItem Header="_Help">
+                <MenuItem Header="_About" Click="OnAboutClick" />
+            </MenuItem>
         </Menu>
 
         <!-- Toolbar -->

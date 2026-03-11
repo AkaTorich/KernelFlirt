@@ -219,9 +219,7 @@ Write-Step "Debug settings verification"
 $dbgCheck | ForEach-Object { Write-OK $_.ToString().Trim() }
 
 Write-Host "`n================================================" -ForegroundColor Magenta
-Write-Host "  Done! Reboot the VM to apply all changes." -ForegroundColor Green
-Write-Host "  VMware: Serial Port -> named pipe \\.\pipe\com_1" -ForegroundColor Yellow
-Write-Host "  Host:   KernelFlirt -> com:pipe,port=\\.\pipe\com_1,resets=0,reconnect" -ForegroundColor Yellow
+Write-Host "  Host:   KernelFlirt -> 10.100.102.4" -ForegroundColor Yellow
 Write-Host "================================================`n" -ForegroundColor Magenta
 
 $restart = Read-Host "Reboot now? (y/n)"

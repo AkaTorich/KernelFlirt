@@ -23,6 +23,8 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+#include <winioctl.h>
+#include "../../include/kf_shared.h"
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -72,6 +74,17 @@ static void CloseDriver(void)
     if (g_hDeviceDbg != INVALID_HANDLE_VALUE) {
         CloseHandle(g_hDeviceDbg);
         g_hDeviceDbg = INVALID_HANDLE_VALUE;
+    }
+}
+
+/* Send IOCTL_KF_RESET to driver — removes all BPs, hooks, unblocks threads */
+static void ResetDriver(void)
+{
+    if (g_hDeviceCmd != INVALID_HANDLE_VALUE) {
+        DWORD bytesReturned = 0;
+        BOOL ok = DeviceIoControl(g_hDeviceCmd, IOCTL_KF_RESET,
+                                   NULL, 0, NULL, 0, &bytesReturned, NULL);
+        printf("[*] Driver reset: %s\n", ok ? "OK" : "FAILED");
     }
 }
 
@@ -377,7 +390,10 @@ int main(int argc, char *argv[])
         WaitForSingleObject(dbgThread, 3000);
         CloseHandle(dbgThread);
 
-        printf("[-] Session ended\n");
+        /* Reset driver state: remove all BPs, hooks, unblock threads */
+        ResetDriver();
+
+        printf("[-] Session ended (driver reset)\n");
     }
 
     closesocket(listenSock);

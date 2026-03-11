@@ -21,6 +21,7 @@ extern NTSTATUS KfEnumThreads(PIRP Irp, PIO_STACK_LOCATION IoStack);
 extern NTSTATUS KfSuspendThread(PIRP Irp, PIO_STACK_LOCATION IoStack);
 extern NTSTATUS KfResumeThread(PIRP Irp, PIO_STACK_LOCATION IoStack);
 extern NTSTATUS KfEnumProcesses(PIRP Irp, PIO_STACK_LOCATION IoStack);
+extern void KfRemoveAllBreakpoints(void);
 
 NTSTATUS
 KfDispatchIoctl(
@@ -124,6 +125,15 @@ KfDispatchIoctl(
 
     case IOCTL_KF_REMOVE_HOOK:
         KfRemoveDebugHook();
+        status = STATUS_SUCCESS;
+        Irp->IoStatus.Information = 0;
+        break;
+
+    case IOCTL_KF_RESET:
+        DbgPrint("[KernelFlirt] RESET: removing all breakpoints and hook\n");
+        KfRemoveAllBreakpoints();
+        KfRemoveDebugHook();
+        KfSetTargetPid(0);
         status = STATUS_SUCCESS;
         Irp->IoStatus.Information = 0;
         break;

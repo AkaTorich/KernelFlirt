@@ -700,6 +700,84 @@ BOOLEAN KfFindSwBpOrigByte(ULONG64 address, ULONG pid, PUCHAR origByte)
  * Check if any SW breakpoint exists at the given address (any PID).
  * Used for non-target processes that hit a shared-page INT3.
  */
+/*
+ * Remove ALL active breakpoints (called during session reset).
+ * Restores original bytes for SW BPs, clears DR for HW BPs,
+ * restores page protection for memory BPs.
+ * Must be called at PASSIVE_LEVEL.
+ */
+void KfRemoveAllBreakpoints(void)
+{
+    KIRQL    oldIrql;
+    ULONG    i;
+
+    if (!g_BpInitialized) return;
+
+    for (i = 0; i < KF_MAX_BREAKPOINTS; i++) {
+        KeAcquireSpinLock(&g_BpLock, &oldIrql);
+        if (!g_Breakpoints[i].Active) {
+            KeReleaseSpinLock(&g_BpLock, oldIrql);
+            continue;
+        }
+
+        if (g_Breakpoints[i].Type == KF_BP_SOFTWARE) {
+            PEPROCESS process = NULL;
+            ULONG     pid   = g_Breakpoints[i].ProcessId;
+            ULONG64   addr  = g_Breakpoints[i].Address;
+            UCHAR     orig  = g_Breakpoints[i].OrigByte;
+
+            KeReleaseSpinLock(&g_BpLock, oldIrql);
+
+            if (NT_SUCCESS(PsLookupProcessByProcessId((HANDLE)(ULONG_PTR)pid, &process))) {
+                KfWriteProcessMemory(process, addr, &orig, 1);
+                ObDereferenceObject(process);
+            }
+
+            KeAcquireSpinLock(&g_BpLock, &oldIrql);
+        }
+        else if (g_Breakpoints[i].Type == KF_BP_HARDWARE ||
+                 g_Breakpoints[i].Type == KF_BP_HW_WRITE ||
+                 g_Breakpoints[i].Type == KF_BP_HW_READWRITE) {
+            PETHREAD thread = NULL;
+            ULONG    hwSlot   = g_Breakpoints[i].HwSlot;
+            ULONG    threadId = g_Breakpoints[i].ThreadId;
+
+            KeReleaseSpinLock(&g_BpLock, oldIrql);
+
+            if (NT_SUCCESS(PsLookupThreadByThreadId((HANDLE)(ULONG_PTR)threadId, &thread))) {
+                __try {
+                    PVOID pTF = KfGetTrapFrame(thread);
+                    if (pTF != NULL) {
+                        ULONG64 dr7 = TF_READ64(pTF, TF_DR7);
+                        dr7 &= ~(1ULL << (hwSlot * 2));
+                        dr7 &= ~(0xFULL << (16 + hwSlot * 4));
+                        TF_WRITE64(pTF, TF_DR7, dr7);
+                        switch (hwSlot) {
+                            case 0: TF_WRITE64(pTF, TF_DR0, 0); break;
+                            case 1: TF_WRITE64(pTF, TF_DR1, 0); break;
+                            case 2: TF_WRITE64(pTF, TF_DR2, 0); break;
+                            case 3: TF_WRITE64(pTF, TF_DR3, 0); break;
+                        }
+                    }
+                } __except (EXCEPTION_EXECUTE_HANDLER) { }
+                ObDereferenceObject(thread);
+            }
+
+            KeAcquireSpinLock(&g_BpLock, &oldIrql);
+        }
+        else if (g_Breakpoints[i].Type == KF_BP_MEMORY) {
+            KeReleaseSpinLock(&g_BpLock, oldIrql);
+            KfRemoveMemoryBreakpoint(i);
+            KeAcquireSpinLock(&g_BpLock, &oldIrql);
+        }
+
+        g_Breakpoints[i].Active = FALSE;
+        KeReleaseSpinLock(&g_BpLock, oldIrql);
+    }
+
+    DbgPrint("[KernelFlirt] All breakpoints removed (reset)\n");
+}
+
 BOOLEAN KfFindAnySwBpOrigByte(ULONG64 address, PUCHAR origByte)
 {
     KIRQL oldIrql;
