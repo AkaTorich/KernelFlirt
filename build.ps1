@@ -144,6 +144,15 @@ if ($LASTEXITCODE -ne 0) { throw "UI build failed." }
 
 Write-Host "  -> bin\UI\KernelFlirt.exe" -ForegroundColor DarkGreen
 
+# Copy symbol DLLs (dbghelp.dll, symsrv.dll) next to the UI executable
+foreach ($dll in @("dbghelp.dll", "symsrv.dll")) {
+    $src = Join-Path $Root $dll
+    if (Test-Path $src) {
+        Copy-Item $src $BinUI -Force
+        Write-Host "  -> bin\UI\$dll" -ForegroundColor DarkGreen
+    }
+}
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 
 Write-Host "`n========================================" -ForegroundColor Cyan

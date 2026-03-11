@@ -55,6 +55,7 @@ public partial class DisasmView : UserControl
     private static SolidColorBrush JumpColor => new(Color.FromRgb(0xFF, 0x80, 0x80));       // red-ish jumps
     private static SolidColorBrush PunctuationColor => new(Color.FromRgb(0x80, 0x80, 0x80));// gray
     private static SolidColorBrush StringColor => new(Color.FromRgb(0xCE, 0x91, 0x78));     // orange strings
+    private static SolidColorBrush CommentColor => new(Color.FromRgb(0x60, 0x8B, 0x4E));    // green comments
     private static SolidColorBrush BpMarkerColor => (SolidColorBrush)Application.Current.Resources["BreakpointBrush"];
     private static SolidColorBrush CurrentLineColor => new(Color.FromRgb(0x26, 0x4F, 0x78));
     private static SolidColorBrush BpLineColor => new(Color.FromRgb(0x64, 0x1E, 0x1E));
@@ -121,6 +122,12 @@ public partial class DisasmView : UserControl
         // Mnemonic with per-token highlighting
         AddHighlightedMnemonic(textBlock, instr.Mnemonic, instr.Operands);
 
+        // Symbol comment (like x64dbg/OllyDbg style)
+        if (!string.IsNullOrEmpty(instr.Comment))
+        {
+            textBlock.Inlines.Add(new Run($"  ; {instr.Comment}") { Foreground = CommentColor });
+        }
+
         // Background color for breakpoint line or current instruction
         Brush bgBrush;
         if (instr.IsCurrentInstruction || (currentRip.HasValue && instr.Address == currentRip.Value))
@@ -168,13 +175,14 @@ public partial class DisasmView : UserControl
                 TokenKind.Punctuation => PunctuationColor,
                 TokenKind.SizePrefix => PunctuationColor,
                 TokenKind.String => StringColor,
+                TokenKind.Symbol => CommentColor,
                 _ => MnemonicColor,
             };
             tb.Inlines.Add(new Run(text) { Foreground = brush });
         }
     }
 
-    private enum TokenKind { Text, Register, Number, Punctuation, SizePrefix, String }
+    private enum TokenKind { Text, Register, Number, Punctuation, SizePrefix, String, Symbol }
 
     private static List<(string text, TokenKind kind)> TokenizeOperands(string operands)
     {

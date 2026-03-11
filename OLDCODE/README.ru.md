@@ -308,3 +308,5 @@ KernelFlirt/
 
 
 com:pipe,port=\\.\pipe\com_1,resets=0,reconnect
+
+srv*C:\Symbols*https://msdl.microsoft.com/download/symbols

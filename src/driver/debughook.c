@@ -274,32 +274,62 @@ static NTSTATUS KfPatchBytes(PVOID dest, const void *src, SIZE_T size)
 /* Find ntoskrnl base by scanning backward from a known export         */
 /* ------------------------------------------------------------------ */
 
+/* SystemModuleInformation structures (same as kmodules.c) */
+#define KF_SystemModuleInformation 11
+
+typedef struct _KF_PROCESS_MODULE_INFORMATION {
+    HANDLE  Section;
+    PVOID   MappedBase;
+    PVOID   ImageBase;
+    ULONG   ImageSize;
+    ULONG   Flags;
+    USHORT  LoadOrderIndex;
+    USHORT  InitOrderIndex;
+    USHORT  LoadCount;
+    USHORT  OffsetToFileName;
+    UCHAR   FullPathName[256];
+} KF_PROCESS_MODULE_INFORMATION;
+
+typedef struct _KF_PROCESS_MODULES {
+    ULONG   NumberOfModules;
+    KF_PROCESS_MODULE_INFORMATION Modules[1];
+} KF_PROCESS_MODULES;
+
 static PVOID KfFindNtoskrnlBase(void)
 {
-    UNICODE_STRING name;
-    PUCHAR addr;
-    int i;
+    NTSTATUS status;
+    PVOID buffer;
+    ULONG bufferSize = 0x10000;
+    ULONG returnLength = 0;
+    PVOID base = NULL;
 
-    RtlInitUnicodeString(&name, L"RtlInitUnicodeString");
-    addr = (PUCHAR)MmGetSystemRoutineAddress(&name);
-    if (!addr) {
-        DbgPrint("[KernelFlirt] RtlInitUnicodeString not resolved\n");
-        return NULL;
+    buffer = ExAllocatePoolWithTag(NonPagedPool, bufferSize, 'bNkK');
+    if (!buffer) return NULL;
+
+    status = ZwQuerySystemInformation(KF_SystemModuleInformation,
+                                      buffer, bufferSize, &returnLength);
+    if (status == STATUS_INFO_LENGTH_MISMATCH) {
+        ExFreePoolWithTag(buffer, 'bNkK');
+        bufferSize = returnLength + 0x1000;
+        buffer = ExAllocatePoolWithTag(NonPagedPool, bufferSize, 'bNkK');
+        if (!buffer) return NULL;
+        status = ZwQuerySystemInformation(KF_SystemModuleInformation,
+                                          buffer, bufferSize, &returnLength);
     }
 
-    /* Align to page boundary and scan backward for MZ header */
-    addr = (PUCHAR)((ULONG_PTR)addr & ~(ULONG_PTR)0xFFF);
-    for (i = 0; i < 0x2000; i++, addr -= 0x1000) {
-        if (!MmIsAddressValid(addr))
-            continue;
-        if (addr[0] == 'M' && addr[1] == 'Z') {
-            DbgPrint("[KernelFlirt] ntoskrnl base: %p\n", addr);
-            return addr;
+    if (NT_SUCCESS(status)) {
+        KF_PROCESS_MODULES *modules = (KF_PROCESS_MODULES *)buffer;
+        if (modules->NumberOfModules > 0) {
+            base = modules->Modules[0].ImageBase;
+            DbgPrint("[KernelFlirt] ntoskrnl base: %p (%s)\n",
+                     base, modules->Modules[0].FullPathName);
         }
+    } else {
+        DbgPrint("[KernelFlirt] ZwQuerySystemInformation failed: 0x%08X\n", status);
     }
 
-    DbgPrint("[KernelFlirt] ntoskrnl base not found\n");
-    return NULL;
+    ExFreePoolWithTag(buffer, 'bNkK');
+    return base;
 }
 
 /* ------------------------------------------------------------------ */
@@ -353,61 +383,56 @@ static PUCHAR KfPatternScanKdTrap(PUCHAR ntBase)
     }
 
     sec = IMAGE_FIRST_SECTION(nt);
+    DbgPrint("[KernelFlirt] Total sections: %u\n", nt->FileHeader.NumberOfSections);
     for (i = 0; i < nt->FileHeader.NumberOfSections; i++) {
         if (!MmIsAddressValid(&sec[i])) break;
-        if (sec[i].Characteristics & IMAGE_SCN_CNT_CODE) {
-            textBase = ntBase + sec[i].VirtualAddress;
-            textSize = sec[i].Misc.VirtualSize;
-            DbgPrint("[KernelFlirt] Code section: %p, size=0x%X\n", textBase, textSize);
-            break;
+        DbgPrint("[KernelFlirt] Section[%u] %.8s VA=0x%X Size=0x%X Char=0x%08X\n",
+                 i, sec[i].Name, sec[i].VirtualAddress,
+                 sec[i].Misc.VirtualSize, sec[i].Characteristics);
+        if (!(sec[i].Characteristics & IMAGE_SCN_MEM_EXECUTE)) continue;
+
+        textBase = ntBase + sec[i].VirtualAddress;
+        textSize = sec[i].Misc.VirtualSize;
+        DbgPrint("[KernelFlirt] Scanning executable section %.8s: %p, size=0x%X\n",
+                 sec[i].Name, textBase, textSize);
+
+        if (textSize < 32) continue;
+
+        for (off = 0; off < textSize - 32; off++) {
+            PUCHAR p = textBase + off;
+
+            if (!MmIsAddressValid(p)) {
+                ULONG_PTR nextPage = ((ULONG_PTR)p + 0x1000) & ~(ULONG_PTR)0xFFF;
+                ULONG skip = (ULONG)(nextPage - (ULONG_PTR)textBase);
+                if (skip > off)
+                    off = skip - 1;
+                continue;
+            }
+
+            if (!MmIsAddressValid(p + 26)) {
+                ULONG_PTR nextPage = ((ULONG_PTR)(p + 26) + 0x1000) & ~(ULONG_PTR)0xFFF;
+                ULONG skip = (ULONG)(nextPage - (ULONG_PTR)textBase);
+                if (skip > off)
+                    off = skip - 1;
+                continue;
+            }
+
+            /* Match prefix: 48 83 EC 38 */
+            if (RtlCompareMemory(p, prefix, 4) != 4) continue;
+
+            /* Match suffix at offset 11 (after 7-byte CMP instruction) */
+            if (RtlCompareMemory(p + 11, suffix, 16) != 16) continue;
+
+            /* Verify CMP dword ptr [rip+disp32], 0 at offset 4 */
+            if (p[4] == 0x83 && p[5] == 0x3D && p[10] == 0x00) {
+                DbgPrint("[KernelFlirt] KdTrap found at %p (%.8s+0x%X)\n",
+                         p, sec[i].Name, off);
+                return p;
+            }
         }
     }
 
-    if (!textBase || textSize < 32) {
-        DbgPrint("[KernelFlirt] Code section not found\n");
-        return NULL;
-    }
-
-    for (off = 0; off < textSize - 32; off++) {
-        PUCHAR p = textBase + off;
-
-        /*
-         * MmIsAddressValid check: __try/__except does NOT catch page faults
-         * on kernel addresses — they cause immediate bugcheck 0x50.
-         * We must validate each page boundary before reading.
-         */
-        if (!MmIsAddressValid(p)) {
-            /* Skip to next page boundary */
-            ULONG_PTR nextPage = ((ULONG_PTR)p + 0x1000) & ~(ULONG_PTR)0xFFF;
-            ULONG skip = (ULONG)(nextPage - (ULONG_PTR)textBase);
-            if (skip > off)
-                off = skip - 1;
-            continue;
-        }
-
-        /* Also check the end of our match range (27 bytes ahead) */
-        if (!MmIsAddressValid(p + 26)) {
-            ULONG_PTR nextPage = ((ULONG_PTR)(p + 26) + 0x1000) & ~(ULONG_PTR)0xFFF;
-            ULONG skip = (ULONG)(nextPage - (ULONG_PTR)textBase);
-            if (skip > off)
-                off = skip - 1;
-            continue;
-        }
-
-        /* Match prefix: 48 83 EC 38 */
-        if (RtlCompareMemory(p, prefix, 4) != 4) continue;
-
-        /* Match suffix at offset 11 (after 7-byte CMP instruction) */
-        if (RtlCompareMemory(p + 11, suffix, 16) != 16) continue;
-
-        /* Verify CMP dword ptr [rip+disp32], 0 at offset 4 */
-        if (p[4] == 0x83 && p[5] == 0x3D && p[10] == 0x00) {
-            DbgPrint("[KernelFlirt] KdTrap found at %p (.text+0x%X)\n", p, off);
-            return p;
-        }
-    }
-
-    DbgPrint("[KernelFlirt] KdTrap pattern not found in .text\n");
+    DbgPrint("[KernelFlirt] KdTrap pattern not found in any code section\n");
     return NULL;
 }
 
@@ -443,9 +468,13 @@ static PULONG KfExtractKdpDebugRoutineSelect(PUCHAR kdTrap)
 /* Scan from offset 27 (after full matched pattern) for first E8       */
 /* ------------------------------------------------------------------ */
 
-static PUCHAR KfFindKdpTrapCallSite(PUCHAR kdTrap, PUCHAR *outKdpTrap)
+static PUCHAR KfFindKdpTrapCallSite(PUCHAR kdTrap, PUCHAR *outKdpTrap, ULONG selectValue)
 {
     int i;
+    int callIndex = 0;
+    /* select=0 → first CALL (KdpStub at ~+0x1D)
+       select=1 → second CALL (KdpTrap at ~+0x28) */
+    int targetCall = (selectValue != 0) ? 1 : 0;
 
     for (i = 27; i < 96; i++) {
         if (!MmIsAddressValid(kdTrap + i))
@@ -465,13 +494,18 @@ static PUCHAR KfFindKdpTrapCallSite(PUCHAR kdTrap, PUCHAR *outKdpTrap)
             if ((ULONG_PTR)target < 0xFFFF800000000000ULL)
                 continue;
 
-            DbgPrint("[KernelFlirt] CALL at KdTrap+0x%X -> %p (KdpTrap)\n", i, target);
-            if (outKdpTrap) *outKdpTrap = target;
-            return kdTrap + i;  /* Address of the E8 byte */
+            DbgPrint("[KernelFlirt] CALL[%d] at KdTrap+0x%X -> %p\n", callIndex, i, target);
+
+            if (callIndex == targetCall) {
+                DbgPrint("[KernelFlirt] Using CALL[%d] (select=%u path)\n", callIndex, selectValue);
+                if (outKdpTrap) *outKdpTrap = target;
+                return kdTrap + i;
+            }
+            callIndex++;
         }
     }
 
-    DbgPrint("[KernelFlirt] KdpTrap CALL not found in KdTrap\n");
+    DbgPrint("[KernelFlirt] Target CALL not found in KdTrap (select=%u)\n", selectValue);
     return NULL;
 }
 
@@ -922,7 +956,7 @@ NTSTATUS KfInstallDebugHook(void)
     g_OrigSelectValue = *pSelect;
 
     /* Step 4: Find CALL KdpTrap inside KdTrap */
-    callSite = KfFindKdpTrapCallSite(g_KdTrap, &kdpTrap);
+    callSite = KfFindKdpTrapCallSite(g_KdTrap, &kdpTrap, g_OrigSelectValue);
     if (!callSite) {
         DbgPrint("[KernelFlirt] FAIL: KdpTrap call site not found\n");
         return STATUS_NOT_FOUND;
@@ -1016,22 +1050,14 @@ NTSTATUS KfInstallDebugHook(void)
     }
 
     /*
-     * DO NOT set KdpDebugRoutineSelect to 1!
-     *
-     * KdTrap layout:
-     *   CMP [KdpDebugRoutineSelect], 0
-     *   JNZ  +0x28                     ← if select!=0, jumps to CALL KdpTrap
-     *   CALL KdpStub  (+0x1D)          ← if select==0, calls KdpStub (our patched call)
-     *   ...
-     *   CALL KdpTrap  (+0x28)          ← the real handler (unpatched)
-     *
-     * We patched the CALL at +0x1D (KdpStub path).
-     * If we set select=1, JNZ skips our patch and calls the real KdpTrap → crash.
-     * By keeping select=0, the fall-through path hits our patched CALL.
+     * We hook whichever CALL path is active based on select value:
+     *   select=0 → CALL KdpStub at +0x1D (patched above)
+     *   select=1 → CALL KdpTrap at +0x28 (patched above)
+     * No need to change select — we hook the active path directly.
      */
     _mm_mfence();
-    DbgPrint("[KernelFlirt] KdpDebugRoutineSelect left at %u (using KdpStub path)\n",
-             *g_pKdpDebugRoutineSelect);
+    DbgPrint("[KernelFlirt] KdpDebugRoutineSelect = %u (hooking select=%u path)\n",
+             *g_pKdpDebugRoutineSelect, g_OrigSelectValue);
 
     /*
      * Step 8: Set KdDebuggerEnabled=TRUE, KdDebuggerNotPresent=FALSE
@@ -1040,6 +1066,7 @@ NTSTATUS KfInstallDebugHook(void)
      */
     {
         UNICODE_STRING symName;
+        NTSTATUS stFlag;
 
         RtlInitUnicodeString(&symName, L"KdDebuggerEnabled");
         g_pKdDebuggerEnabled = (PBOOLEAN)MmGetSystemRoutineAddress(&symName);
@@ -1049,16 +1076,28 @@ NTSTATUS KfInstallDebugHook(void)
 
         if (g_pKdDebuggerEnabled) {
             g_OrigKdDebuggerEnabled = *g_pKdDebuggerEnabled;
-            *g_pKdDebuggerEnabled = TRUE;
-            DbgPrint("[KernelFlirt] KdDebuggerEnabled: %u -> TRUE\n", g_OrigKdDebuggerEnabled);
+            if (!g_OrigKdDebuggerEnabled) {
+                BOOLEAN val = TRUE;
+                stFlag = KfPatchBytes(g_pKdDebuggerEnabled, &val, sizeof(val));
+                if (!NT_SUCCESS(stFlag))
+                    DbgPrint("[KernelFlirt] WARNING: KdDebuggerEnabled patch failed: 0x%08X\n", stFlag);
+            }
+            DbgPrint("[KernelFlirt] KdDebuggerEnabled: %u -> %u\n",
+                     g_OrigKdDebuggerEnabled, *g_pKdDebuggerEnabled);
         } else {
             DbgPrint("[KernelFlirt] WARNING: KdDebuggerEnabled not found\n");
         }
 
         if (g_pKdDebuggerNotPresent) {
             g_OrigKdDebuggerNotPresent = *g_pKdDebuggerNotPresent;
-            *g_pKdDebuggerNotPresent = FALSE;
-            DbgPrint("[KernelFlirt] KdDebuggerNotPresent: %u -> FALSE\n", g_OrigKdDebuggerNotPresent);
+            if (g_OrigKdDebuggerNotPresent) {
+                BOOLEAN val = FALSE;
+                stFlag = KfPatchBytes(g_pKdDebuggerNotPresent, &val, sizeof(val));
+                if (!NT_SUCCESS(stFlag))
+                    DbgPrint("[KernelFlirt] WARNING: KdDebuggerNotPresent patch failed: 0x%08X\n", stFlag);
+            }
+            DbgPrint("[KernelFlirt] KdDebuggerNotPresent: %u -> %u\n",
+                     g_OrigKdDebuggerNotPresent, *g_pKdDebuggerNotPresent);
         } else {
             DbgPrint("[KernelFlirt] WARNING: KdDebuggerNotPresent not found\n");
         }
@@ -1072,7 +1111,7 @@ NTSTATUS KfInstallDebugHook(void)
     if (g_pKdDebuggerNotPresent)
         DbgPrint("[KernelFlirt] VERIFY: KdDebuggerNotPresent = %u (expect 0)\n", *g_pKdDebuggerNotPresent);
     if (g_pKdpDebugRoutineSelect)
-        DbgPrint("[KernelFlirt] VERIFY: KdpDebugRoutineSelect = %u (expect 0)\n", *g_pKdpDebugRoutineSelect);
+        DbgPrint("[KernelFlirt] VERIFY: KdpDebugRoutineSelect = %u (unchanged)\n", *g_pKdpDebugRoutineSelect);
 
     g_HookInstalled = TRUE;
     DbgPrint("[KernelFlirt] === InstallDebugHook COMPLETE ===\n");
@@ -1091,11 +1130,11 @@ void KfRemoveDebugHook(void)
      * so KiDispatchException stops calling KdTrap.
      */
     if (g_pKdDebuggerEnabled) {
-        *g_pKdDebuggerEnabled = g_OrigKdDebuggerEnabled;
+        KfPatchBytes(g_pKdDebuggerEnabled, &g_OrigKdDebuggerEnabled, sizeof(BOOLEAN));
         DbgPrint("[KernelFlirt] KdDebuggerEnabled restored to %u\n", g_OrigKdDebuggerEnabled);
     }
     if (g_pKdDebuggerNotPresent) {
-        *g_pKdDebuggerNotPresent = g_OrigKdDebuggerNotPresent;
+        KfPatchBytes(g_pKdDebuggerNotPresent, &g_OrigKdDebuggerNotPresent, sizeof(BOOLEAN));
         DbgPrint("[KernelFlirt] KdDebuggerNotPresent restored to %u\n", g_OrigKdDebuggerNotPresent);
     }
 

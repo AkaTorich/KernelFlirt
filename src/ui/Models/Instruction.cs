@@ -10,6 +10,9 @@ public class Instruction
     public bool HasBreakpoint { get; set; }
     public bool IsCurrentInstruction { get; set; }
 
+    /// <summary>Symbol comment shown to the right of operands (e.g. "ntdll!NtDeviceIoControlFile").</summary>
+    public string? Comment { get; set; }
+
     public string AddressHex => $"{Address:X16}";
     public string BytesHex => BitConverter.ToString(Bytes).Replace("-", " ");
     public string FullText => string.IsNullOrEmpty(Operands) ? Mnemonic : $"{Mnemonic} {Operands}";

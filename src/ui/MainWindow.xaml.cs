@@ -33,6 +33,8 @@ public partial class MainWindow : Window
     /* ================================================================== */
 
     private void OnExitClick(object sender, RoutedEventArgs e) => Close();
+    private void OnAboutClick(object sender, RoutedEventArgs e) =>
+        MessageBox.Show("KernelFlirt - Kernel Debugger", "About", MessageBoxButton.OK);
 
     private void OnRefreshAllClick(object sender, RoutedEventArgs e)
     {
