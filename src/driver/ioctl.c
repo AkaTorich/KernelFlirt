@@ -146,6 +146,9 @@ KfDispatchIoctl(
         /* This handler manages its own IRP completion */
         return KfContinueDebugEvent(Irp, ioStack);
 
+    case IOCTL_KF_GET_HOOK_STATS:
+        return KfGetHookStats(Irp, ioStack);
+
     default:
         DbgPrint("[KernelFlirt] Unknown IOCTL: 0x%08X\n", ioctl);
         status = STATUS_INVALID_DEVICE_REQUEST;

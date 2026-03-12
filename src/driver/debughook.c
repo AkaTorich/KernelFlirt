@@ -81,20 +81,36 @@ static PBOOLEAN g_pKdDebuggerNotPresent    = NULL;
 static BOOLEAN  g_OrigKdDebuggerEnabled    = FALSE;
 static BOOLEAN  g_OrigKdDebuggerNotPresent = TRUE;
 
-/* CALL-site patch (primary approach) */
-static PUCHAR   g_CallSite                 = NULL;   /* &E8 byte in KdTrap */
+/* CALL-site patch (primary approach) — patch BOTH paths in KdTrap */
+static PUCHAR   g_CallSite                 = NULL;   /* &E8 byte for select=origValue path */
 static INT32    g_OrigCallDisp             = 0;       /* Original rel32 */
+static PUCHAR   g_CallSite2                = NULL;   /* &E8 byte for the OTHER path */
+static INT32    g_OrigCallDisp2            = 0;       /* Original rel32 for other path */
 
-/* Inline hook fallback (when distance > 2GB) */
+/* Inline hook on primary function (KdpStub or KdpTrap) */
 static PUCHAR   g_Trampoline              = NULL;
 static UCHAR    g_OrigEntryBytes[16];
 static BOOLEAN  g_UsedInlineHook          = FALSE;
+
+/* KiDebugRoutine function pointer redirect */
+static PULONG_PTR g_pKiDebugRoutine       = NULL;    /* address of KiDebugRoutine in ntoskrnl */
+static ULONG_PTR  g_OrigKiDebugRoutine    = 0;       /* original value to restore */
 
 /* Original KdpTrap as callable function pointer */
 static PKDEBUG_ROUTINE g_OrigKdpTrap      = NULL;
 
 static BOOLEAN          g_HookInstalled   = FALSE;
 static ULONG            g_TargetPid       = 0;
+
+/* Diagnostic counters (no DbgPrint in handler — it may reset KdDebuggerEnabled!) */
+static volatile LONG    g_HookCallCount        = 0;
+static volatile LONG    g_HookBpHitCount       = 0;
+static volatile LONG    g_HookBpNotFoundCount  = 0;
+static volatile LONG    g_HookStepCount        = 0;
+static volatile LONG    g_HookTargetCallCount  = 0;  /* calls where isTarget=TRUE */
+static volatile ULONG64 g_LastTargetAddr       = 0;  /* last exception addr from target */
+static volatile ULONG   g_LastTargetCode       = 0;  /* last exception code from target */
+static volatile ULONG   g_LastNonTargetPid     = 0;  /* last non-target PID seen */
 
 /* Debug event state */
 static KF_DEBUG_EVENT   g_DebugEvent;
@@ -633,16 +649,8 @@ static void KfReportAndBlock(
 
     /* Block until ContinueDebugEvent */
     if (KeGetCurrentIrql() <= APC_LEVEL) {
-        DbgPrint("[KernelFlirt] Blocking TID %u\n",
-                 (ULONG)(ULONG_PTR)PsGetCurrentThreadId());
-
         KeWaitForSingleObject(&g_ContinueEvent, Executive,
                               KernelMode, FALSE, NULL);
-
-        DbgPrint("[KernelFlirt] TID %u resumed (mode=%u)\n",
-                 (ULONG)(ULONG_PTR)PsGetCurrentThreadId(), g_ContinueMode);
-    } else {
-        DbgPrint("[KernelFlirt] Cannot block at IRQL %d\n", KeGetCurrentIrql());
     }
 
     KeAcquireSpinLock(&g_DbgLock, &oldIrql);
@@ -673,9 +681,19 @@ static BOOLEAN KfDebugHandler(
     UNREFERENCED_PARAMETER(TrapFrame);
     UNREFERENCED_PARAMETER(ExceptionFrame);
 
-    DbgPrint("[KernelFlirt] HOOK CALLED: code=0x%08X pid=%u tid=%u addr=%p mode=%d\n",
-             ExceptionRecord->ExceptionCode, currentPid, currentTid,
-             (PVOID)ExceptionRecord->ExceptionAddress, PreviousMode);
+    /*
+     * NO DbgPrint here! DbgPrint calls KD transport which may detect
+     * no debugger connected and reset KdDebuggerEnabled=FALSE,
+     * preventing subsequent INT3 from reaching our handler.
+     */
+    InterlockedIncrement(&g_HookCallCount);
+    if (isTarget) {
+        InterlockedIncrement(&g_HookTargetCallCount);
+        g_LastTargetAddr = excAddr;
+        g_LastTargetCode = ExceptionRecord->ExceptionCode;
+    } else {
+        g_LastNonTargetPid = currentPid;
+    }
 
     /* Only handle BP, SingleStep, GuardPage */
     if (ExceptionRecord->ExceptionCode != STATUS_BREAKPOINT &&
@@ -699,12 +717,7 @@ static BOOLEAN KfDebugHandler(
 
             /* Only re-arm if BP still exists in table (user may have removed it) */
             if (KfFindSwBpOrigByte(g_StepPastAddr, currentPid, &dummyOrig)) {
-                NTSTATUS st = KfWriteByteInContext(g_StepPastAddr, 0xCC);
-                DbgPrint("[KernelFlirt] Re-armed 0xCC at %p (status=0x%08X)\n",
-                         (PVOID)g_StepPastAddr, st);
-            } else {
-                DbgPrint("[KernelFlirt] BP at %p was removed, skipping re-arm\n",
-                         (PVOID)g_StepPastAddr);
+                KfWriteByteInContext(g_StepPastAddr, 0xCC);
             }
 
             /* Clear TF so thread doesn't keep stepping */
@@ -716,8 +729,7 @@ static BOOLEAN KfDebugHandler(
             }
 
             /* StepIn mode: report SingleStep event to UI */
-            DbgPrint("[KernelFlirt] StepIn: reporting SingleStep at %p\n",
-                     (PVOID)ContextRecord->Rip);
+            InterlockedIncrement(&g_HookStepCount);
             KfReportAndBlock(ExceptionRecord, ContextRecord, PreviousMode);
 
             /* After UI continues: check if another step was requested */
@@ -738,8 +750,6 @@ static BOOLEAN KfDebugHandler(
 
                     /* Re-arm INT3 */
                     st = KfWriteByteInContext(addr, 0xCC);
-                    DbgPrint("[KernelFlirt] Transparent re-arm at %p for TID %u (0x%08X)\n",
-                             (PVOID)addr, currentTid, st);
 
                     /* Clear TF */
                     ContextRecord->EFlags &= ~0x100UL;
@@ -775,14 +785,12 @@ static BOOLEAN KfDebugHandler(
         if (isTarget) {
             if (!KfFindSwBpOrigByte(bpAddr, currentPid, &origByte)) {
                 /* Not our BP (compiler int3 padding, etc.) */
-                DbgPrint("[KernelFlirt] Target INT3 at %p not in BP table, skipping\n",
-                         (PVOID)bpAddr);
+                InterlockedIncrement(&g_HookBpNotFoundCount);
                 ContextRecord->Rip = bpAddr + 1;
                 return TRUE;
             }
 
-            DbgPrint("[KernelFlirt] Target BP hit at %p (orig=0x%02X)\n",
-                     (PVOID)bpAddr, origByte);
+            InterlockedIncrement(&g_HookBpHitCount);
 
             /* Report to UI and block */
             KfReportAndBlock(ExceptionRecord, ContextRecord, PreviousMode);
@@ -805,8 +813,6 @@ static BOOLEAN KfDebugHandler(
 
                     /* Restore original byte so CPU can execute it */
                     st = KfWriteByteInContext(bpAddr, currentOrig);
-                    DbgPrint("[KernelFlirt] Restored 0x%02X at %p (status=0x%08X)\n",
-                             currentOrig, (PVOID)bpAddr, st);
 
                     /* Prepare for re-arm on next SingleStep */
                     g_StepPastPending = TRUE;
@@ -826,9 +832,6 @@ static BOOLEAN KfDebugHandler(
             NTSTATUS st;
             int slot = -1, i;
 
-            DbgPrint("[KernelFlirt] Non-target PID %u TID %u hit BP at %p\n",
-                     currentPid, currentTid, (PVOID)bpAddr);
-
             /* Restore original byte so thread can execute */
             st = KfWriteByteInContext(bpAddr, origByte);
 
@@ -843,8 +846,6 @@ static BOOLEAN KfDebugHandler(
                 g_Transparent[slot].Active = TRUE;
                 g_Transparent[slot].Tid    = currentTid;
                 g_Transparent[slot].Addr   = bpAddr;
-            } else {
-                DbgPrint("[KernelFlirt] WARNING: no transparent step slot!\n");
             }
 
             return TRUE;
@@ -861,11 +862,6 @@ static BOOLEAN KfDebugHandler(
         return FALSE;
 
 report_to_ui:
-    DbgPrint("[KernelFlirt] Event: code=0x%08X addr=%p PID=%u TID=%u\n",
-             ExceptionRecord->ExceptionCode,
-             (PVOID)ContextRecord->Rip,
-             currentPid, currentTid);
-
     KfReportAndBlock(ExceptionRecord, ContextRecord, PreviousMode);
 
     /* After UI continues: set TF if step was requested */
@@ -920,6 +916,65 @@ NTSTATUS KfDebugHookInit(void)
 /*
  * Helper: dump N bytes at an address for diagnostics
  */
+/*
+ * Scan ntoskrnl PE .data section for KiDebugRoutine — a QWORD function pointer
+ * whose value matches either func1 or func2 (the two debug dispatch functions).
+ * Returns the address of the pointer, or NULL if not found.
+ */
+static PUCHAR KfFindKiDebugRoutine(PVOID ntBase, PUCHAR func1, PUCHAR func2)
+{
+    PIMAGE_DOS_HEADER dos;
+    PIMAGE_NT_HEADERS64 nt;
+    PIMAGE_SECTION_HEADER sec;
+    ULONG i;
+    ULONG_PTR val1 = (ULONG_PTR)func1;
+    ULONG_PTR val2 = (ULONG_PTR)func2;
+
+    if (!ntBase || !MmIsAddressValid(ntBase))
+        return NULL;
+
+    dos = (PIMAGE_DOS_HEADER)ntBase;
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE)
+        return NULL;
+
+    nt = (PIMAGE_NT_HEADERS64)((PUCHAR)ntBase + dos->e_lfanew);
+    if (!MmIsAddressValid(nt) || nt->Signature != IMAGE_NT_SIGNATURE)
+        return NULL;
+
+    sec = IMAGE_FIRST_SECTION(nt);
+
+    for (i = 0; i < nt->FileHeader.NumberOfSections; i++, sec++) {
+        PUCHAR secStart;
+        ULONG secSize;
+        PUCHAR p;
+
+        /* Look in writable sections (.data, ALMOSTRO, etc.) */
+        if (!(sec->Characteristics & IMAGE_SCN_MEM_WRITE))
+            continue;
+
+        secStart = (PUCHAR)ntBase + sec->VirtualAddress;
+        secSize  = sec->Misc.VirtualSize;
+
+        DbgPrint("[KernelFlirt] Scanning section %.8s (%p, %u bytes) for KiDebugRoutine\n",
+                 sec->Name, secStart, secSize);
+
+        /* Scan QWORD-aligned */
+        for (p = secStart; p + sizeof(ULONG_PTR) <= secStart + secSize; p += sizeof(ULONG_PTR)) {
+            ULONG_PTR val;
+            if (!MmIsAddressValid(p))
+                continue;
+            val = *(volatile ULONG_PTR *)p;
+            if (val == val1 || val == val2) {
+                DbgPrint("[KernelFlirt] Found KiDebugRoutine candidate at %p (value=%p)\n",
+                         p, (PVOID)val);
+                return p;
+            }
+        }
+    }
+
+    return NULL;
+}
+
 static void KfDumpBytes(const char *label, PUCHAR addr, int count)
 {
     int i;
@@ -946,7 +1001,7 @@ NTSTATUS KfInstallDebugHook(void)
     PUCHAR callSite;
     PUCHAR kdpTrap;
     PULONG pSelect;
-    INT64  delta;
+    PUCHAR otherTarget = NULL;
 
     if (g_HookInstalled)
         return STATUS_SUCCESS;
@@ -980,10 +1035,16 @@ NTSTATUS KfInstallDebugHook(void)
     g_pKdpDebugRoutineSelect = pSelect;
     g_OrigSelectValue = *pSelect;
 
-    /* Step 4: Find CALL KdpTrap inside KdTrap */
+    /* Step 4: Find BOTH CALL sites inside KdTrap.
+     * KdTrap has two paths:
+     *   select=0 → CALL[0] (KdpStub, ~+0x1D)
+     *   select=1 → CALL[1] (KdpTrap, ~+0x28)
+     * We MUST patch BOTH because KdpDebugRoutineSelect can change
+     * after we set KdDebuggerEnabled=TRUE.
+     */
     callSite = KfFindKdpTrapCallSite(g_KdTrap, &kdpTrap, g_OrigSelectValue);
     if (!callSite) {
-        DbgPrint("[KernelFlirt] FAIL: KdpTrap call site not found\n");
+        DbgPrint("[KernelFlirt] FAIL: primary call site not found\n");
         return STATUS_NOT_FOUND;
     }
     g_CallSite = callSite;
@@ -991,52 +1052,42 @@ NTSTATUS KfInstallDebugHook(void)
     g_OrigCallDisp = *(INT32 *)(callSite + 1);
     g_OrigKdpTrap  = (PKDEBUG_ROUTINE)kdpTrap;
 
+    /* Find the OTHER call site (the alternate select path) */
+    {
+        ULONG otherSelect = (g_OrigSelectValue != 0) ? 0 : 1;
+        g_CallSite2 = KfFindKdpTrapCallSite(g_KdTrap, &otherTarget, otherSelect);
+        if (g_CallSite2) {
+            g_OrigCallDisp2 = *(INT32 *)(g_CallSite2 + 1);
+            DbgPrint("[KernelFlirt] Found BOTH call sites: select=%u at %p -> %p, select=%u at %p -> %p\n",
+                     g_OrigSelectValue, callSite, kdpTrap, otherSelect, g_CallSite2, otherTarget);
+        } else {
+            DbgPrint("[KernelFlirt] WARNING: only found one call site (select=%u path)\n",
+                     g_OrigSelectValue);
+        }
+    }
+
     DbgPrint("[KernelFlirt] KdTrap=%p  KdpTrap=%p  Select@%p=%u\n",
              g_KdTrap, g_KdpTrap, g_pKdpDebugRoutineSelect, g_OrigSelectValue);
 
     /* Dump first 16 bytes of KdpTrap target */
     KfDumpBytes("KdpTrap[0..15]", kdpTrap, 16);
 
-    /* Step 5: Calculate delta */
-    delta = (INT64)((PUCHAR)KfDebugHandler - (callSite + 5));
-    DbgPrint("[KernelFlirt] Handler=%p  CallSite=%p  delta=0x%llX  fits_rel32=%d\n",
-             (PVOID)KfDebugHandler, callSite, delta,
-             (delta >= -2147483648LL && delta <= 2147483647LL) ? 1 : 0);
-
-    /* Step 6: Patch the CALL displacement to redirect to our handler */
-    if (delta >= -2147483648LL && delta <= 2147483647LL) {
-        /* rel32 patch — just overwrite the 4-byte displacement */
-        INT32 newDisp = (INT32)delta;
-        NTSTATUS st;
-
-        DbgPrint("[KernelFlirt] Patching CALL rel32 at %p: old=0x%08X new=0x%08X\n",
-                 callSite + 1, g_OrigCallDisp, newDisp);
-
-        st = KfPatchBytes(callSite + 1, &newDisp, 4);
-        if (!NT_SUCCESS(st)) {
-            DbgPrint("[KernelFlirt] FAIL: KfPatchBytes returned 0x%08X\n", st);
-            return st;
-        }
-
-        /* Verify patch took effect by reading back */
-        if (MmIsAddressValid(callSite) && MmIsAddressValid(callSite + 4)) {
-            INT32 readBack = *(INT32 *)(callSite + 1);
-            PUCHAR resolvedTarget = callSite + 5 + readBack;
-            DbgPrint("[KernelFlirt] VERIFY: CALL disp readback=0x%08X -> target=%p (expected=%p)\n",
-                     readBack, resolvedTarget, (PVOID)KfDebugHandler);
-            if (resolvedTarget == (PUCHAR)KfDebugHandler)
-                DbgPrint("[KernelFlirt] VERIFY: PATCH OK!\n");
-            else
-                DbgPrint("[KernelFlirt] VERIFY: PATCH MISMATCH! readback target != handler\n");
-        }
-
-        g_UsedInlineHook = FALSE;
-    } else {
-        /* Distance > 2GB — use 14-byte inline hook at KdpTrap entry */
+    /*
+     * Step 5+6: INLINE HOOK on KdpStub/KdpTrap directly.
+     *
+     * KiDispatchException calls KiDebugRoutine (function pointer) for
+     * user-mode exceptions. KiDebugRoutine points to KdpStub (select=0)
+     * or KdpTrap (select=1). Patching the CALL inside KdTrap only
+     * intercepts calls routed through KdTrap, NOT calls via KiDebugRoutine.
+     *
+     * By inline-hooking the target function itself, we intercept ALL calls
+     * regardless of call path.
+     */
+    {
         UCHAR jmpStub[14];
         NTSTATUS st;
 
-        DbgPrint("[KernelFlirt] Delta too large for rel32, using inline hook\n");
+        DbgPrint("[KernelFlirt] Installing inline hook on %p (KdpStub/KdpTrap)\n", kdpTrap);
 
         /* Allocate trampoline: original 14 bytes + JMP back */
         g_Trampoline = (PUCHAR)ExAllocatePoolWithTag(
@@ -1070,16 +1121,58 @@ NTSTATUS KfInstallDebugHook(void)
             return st;
         }
 
+        /* Verify: first 2 bytes should be FF 25 */
+        if (MmIsAddressValid(kdpTrap) && kdpTrap[0] == 0xFF && kdpTrap[1] == 0x25) {
+            DbgPrint("[KernelFlirt] VERIFY inline hook: OK (FF 25 at %p)\n", kdpTrap);
+        } else {
+            DbgPrint("[KernelFlirt] VERIFY inline hook: MISMATCH at %p!\n", kdpTrap);
+        }
+
         g_OrigKdpTrap = (PKDEBUG_ROUTINE)g_Trampoline;
         g_UsedInlineHook = TRUE;
     }
 
     /*
-     * We hook whichever CALL path is active based on select value:
-     *   select=0 → CALL KdpStub at +0x1D (patched above)
-     *   select=1 → CALL KdpTrap at +0x28 (patched above)
-     * No need to change select — we hook the active path directly.
+     * Step 5b: Redirect KiDebugRoutine to our hooked function.
+     *
+     * KiDispatchException calls KiDebugRoutine (a function pointer in ntoskrnl
+     * .data) for user-mode exceptions. It may point to KdpStub or KdpTrap.
+     * If it points to the OTHER function (not the one we just inline-hooked),
+     * user-mode INT3 won't reach our handler.
+     *
+     * Strategy: scan ntoskrnl .data section for a QWORD matching either
+     * kdpTrap or otherTarget address. That's KiDebugRoutine. Overwrite it
+     * with the address of our hooked function (kdpTrap, now JMPs to handler).
      */
+    if (otherTarget && otherTarget != kdpTrap) {
+        PUCHAR found = KfFindKiDebugRoutine(ntBase, kdpTrap, otherTarget);
+        if (found) {
+            ULONG_PTR currentVal = *(ULONG_PTR *)found;
+            g_pKiDebugRoutine = (PULONG_PTR)found;
+            g_OrigKiDebugRoutine = currentVal;
+
+            if (currentVal == (ULONG_PTR)otherTarget) {
+                /* KiDebugRoutine points to the un-hooked function — redirect it */
+                ULONG_PTR newVal = (ULONG_PTR)kdpTrap;  /* our inline-hooked function */
+                NTSTATUS stPatch = KfPatchBytes(found, &newVal, sizeof(ULONG_PTR));
+                if (NT_SUCCESS(stPatch)) {
+                    DbgPrint("[KernelFlirt] KiDebugRoutine at %p: %p -> %p (redirected to hooked func)\n",
+                             found, (PVOID)currentVal, kdpTrap);
+                } else {
+                    DbgPrint("[KernelFlirt] WARNING: KiDebugRoutine patch failed: 0x%08X\n", stPatch);
+                }
+            } else if (currentVal == (ULONG_PTR)kdpTrap) {
+                DbgPrint("[KernelFlirt] KiDebugRoutine at %p already points to hooked func %p\n",
+                         found, kdpTrap);
+            } else {
+                DbgPrint("[KernelFlirt] KiDebugRoutine at %p has unexpected value %p\n",
+                         found, (PVOID)currentVal);
+            }
+        } else {
+            DbgPrint("[KernelFlirt] WARNING: KiDebugRoutine not found in ntoskrnl .data\n");
+        }
+    }
+
     _mm_mfence();
     DbgPrint("[KernelFlirt] KdpDebugRoutineSelect = %u (hooking select=%u path)\n",
              *g_pKdpDebugRoutineSelect, g_OrigSelectValue);
@@ -1172,6 +1265,7 @@ void KfRemoveDebugHook(void)
 
     /* Now restore the code */
     if (g_UsedInlineHook) {
+        /* Restore primary hook */
         KfPatchBytes(g_KdpTrap, g_OrigEntryBytes, 14);
         DbgPrint("[KernelFlirt] KdpTrap entry restored\n");
 
@@ -1179,9 +1273,22 @@ void KfRemoveDebugHook(void)
             ExFreePoolWithTag(g_Trampoline, 'KfTr');
             g_Trampoline = NULL;
         }
+
+        /* Restore KiDebugRoutine pointer */
+        if (g_pKiDebugRoutine && g_OrigKiDebugRoutine) {
+            KfPatchBytes(g_pKiDebugRoutine, &g_OrigKiDebugRoutine, sizeof(ULONG_PTR));
+            DbgPrint("[KernelFlirt] KiDebugRoutine restored to %p\n", (PVOID)g_OrigKiDebugRoutine);
+            g_pKiDebugRoutine = NULL;
+            g_OrigKiDebugRoutine = 0;
+        }
     } else if (g_CallSite) {
         KfPatchBytes(g_CallSite + 1, &g_OrigCallDisp, 4);
         DbgPrint("[KernelFlirt] CALL displacement restored at %p\n", g_CallSite);
+
+        if (g_CallSite2) {
+            KfPatchBytes(g_CallSite2 + 1, &g_OrigCallDisp2, 4);
+            DbgPrint("[KernelFlirt] CALL displacement 2 restored at %p\n", g_CallSite2);
+        }
     }
 
     g_HookInstalled  = FALSE;
@@ -1226,6 +1333,37 @@ void KfSetTargetPid(ULONG pid)
 BOOLEAN KfIsDebugHookActive(void)
 {
     return g_HookInstalled;
+}
+
+NTSTATUS KfGetHookStats(PIRP Irp, PIO_STACK_LOCATION IoStack)
+{
+    PKF_HOOK_STATS_OUT out;
+
+    if (IoStack->Parameters.DeviceIoControl.OutputBufferLength < sizeof(KF_HOOK_STATS_OUT)) {
+        Irp->IoStatus.Information = 0;
+        Irp->IoStatus.Status = STATUS_BUFFER_TOO_SMALL;
+        IoCompleteRequest(Irp, IO_NO_INCREMENT);
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    out = (PKF_HOOK_STATS_OUT)Irp->AssociatedIrp.SystemBuffer;
+    out->HookCallCount     = (ULONG)g_HookCallCount;
+    out->BpHitCount        = (ULONG)g_HookBpHitCount;
+    out->BpNotFoundCount   = (ULONG)g_HookBpNotFoundCount;
+    out->StepCount         = (ULONG)g_HookStepCount;
+    out->KdDebuggerEnabled    = g_pKdDebuggerEnabled ? *g_pKdDebuggerEnabled : 0xFF;
+    out->KdDebuggerNotPresent = g_pKdDebuggerNotPresent ? *g_pKdDebuggerNotPresent : 0xFF;
+    out->Reserved[0] = 0;
+    out->Reserved[1] = 0;
+    out->TargetCallCount  = (ULONG)g_HookTargetCallCount;
+    out->LastTargetAddr   = g_LastTargetAddr;
+    out->LastTargetCode   = g_LastTargetCode;
+    out->LastNonTargetPid = g_LastNonTargetPid;
+
+    Irp->IoStatus.Information = sizeof(KF_HOOK_STATS_OUT);
+    Irp->IoStatus.Status = STATUS_SUCCESS;
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    return STATUS_SUCCESS;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1295,12 +1433,25 @@ NTSTATUS KfContinueDebugEvent(PIRP Irp, PIO_STACK_LOCATION IoStack)
         return STATUS_DEVICE_NOT_READY;
     }
 
+    /*
+     * Re-assert KdDebuggerEnabled=TRUE before waking the thread.
+     * DbgPrint (or other KD calls) may have reset it to FALSE,
+     * which would prevent KiDispatchException from calling KdTrap
+     * for the next INT3.
+     */
+    if (g_pKdDebuggerEnabled && *g_pKdDebuggerEnabled != TRUE) {
+        BOOLEAN val = TRUE;
+        KfPatchBytes(g_pKdDebuggerEnabled, &val, sizeof(BOOLEAN));
+    }
+    if (g_pKdDebuggerNotPresent && *g_pKdDebuggerNotPresent != FALSE) {
+        BOOLEAN val = FALSE;
+        KfPatchBytes(g_pKdDebuggerNotPresent, &val, sizeof(BOOLEAN));
+    }
+
     /* Set mode BEFORE signaling (handler reads it after wake) */
     g_ContinueMode = mode;
 
     KeSetEvent(&g_ContinueEvent, 0, FALSE);
-
-    DbgPrint("[KernelFlirt] Continue (mode=%u)\n", mode);
 
     Irp->IoStatus.Information = 0;
     Irp->IoStatus.Status = STATUS_SUCCESS;

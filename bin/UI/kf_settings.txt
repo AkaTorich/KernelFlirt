@@ -1,1 +1,1 @@
-SymbolPath=D:\!GITLOCAL\PsyShoutToolsBundle\bin\Release;srv*C:\Symbols*https://msdl.microsoft.com/download/symbols
+SymbolPath=C:\Users\psysh\OneDrive\Desktop\KernelFlirt\TaskMan\bin\Release;srv*C:\Symbols*https://msdl.microsoft.com/download/symbols

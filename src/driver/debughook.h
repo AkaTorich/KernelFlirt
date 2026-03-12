@@ -23,6 +23,7 @@ void KfDebugHookCleanup(void);
 /* IOCTL handlers */
 NTSTATUS KfWaitDebugEvent(PIRP Irp, PIO_STACK_LOCATION IoStack);
 NTSTATUS KfContinueDebugEvent(PIRP Irp, PIO_STACK_LOCATION IoStack);
+NTSTATUS KfGetHookStats(PIRP Irp, PIO_STACK_LOCATION IoStack);
 
 /* Set target PID filter (0 = catch all processes) */
 void KfSetTargetPid(ULONG pid);
