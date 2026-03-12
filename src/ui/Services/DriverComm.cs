@@ -231,6 +231,20 @@ public class DriverComm : IDisposable
         return IsConnected;
     }
 
+    /// <summary>Close all connections without marking as disposed (allows reconnect).</summary>
+    public void Disconnect()
+    {
+        _handle?.Dispose();
+        _handle = null;
+        _netStream = null;
+        _tcpClient?.Dispose();
+        _tcpClient = null;
+        _dbgNetStream = null;
+        _dbgTcpClient?.Dispose();
+        _dbgTcpClient = null;
+        _isRemote = false;
+    }
+
     /// <summary>Connect to remote relay agent via TCP (dual-channel: cmd + dbg).</summary>
     public bool ConnectRemote(string host, int port = DefaultRelayPort)
     {

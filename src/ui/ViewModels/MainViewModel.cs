@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -22,6 +23,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private Task? _listenerTask;
     // SW breakpoint we just hit — need step-past before continuing
     private Breakpoint? _hitSwBp;
+    // True if paused via thread suspend (not debug event)
+    private bool _isPausedViaSuspend;
 
     [ObservableProperty] private bool _isConnected;
     [ObservableProperty] private uint _targetPid;
@@ -50,10 +53,37 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public ObservableCollection<ImportEntry> Imports { get; } = [];
     [ObservableProperty] private byte[] _hexData = [];
 
+    private static readonly string SettingsFile =
+        Path.Combine(AppContext.BaseDirectory, "kf_settings.txt");
+
     public MainViewModel()
     {
         _symbols = new SymbolService(_driver);
         _symbols.LogMessage += msg => Application.Current.Dispatcher.Invoke(() => Log(msg));
+        LoadSettings();
+    }
+
+    private void LoadSettings()
+    {
+        try
+        {
+            if (!File.Exists(SettingsFile)) return;
+            foreach (var line in File.ReadAllLines(SettingsFile))
+            {
+                if (line.StartsWith("SymbolPath=", StringComparison.Ordinal))
+                    _symbols.SymbolPath = line["SymbolPath=".Length..];
+            }
+        }
+        catch { /* ignore */ }
+    }
+
+    private void SaveSettings()
+    {
+        try
+        {
+            File.WriteAllText(SettingsFile, $"SymbolPath={_symbols.SymbolPath}\n");
+        }
+        catch { /* ignore */ }
     }
 
     /* ================================================================== */
@@ -119,6 +149,31 @@ public partial class MainViewModel : ObservableObject, IDisposable
             StatusText = $"Connection error: {ex.Message}";
             Log($"Connect exception: {ex.Message}");
         }
+    }
+
+    [RelayCommand]
+    private void DisconnectKernel()
+    {
+        _listenerCts?.Cancel();
+        _driver.Disconnect();
+        _symbols.Reset();
+        IsConnected = false;
+        IsDebugHookActive = false;
+        IsBreakState = false;
+        IsRunning = false;
+        TargetPid = 0;
+        SelectedThreadId = 0;
+        KernelModules.Clear();
+        Modules.Clear();
+        Threads.Clear();
+        Registers.Clear();
+        Instructions.Clear();
+        CallStack.Clear();
+        StackEntries.Clear();
+        SehChain.Clear();
+        Imports.Clear();
+        StatusText = "Disconnected";
+        Log("Disconnected");
     }
 
     /// <summary>Called right after a successful connect — loads data that doesn't require a PID.</summary>
@@ -192,6 +247,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         StatusText = $"Attaching to PID {TargetPid}...";
         Log($"Attaching to PID {TargetPid}...");
 
+        // Reset addresses so hex dump / disasm use the new process's RIP
+        HexAddress = 0;
+        DisasmAddress = 0;
+
         var pid = TargetPid;
 
         // Install debug hook for this process
@@ -207,7 +266,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             Log("Warning: debug hook install failed");
         }
 
-        // Enumerate threads & modules
+        // Enumerate threads & suspend them all
         Log("Enumerating threads...");
         List<ThreadInfo> threads;
         try
@@ -216,6 +275,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex) { Log($"EnumThreads error: {ex.Message}"); StatusText = "Attach failed"; return; }
         Log($"Found {threads.Count} threads");
+
+        // Suspend all threads so we get a consistent snapshot
+        Log("Suspending process...");
+        await Task.Run(() =>
+        {
+            foreach (var t in threads)
+                _driver.SuspendThread(t.ThreadId);
+        });
+        _isPausedViaSuspend = true;
 
         Log("Enumerating modules...");
         List<ModuleInfo> modules;
@@ -360,15 +428,105 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         // Populate hex dump
         var hexData = hexTask.Result;
-        if (hexData != null) HexData = hexData;
+        if (hexData != null)
+        {
+            HexData = hexData;
+            Log($"Hex dump: {hexData.Length} bytes at {hexAddr:X16}");
+        }
+        else
+        {
+            Log($"Hex dump: read failed at {hexAddr:X16}");
+        }
 
         // Parse imports from main exe
         RefreshImports();
 
-        IsBreakState = true;
-        IsRunning = false;
-        StatusText = $"Paused - PID {TargetPid} TID {SelectedThreadId}";
-        Log($"Attached to PID {TargetPid} - VM paused");
+        // Auto-set breakpoint at real entry point and run
+        var autoRan = await TryAutoBreakAtEntryPoint(pid, modules);
+
+        if (!autoRan)
+        {
+            IsBreakState = true;
+            IsRunning = false;
+            StatusText = $"Paused - PID {TargetPid} TID {SelectedThreadId}";
+        }
+        Log($"Attached to PID {TargetPid}");
+    }
+
+    /// <summary>
+    /// Try to find main/WinMain/wWinMain, set BP there and auto-run.
+    /// Returns true if auto-run was started (UI will get debug event later).
+    /// </summary>
+    private async Task<bool> TryAutoBreakAtEntryPoint(uint pid, List<ModuleInfo> modules)
+    {
+        if (modules.Count == 0) return false;
+
+        // Only auto-break if RIP is inside the main module (CRT startup).
+        // If RIP is in ntdll/kernel32/etc., the process already passed main — skip.
+        var rip = Registers.FirstOrDefault(r => r.Name == "RIP");
+        if (rip != null && rip.Value != 0 && modules.Count > 0)
+        {
+            var mainMod = modules[0];
+            bool ripInMainModule = rip.Value >= mainMod.BaseAddress &&
+                                   rip.Value < mainMod.BaseAddress + mainMod.Size;
+            if (!ripInMainModule)
+            {
+                Log("Auto-break: process already running (RIP outside main module), pausing here");
+                return false;
+            }
+        }
+
+        // Try common entry point symbol names
+        string[] entryNames = ["main", "wmain", "WinMain", "wWinMain",
+            $"{Path.GetFileNameWithoutExtension(modules[0].Name)}!main",
+            $"{Path.GetFileNameWithoutExtension(modules[0].Name)}!wmain",
+            $"{Path.GetFileNameWithoutExtension(modules[0].Name)}!WinMain",
+            $"{Path.GetFileNameWithoutExtension(modules[0].Name)}!wWinMain"];
+
+        ulong entryAddr = 0;
+        string? foundName = null;
+
+        foreach (var name in entryNames)
+        {
+            var addr = _symbols.ResolveNameToAddress(name);
+            if (addr != 0)
+            {
+                entryAddr = addr;
+                foundName = name;
+                break;
+            }
+        }
+
+        if (entryAddr == 0)
+        {
+            Log("Auto-break: no main/WinMain found, staying at CRT startup");
+            return false;
+        }
+
+        // Set temp BP at entry point
+        var handle = await Task.Run(() => _driver.SetBreakpoint(pid, 0, entryAddr, BreakpointType.Software));
+        if (!handle.HasValue)
+        {
+            Log($"Auto-break: failed to set BP at {foundName} ({entryAddr:X16})");
+            return false;
+        }
+
+        _tempBpHandle = handle.Value;
+        Log($"Auto-break: BP at {foundName} ({entryAddr:X16}), running...");
+
+        // Resume all threads — they're suspended, not in debug event
+        var threads = Threads.ToList();
+        await Task.Run(() =>
+        {
+            foreach (var t in threads)
+                _driver.ResumeThread(t.ThreadId);
+        });
+        _isPausedViaSuspend = false;
+        IsBreakState = false;
+        IsRunning = true;
+        StatusText = $"Running to {foundName}...";
+        StartDebugListener();
+        return true;
     }
 
     [RelayCommand]
@@ -376,7 +534,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         if (TargetPid != 0 && IsConnected)
         {
-            // Remove all breakpoints
+            // Remove temp breakpoint first
+            if (_tempBpHandle.HasValue)
+            {
+                await Task.Run(() => _driver.RemoveBreakpoint(_tempBpHandle.Value));
+                Log($"Removed temp BP handle={_tempBpHandle.Value}");
+                _tempBpHandle = null;
+            }
+
+            // Remove all user breakpoints
             var bpList = Breakpoints.ToList();
             await Task.Run(() =>
             {
@@ -387,7 +553,26 @@ public partial class MainViewModel : ObservableObject, IDisposable
             foreach (var bp in bpList)
                 Log($"Removed {bp.TypeName} BP at {bp.AddressHex}");
             Breakpoints.Clear();
-            _tempBpHandle = null;
+
+            // Resume all threads if suspended
+            if (_isPausedViaSuspend)
+            {
+                var threads = Threads.ToList();
+                await Task.Run(() =>
+                {
+                    foreach (var t in threads)
+                        _driver.ResumeThread(t.ThreadId);
+                });
+                _isPausedViaSuspend = false;
+                Log("Resumed all threads");
+            }
+
+            // If blocked on debug event, continue so thread unblocks
+            if (IsBreakState && !_isPausedViaSuspend)
+            {
+                await Task.Run(() => _driver.ContinueDebugEvent(DriverComm.CONTINUE_RUN));
+                Log("Continued blocked thread");
+            }
         }
 
         StopDebugListener();
@@ -397,12 +582,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
             IsDebugHookActive = false;
             Log("Debug hook removed");
         }
+
+        _hitSwBp = null;
         TargetPid = 0;
         SelectedThreadId = 0;
         Instructions.Clear();
         Registers.Clear();
         Modules.Clear();
-        KernelModules.Clear();
         Threads.Clear();
         StackEntries.Clear();
         CallStack.Clear();
@@ -555,9 +741,27 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task Run()
     {
-        Log($"Run() called: Connected={IsConnected} PID={TargetPid} TID={SelectedThreadId} Running={IsRunning}");
         if (!IsConnected || TargetPid == 0) return;
         if (IsRunning) return;
+
+        // If paused via thread suspend, resume all threads
+        if (_isPausedViaSuspend)
+        {
+            var pid = TargetPid;
+            var threads = Threads.ToList();
+            await Task.Run(() =>
+            {
+                foreach (var t in threads)
+                    _driver.ResumeThread(t.ThreadId);
+            });
+            _isPausedViaSuspend = false;
+            IsBreakState = false;
+            IsRunning = true;
+            StatusText = "Running...";
+            Log("Run: threads resumed");
+            StartDebugListener();
+            return;
+        }
 
         if (_hitSwBp != null)
         {
@@ -586,14 +790,49 @@ public partial class MainViewModel : ObservableObject, IDisposable
     /* ================================================================== */
 
     [RelayCommand]
-    private Task Pause()
+    private async Task Pause()
     {
-        // DriverComm doesn't have a direct "break into running target" API.
-        // The debug hook catches exceptions — we can't pause arbitrarily.
-        // Just log that pause is not supported in this mode.
-        Log("Pause: not supported in driver mode (use breakpoints)");
-        StatusText = "Use breakpoints to stop execution";
-        return Task.CompletedTask;
+        if (!IsConnected || TargetPid == 0) return;
+        if (IsBreakState) return; // already paused
+
+        Log("Pausing process...");
+
+        // Suspend all threads
+        var pid = TargetPid;
+        var threads = await Task.Run(() => _driver.EnumThreads(pid));
+        await Task.Run(() =>
+        {
+            foreach (var t in threads)
+                _driver.SuspendThread(t.ThreadId);
+        });
+
+        StopDebugListener();
+
+        // Pick first thread and read its state
+        Threads.Clear();
+        foreach (var t in threads) Threads.Add(t);
+        if (Threads.Count > 0)
+            SelectedThreadId = Threads[0].ThreadId;
+
+        var tid = SelectedThreadId;
+        var regs = await Task.Run(() => _driver.ReadRegisters(pid, tid));
+        Registers.Clear();
+        foreach (var reg in regs) Registers.Add(reg);
+
+        var rip = Registers.FirstOrDefault(r => r.Name == "RIP");
+        if (rip != null && rip.Value != 0)
+        {
+            DisasmAddress = rip.Value;
+            Log($"Paused at RIP = {rip.Value:X16}");
+        }
+
+        // Refresh disasm + hex dump + stack
+        await RefreshAllViews();
+
+        IsBreakState = true;
+        IsRunning = false;
+        _isPausedViaSuspend = true;
+        StatusText = $"Paused - PID {TargetPid} TID {SelectedThreadId}";
     }
 
     /* ================================================================== */
@@ -657,6 +896,18 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         ToggleBreakpointAtAddress(SelectedDisasmAddress != 0 ? SelectedDisasmAddress : DisasmAddress,
                                   BreakpointType.Memory);
+    }
+
+    /// <summary>Toggle a software breakpoint at a specific address (used by disasm context menus).</summary>
+    public void SetBreakpointAtAddress(ulong address)
+        => ToggleBreakpointAtAddress(address, BreakpointType.Software);
+
+    /// <summary>Navigate disassembly to a specific address (used by disasm context menus).</summary>
+    public void NavigateDisasmTo(ulong address)
+    {
+        if (address == 0) return;
+        DisasmAddress = address;
+        RefreshDisassembly();
     }
 
     private async void ToggleBreakpointAtAddress(ulong address, BreakpointType type, uint length = 1)
@@ -846,12 +1097,30 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private void GoToAddress(string? addressText)
     {
         if (string.IsNullOrWhiteSpace(addressText)) return;
-        if (ulong.TryParse(addressText.TrimStart('0', 'x', 'X'),
+
+        // Try hex address first
+        var trimmed = addressText.Trim();
+        if (ulong.TryParse(trimmed.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                ? trimmed[2..] : trimmed,
                 System.Globalization.NumberStyles.HexNumber, null, out var addr))
         {
             DisasmAddress = addr;
             RefreshDisassembly();
             Log($"Navigate to {addr:X16}");
+            return;
+        }
+
+        // Try symbol name (e.g. "WinMain", "ntdll!NtClose", "main")
+        var resolved = _symbols.ResolveNameToAddress(trimmed);
+        if (resolved != 0)
+        {
+            DisasmAddress = resolved;
+            RefreshDisassembly();
+            Log($"Navigate to {trimmed} = {resolved:X16}");
+        }
+        else
+        {
+            Log($"Symbol not found: {trimmed}");
         }
     }
 
@@ -1144,7 +1413,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
             var addrSym = _symbols.ResolveViaDbgHelp(instr.Address);
             if (addrSym != null && !addrSym.Contains("+0x"))
             {
-                // Exact function start — show as label
+                // Exact function start — show as label in address column
+                instr.AddressLabel = addrSym;
                 instr.Comment = addrSym;
             }
 
@@ -1153,9 +1423,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
             {
                 if (TryParseAddress(instr.Operands, out ulong target))
                 {
+                    instr.BranchTargetAddress = target;
                     var sym = _symbols.ResolveAddress(pid, target, moduleList);
                     if (sym != null)
+                    {
+                        instr.BranchTargetSymbol = sym;
                         instr.Comment = sym;
+                    }
                 }
             }
         }
@@ -1704,6 +1978,48 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (data != null) HexData = data;
     }
 
+    private async Task RefreshAllViews()
+    {
+        var pid = TargetPid;
+        var disasmAddr = DisasmAddress;
+        var hexAddr = HexAddress != 0 ? HexAddress : disasmAddr;
+        HexAddress = hexAddr;
+        var rspReg = Registers.FirstOrDefault(r => r.Name == "RSP");
+
+        var disasmTask = Task.Run(() => _driver.ReadMemory(pid, disasmAddr, 4096));
+        var stackTask = rspReg != null ? Task.Run(() => _driver.ReadMemory(pid, rspReg.Value, 256)) : Task.FromResult<byte[]?>(null);
+        var hexTask = Task.Run(() => _driver.ReadMemory(pid, hexAddr, 4096));
+        await Task.WhenAll(disasmTask, stackTask, hexTask);
+
+        var disasmData = disasmTask.Result;
+        if (disasmData != null)
+        {
+            var instrs = _disasm.Disassemble(disasmData, disasmAddr);
+            AnnotateInstructionsWithSymbols(instrs);
+            Instructions.Clear();
+            foreach (var instr in instrs)
+            {
+                instr.HasBreakpoint = Breakpoints.Any(b => b.Address == instr.Address);
+                Instructions.Add(instr);
+            }
+        }
+
+        var stackData = stackTask.Result;
+        if (stackData != null && rspReg != null)
+        {
+            StackEntries.Clear();
+            for (int i = 0; i < stackData.Length; i += 8)
+            {
+                if (i + 8 > stackData.Length) break;
+                ulong val = BitConverter.ToUInt64(stackData, i);
+                StackEntries.Add($"RSP+{i:X2}  {val:X16}");
+            }
+        }
+
+        var hexData = hexTask.Result;
+        if (hexData != null) HexData = hexData;
+    }
+
     /* ================================================================== */
     /*  Helpers                                                             */
     /* ================================================================== */
@@ -1725,18 +2041,18 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var dialog = new Window
         {
             Title = title,
-            Width = 400,
-            Height = 150,
+            Width = 600,
+            SizeToContent = SizeToContent.Height,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Owner = Application.Current.MainWindow,
             Background = Application.Current.Resources["BgBrush"] as System.Windows.Media.Brush,
             Foreground = Application.Current.Resources["FgBrush"] as System.Windows.Media.Brush,
             FontFamily = new System.Windows.Media.FontFamily("Consolas"),
-            ResizeMode = ResizeMode.NoResize
+            ResizeMode = ResizeMode.CanResizeWithGrip
         };
 
         var stack = new StackPanel { Margin = new Thickness(12) };
-        stack.Children.Add(new TextBlock { Text = prompt, Margin = new Thickness(0, 0, 0, 8) });
+        stack.Children.Add(new TextBlock { Text = prompt, Margin = new Thickness(0, 0, 0, 8), TextWrapping = TextWrapping.Wrap });
 
         var textBox = new System.Windows.Controls.TextBox
         {
@@ -1787,6 +2103,28 @@ public partial class MainViewModel : ObservableObject, IDisposable
             uint peOffset = BitConverter.ToUInt32(dosHeader, 0);
 
             var epData = _driver.ReadMemory(TargetPid, baseAddress + peOffset + 0x28, 4);
+            if (epData == null || epData.Length < 4) return baseAddress;
+            uint entryRva = BitConverter.ToUInt32(epData, 0);
+
+            if (entryRva == 0) return baseAddress;
+            return baseAddress + entryRva;
+        }
+        catch
+        {
+            return baseAddress;
+        }
+    }
+
+    public ulong ResolveKernelEntryPoint(ulong baseAddress)
+    {
+        if (!IsConnected) return baseAddress;
+        try
+        {
+            var dosHeader = _driver.ReadMemory(4, baseAddress + 0x3C, 4);
+            if (dosHeader == null || dosHeader.Length < 4) return baseAddress;
+            uint peOffset = BitConverter.ToUInt32(dosHeader, 0);
+
+            var epData = _driver.ReadMemory(4, baseAddress + peOffset + 0x28, 4);
             if (epData == null || epData.Length < 4) return baseAddress;
             uint entryRva = BitConverter.ToUInt32(epData, 0);
 
@@ -1869,11 +2207,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         var current = _symbols.SymbolPath;
         var result = PromptInput("Symbol Path",
-            "Enter symbol path (srv*<cache>*<server>):");
+            "Enter symbol path. Use ';' to separate paths.\n" +
+            "Local PDB folders: C:\\MyPDBs;D:\\Build\\Output\n" +
+            "Symbol server: srv*C:\\Symbols*https://msdl.microsoft.com/download/symbols\n\n" +
+            "Current: " + current);
         if (!string.IsNullOrEmpty(result) && result != current)
         {
             _symbols.SymbolPath = result;
             _symbols.ClearCache();
+            SaveSettings();
             Log($"Symbol path changed to: {result}");
         }
     }
@@ -1885,7 +2227,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         Log("Symbol cache cleared — modules unloaded");
     }
 
-    private void Log(string message)
+    public void Log(string message)
     {
         string entry = $"[{DateTime.Now:HH:mm:ss}] {message}";
         LogMessages.Add(entry);

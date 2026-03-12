@@ -30,6 +30,20 @@ public class SymbolService : IDisposable
         "dxgmms1.sys", "dxgmms2.sys",
     };
 
+    // Modules known to have no public PDB on Microsoft Symbol Server.
+    // Suppress "PDB not found" warnings for these.
+    private static readonly HashSet<string> NoPdbModules = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // VMware Tools drivers
+        "vsock.sys", "vmci.sys", "vmrawdsk.sys", "vmmouse.sys",
+        "vm3dmp_loader.sys", "vm3dmp.sys", "vmusbmouse.sys",
+        "vmmemctl.sys", "vmhgfs.sys",
+        // Windows modules without public symbols
+        "clipsp.sys", "peauth.sys", "drmk.sys",
+        // Our own driver
+        "KernelFlirt.sys",
+    };
+
     public event Action<string>? LogMessage;
 
     public string SymbolPath
@@ -62,11 +76,11 @@ public class SymbolService : IDisposable
 
             _hProcess = new IntPtr(0x1337);
 
+            // No SYMOPT_DEBUG — we don't want verbose dbghelp output
             DbgHelpNative.SymSetOptions(
                 DbgHelpNative.SYMOPT_UNDNAME |
                 DbgHelpNative.SYMOPT_DEFERRED_LOADS |
-                DbgHelpNative.SYMOPT_FAVOR_COMPRESSED |
-                DbgHelpNative.SYMOPT_DEBUG);
+                DbgHelpNative.SYMOPT_FAVOR_COMPRESSED);
 
             if (!DbgHelpNative.SymInitializeW(_hProcess, _symbolPath, false))
             {
@@ -74,7 +88,6 @@ public class SymbolService : IDisposable
                 return $"SymInitialize failed (error {err})";
             }
 
-            // Register callback to capture dbghelp debug output
             _callbackDelegate = OnDbgHelpCallback;
             DbgHelpNative.SymRegisterCallbackW64(_hProcess, _callbackDelegate, 0);
 
@@ -86,6 +99,7 @@ public class SymbolService : IDisposable
     /// <summary>
     /// Load a module with debug info read from target memory.
     /// pid=0 for kernel modules.
+    /// Only logs errors — successful loads are silent.
     /// </summary>
     public bool LoadModule(uint pid, string moduleName, ulong baseAddress, uint size)
     {
@@ -97,11 +111,7 @@ public class SymbolService : IDisposable
             // Try to extract RSDS info from target PE to download PDB
             RsdsInfo? rsds = null;
             bool isSessionSpace = pid == 0 && IsSessionSpaceModule(moduleName);
-            if (isSessionSpace)
-            {
-                LogMessage?.Invoke($"  {moduleName}: session-space module, skipping PE read");
-            }
-            else
+            if (!isSessionSpace)
             {
                 try
                 {
@@ -116,16 +126,12 @@ public class SymbolService : IDisposable
             string? pdbPath = null;
             if (rsds != null)
             {
-                LogMessage?.Invoke($"  {moduleName}: RSDS {rsds.Guid} age={rsds.Age} pdb='{rsds.PdbName}'");
                 pdbPath = FindPdb(rsds);
-                if (pdbPath != null)
-                    LogMessage?.Invoke($"  {moduleName}: PDB found: {pdbPath}");
-                else
-                    LogMessage?.Invoke($"  {moduleName}: PDB not found on symbol server");
+                if (pdbPath == null && !IsNoPdbModule(moduleName))
+                    LogMessage?.Invoke($"  {moduleName}: PDB not found (pdb='{rsds.PdbName}')");
             }
 
             // Load module — if we have a local PDB, pass its path as ImageName
-            // so dbghelp associates the PDB with this module
             string imageName = pdbPath ?? moduleName;
             ulong result = DbgHelpNative.SymLoadModuleExW(
                 _hProcess, IntPtr.Zero, imageName, null,
@@ -133,7 +139,6 @@ public class SymbolService : IDisposable
             int err = Marshal.GetLastWin32Error();
 
             bool ok = result != 0 || err == 0;
-            LogMessage?.Invoke($"  SymLoadModuleExW('{imageName}') -> 0x{result:X}, err={err}");
 
             if (ok)
             {
@@ -141,7 +146,7 @@ public class SymbolService : IDisposable
                 return true;
             }
 
-            LogMessage?.Invoke($"  {moduleName}: FAILED err={err}");
+            LogMessage?.Invoke($"  {moduleName}: SymLoadModuleExW FAILED err={err}");
             return false;
         }
     }
@@ -230,21 +235,19 @@ public class SymbolService : IDisposable
 
     /// <summary>
     /// Find/download PDB using SymFindFileInPathW with RSDS GUID and age.
+    /// Falls back to searching for PDB by filename in symbol path directories.
     /// Returns local path to PDB or null if not found.
     /// </summary>
     private string? FindPdb(RsdsInfo rsds)
     {
-        // Allocate buffer for GUID
+        // Try SymFindFileInPathW first (handles symbol server downloads + GUID matching)
         IntPtr guidPtr = Marshal.AllocHGlobal(16);
-        // Allocate buffer for result path (MAX_PATH * 2 for Unicode)
         IntPtr pathBuf = Marshal.AllocHGlobal(260 * 2);
         try
         {
-            // Write GUID bytes
             byte[] guidBytes = rsds.Guid.ToByteArray();
             Marshal.Copy(guidBytes, 0, guidPtr, 16);
 
-            // Zero the path buffer
             unsafe { new Span<byte>((void*)pathBuf, 260 * 2).Clear(); }
 
             bool found = DbgHelpNative.SymFindFileInPathW(
@@ -265,16 +268,64 @@ public class SymbolService : IDisposable
                 if (!string.IsNullOrEmpty(path) && File.Exists(path))
                     return path;
             }
-            else
-            {
-                int err = Marshal.GetLastWin32Error();
-                LogMessage?.Invoke($"    SymFindFileInPath failed err={err}");
-            }
         }
         finally
         {
             Marshal.FreeHGlobal(guidPtr);
             Marshal.FreeHGlobal(pathBuf);
+        }
+
+        // Fallback: search for PDB by filename in local directories from symbol path.
+        // This finds PDBs for user-built apps that aren't on a symbol server.
+        // Searches each non-srv* component and also looks next to the PDB name's original path.
+        return FindPdbInLocalPaths(rsds.PdbName);
+    }
+
+    /// <summary>
+    /// Search local directories in the symbol path for a PDB file by name.
+    /// Handles paths like: C:\MyPDBs;srv*C:\Symbols*url;D:\Build\Output
+    /// Only searches plain directory components (not srv* entries).
+    /// </summary>
+    private string? FindPdbInLocalPaths(string pdbName)
+    {
+        if (string.IsNullOrEmpty(pdbName)) return null;
+
+        var fileName = Path.GetFileName(pdbName);
+
+        foreach (var component in _symbolPath.Split(';', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var trimmed = component.Trim();
+
+            if (trimmed.StartsWith("srv*", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.StartsWith("symsrv*", StringComparison.OrdinalIgnoreCase))
+            {
+                // For srv* entries, check the local cache directory (second part)
+                // srv*C:\Symbols*https://... -> check C:\Symbols
+                var parts = trimmed.Split('*');
+                if (parts.Length >= 2 && Directory.Exists(parts[1]))
+                {
+                    var candidate = Path.Combine(parts[1], fileName);
+                    if (File.Exists(candidate)) return candidate;
+                }
+                continue;
+            }
+
+            // Plain directory path — search for PDB here and in subdirectories (1 level)
+            if (!Directory.Exists(trimmed)) continue;
+
+            var direct = Path.Combine(trimmed, fileName);
+            if (File.Exists(direct)) return direct;
+
+            // Check immediate subdirectories (common for build output: bin/Debug, bin/Release)
+            try
+            {
+                foreach (var subDir in Directory.EnumerateDirectories(trimmed))
+                {
+                    var sub = Path.Combine(subDir, fileName);
+                    if (File.Exists(sub)) return sub;
+                }
+            }
+            catch { /* access denied etc. — skip */ }
         }
 
         return null;
@@ -343,18 +394,35 @@ public class SymbolService : IDisposable
         }
     }
 
-    private bool OnDbgHelpCallback(IntPtr hProcess, uint actionCode, ulong callbackData, ulong userContext)
+    /// <summary>
+    /// Resolve a symbol name to an address using SymFromNameW.
+    /// Supports: "WinMain", "module!func", "ntdll!NtClose", etc.
+    /// </summary>
+    public ulong ResolveNameToAddress(string name)
     {
-        if (actionCode == DbgHelpNative.CBA_DEBUG_INFO && callbackData != 0)
+        lock (_lock)
         {
+            if (!_initialized) return 0;
+            var symbolInfo = DbgHelpNative.AllocSymbolInfo();
             try
             {
-                string? msg = Marshal.PtrToStringUni((IntPtr)callbackData);
-                if (!string.IsNullOrWhiteSpace(msg))
-                    LogMessage?.Invoke($"  [dbghelp] {msg.TrimEnd('\r', '\n')}");
+                if (DbgHelpNative.SymFromNameW(_hProcess, name, symbolInfo))
+                {
+                    var (symName, address, _) = DbgHelpNative.ReadSymbolInfo(symbolInfo);
+                    return address;
+                }
             }
-            catch { }
+            finally
+            {
+                DbgHelpNative.FreeSymbolInfo(symbolInfo);
+            }
+            return 0;
         }
+    }
+
+    private bool OnDbgHelpCallback(IntPtr hProcess, uint actionCode, ulong callbackData, ulong userContext)
+    {
+        // Callback kept for future use but silent by default
         return false;
     }
 
@@ -362,6 +430,12 @@ public class SymbolService : IDisposable
     {
         var name = Path.GetFileName(moduleName);
         return SessionSpaceModules.Contains(name);
+    }
+
+    private static bool IsNoPdbModule(string moduleName)
+    {
+        var name = Path.GetFileName(moduleName);
+        return NoPdbModules.Contains(name);
     }
 
     public void ClearCache() => _symbolCache.Clear();

@@ -18,6 +18,7 @@
     <Window.Resources>
         <conv:HexValueConverter x:Key="HexConv" />
         <conv:BoolToVisibilityConverter x:Key="BoolVisConv" />
+        <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolVisConv" />
     </Window.Resources>
 
     <Window.InputBindings>
@@ -39,6 +40,7 @@
             <MenuItem Header="_File">
                 <MenuItem Header="_Open Process..." Command="{Binding OpenProcessCommand}" />
                 <MenuItem Header="_Connect Kernel..." Command="{Binding ConnectKernelCommand}" />
+                <MenuItem Header="_Disconnect" Command="{Binding DisconnectKernelCommand}" />
                 <Separator />
                 <MenuItem Header="E_xit" Click="OnExitClick" />
             </MenuItem>
@@ -94,8 +96,14 @@
             <WrapPanel>
                 <Button Content="Open" Command="{Binding OpenProcessCommand}"
                         ToolTip="Select process to attach" />
-                <Button Content="Connect" Command="{Binding ConnectKernelCommand}"
-                        ToolTip="Connect to kernel via named pipe" />
+                <Button Command="{Binding ConnectKernelCommand}"
+                        ToolTip="Connect to kernel driver"
+                        Visibility="{Binding IsConnected, Converter={StaticResource InverseBoolVisConv}}"
+                        Content="Connect" />
+                <Button Command="{Binding DisconnectKernelCommand}"
+                        ToolTip="Disconnect from kernel driver"
+                        Visibility="{Binding IsConnected, Converter={StaticResource BoolVisConv}}"
+                        Content="Disconnect" />
 
                 <Rectangle Width="1" Fill="{StaticResource BorderBrush}" Margin="8,2" />
 
@@ -276,8 +284,19 @@
 
             <!-- Tab: Kernel Modules -->
             <TabItem Header="Kernel Modules">
-                <DataGrid ItemsSource="{Binding KernelModules}" IsReadOnly="True"
-                          AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}">
+                <DataGrid x:Name="KernelModulesGrid" ItemsSource="{Binding KernelModules}" IsReadOnly="True"
+                          AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
+                          MouseDoubleClick="OnKernelModuleDoubleClick">
+                    <DataGrid.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Go to Entry Point" Click="OnKernelModuleGoToEntry" />
+                            <MenuItem Header="Go to Base" Click="OnKernelModuleGoToBase" />
+                            <MenuItem Header="Follow in Dump" Click="OnKernelModuleFollowInDump" />
+                            <Separator />
+                            <MenuItem Header="Copy Base Address" Click="OnKernelModuleCopyBase" />
+                            <MenuItem Header="Copy Name" Click="OnKernelModuleCopyName" />
+                        </ContextMenu>
+                    </DataGrid.ContextMenu>
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="Base" Width="160" Binding="{Binding BaseHex}">
                             <DataGridTextColumn.ElementStyle>

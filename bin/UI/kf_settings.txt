@@ -1,0 +1,1 @@
+SymbolPath=D:\!GITLOCAL\PsyShoutToolsBundle\bin\Release;srv*C:\Symbols*https://msdl.microsoft.com/download/symbols

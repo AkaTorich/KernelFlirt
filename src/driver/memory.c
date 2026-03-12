@@ -1,11 +1,74 @@
 /*
  * KernelFlirt - Memory operations
  * memory.c - Process memory read/write via MmCopyVirtualMemory
+ *
+ * For kernel-space addresses (PID 4, address >= 0xFFFF800000000000):
+ *   Uses direct RtlCopyMemory with per-page MmIsAddressValid checks
+ *   to avoid PAGE_FAULT_IN_NONPAGED_AREA bugcheck on paged-out or
+ *   session-space pages.
+ *
+ * For user-space addresses:
+ *   Uses MmCopyVirtualMemory as before.
  */
 
 #include <ntddk.h>
 #include "ntundoc.h"
 #include "../../include/kf_shared.h"
+
+/* Kernel-space boundary for x64 */
+#define KERNEL_SPACE_START  0xFFFF800000000000ULL
+
+/*
+ * Safe kernel memory read: copies page-by-page, checking MmIsAddressValid
+ * before each page to prevent bugcheck on unmapped/paged-out pages.
+ * Returns number of bytes successfully copied (may be partial).
+ */
+static SIZE_T
+KfSafeKernelRead(
+    _In_  PVOID   sourceAddress,
+    _Out_ PVOID   destBuffer,
+    _In_  SIZE_T  size
+)
+{
+    SIZE_T copied = 0;
+    PUCHAR src = (PUCHAR)sourceAddress;
+    PUCHAR dst = (PUCHAR)destBuffer;
+
+    while (copied < size) {
+        /* Bytes remaining until next page boundary */
+        SIZE_T pageOffset = (ULONG_PTR)(src + copied) & (PAGE_SIZE - 1);
+        SIZE_T chunkSize = PAGE_SIZE - pageOffset;
+        if (chunkSize > size - copied)
+            chunkSize = size - copied;
+
+        /* Check if the start of this chunk is valid */
+        if (!MmIsAddressValid(src + copied)) {
+            /* Page not resident — zero-fill and skip */
+            RtlZeroMemory(dst + copied, chunkSize);
+            copied += chunkSize;
+            continue;
+        }
+
+        /* Also check end of chunk (may cross into invalid page) */
+        if (chunkSize > 1 && !MmIsAddressValid(src + copied + chunkSize - 1)) {
+            RtlZeroMemory(dst + copied, chunkSize);
+            copied += chunkSize;
+            continue;
+        }
+
+        __try {
+            RtlCopyMemory(dst + copied, src + copied, chunkSize);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {
+            /* Exception during copy — zero-fill this chunk */
+            RtlZeroMemory(dst + copied, chunkSize);
+        }
+
+        copied += chunkSize;
+    }
+
+    return copied;
+}
 
 NTSTATUS
 KfReadMemory(
@@ -39,7 +102,25 @@ KfReadMemory(
         return STATUS_INVALID_PARAMETER;
     }
 
-    /* Look up the target process */
+    output = Irp->AssociatedIrp.SystemBuffer;
+
+    /*
+     * For kernel-space addresses (PID 4): use safe direct read
+     * to avoid PAGE_FAULT_IN_NONPAGED_AREA bugcheck.
+     * MmCopyVirtualMemory can trigger unrecoverable page faults
+     * on paged-out or session-space kernel pages.
+     */
+    if (input->ProcessId == 4 && input->Address >= KERNEL_SPACE_START) {
+        bytesRead = KfSafeKernelRead(
+            (PVOID)input->Address,
+            output,
+            (SIZE_T)input->Size
+        );
+        Irp->IoStatus.Information = bytesRead;
+        return (bytesRead > 0) ? STATUS_SUCCESS : STATUS_PARTIAL_COPY;
+    }
+
+    /* User-space: use MmCopyVirtualMemory as before */
     status = PsLookupProcessByProcessId((HANDLE)(ULONG_PTR)input->ProcessId, &process);
     if (!NT_SUCCESS(status)) {
         DbgPrint("[KernelFlirt] PsLookupProcessByProcessId(%u) failed: 0x%08X\n",
@@ -47,9 +128,6 @@ KfReadMemory(
         Irp->IoStatus.Information = 0;
         return status;
     }
-
-    /* Read memory from target process into our output buffer */
-    output = Irp->AssociatedIrp.SystemBuffer;
 
     __try {
         status = MmCopyVirtualMemory(

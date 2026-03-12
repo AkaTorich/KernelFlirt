@@ -56,6 +56,7 @@ public partial class DisasmView : UserControl
     private static SolidColorBrush PunctuationColor => new(Color.FromRgb(0x80, 0x80, 0x80));// gray
     private static SolidColorBrush StringColor => new(Color.FromRgb(0xCE, 0x91, 0x78));     // orange strings
     private static SolidColorBrush CommentColor => new(Color.FromRgb(0x60, 0x8B, 0x4E));    // green comments
+    private static SolidColorBrush SymbolColor => new(Color.FromRgb(0x4E, 0xC9, 0xB0));         // teal/cyan symbols
     private static SolidColorBrush BpMarkerColor => (SolidColorBrush)Application.Current.Resources["BreakpointBrush"];
     private static SolidColorBrush CurrentLineColor => new(Color.FromRgb(0x26, 0x4F, 0x78));
     private static SolidColorBrush BpLineColor => new(Color.FromRgb(0x64, 0x1E, 0x1E));
@@ -109,9 +110,21 @@ public partial class DisasmView : UserControl
             textBlock.Inlines.Add(new Run("  ") { Foreground = PunctuationColor });
         }
 
-        // Address: 00007FF6`12340000
-        string addrStr = FormatAddress(instr.Address);
-        textBlock.Inlines.Add(new Run(addrStr + "  ") { Foreground = AddressColor });
+        // Address column: show symbol label if available, otherwise hex address
+        if (!string.IsNullOrEmpty(instr.AddressLabel))
+        {
+            // Clickable symbol name with context menu
+            var symInline = CreateSymbolInline(instr.AddressLabel, instr.Address);
+            textBlock.Inlines.Add(symInline);
+            // Pad to align with hex address width (17 chars + 2 spaces)
+            int pad = 19 - Math.Min(instr.AddressLabel.Length, 19);
+            if (pad > 0) textBlock.Inlines.Add(new Run(new string(' ', pad)));
+        }
+        else
+        {
+            string addrStr = FormatAddress(instr.Address);
+            textBlock.Inlines.Add(new Run(addrStr + "  ") { Foreground = AddressColor });
+        }
 
         // Bytes: 48 89 5C 24 08 (padded to 30 chars)
         string bytesStr = instr.BytesHex;
@@ -119,11 +132,11 @@ public partial class DisasmView : UserControl
         else if (bytesStr.Length > 30) bytesStr = bytesStr[..27] + "...";
         textBlock.Inlines.Add(new Run(bytesStr + " ") { Foreground = BytesColor });
 
-        // Mnemonic with per-token highlighting
-        AddHighlightedMnemonic(textBlock, instr.Mnemonic, instr.Operands);
+        // Mnemonic with per-token highlighting (branch targets show symbol names)
+        AddHighlightedMnemonic(textBlock, instr);
 
-        // Symbol comment (like x64dbg/OllyDbg style)
-        if (!string.IsNullOrEmpty(instr.Comment))
+        // Symbol comment (like x64dbg/OllyDbg style) — skip if already shown as branch target
+        if (!string.IsNullOrEmpty(instr.Comment) && string.IsNullOrEmpty(instr.BranchTargetSymbol))
         {
             textBlock.Inlines.Add(new Run($"  ; {instr.Comment}") { Foreground = CommentColor });
         }
@@ -155,17 +168,80 @@ public partial class DisasmView : UserControl
         return hex[..8] + "`" + hex[8..];
     }
 
-    private static void AddHighlightedMnemonic(TextBlock tb, string mnemonic, string operands)
+    /// <summary>
+    /// Creates a clickable symbol name inline with right-click context menu
+    /// (Go to, Set breakpoint, Copy symbol name).
+    /// Uses InlineUIContainer wrapping a TextBlock since WPF Run has no ContextMenu.
+    /// </summary>
+    private InlineUIContainer CreateSymbolInline(string symbolName, ulong address)
+    {
+        var symText = new TextBlock
+        {
+            Text = symbolName,
+            FontFamily = new FontFamily("Consolas"),
+            FontSize = 13,
+            Foreground = SymbolColor,
+            Cursor = Cursors.Hand,
+            TextDecorations = TextDecorations.Underline,
+            ToolTip = $"{symbolName}\n{address:X16}",
+        };
+
+        // Double-click navigates to symbol
+        symText.MouseLeftButtonDown += (s, e) =>
+        {
+            if (e.ClickCount == 2)
+            {
+                GetViewModel()?.NavigateDisasmTo(address);
+                e.Handled = true;
+            }
+        };
+
+        // Right-click context menu
+        symText.ContextMenu = new ContextMenu
+        {
+            Items =
+            {
+                CreateSymMenuItem($"Go to {symbolName}", () => GetViewModel()?.NavigateDisasmTo(address)),
+                CreateSymMenuItem($"Set breakpoint on {symbolName}", () => GetViewModel()?.SetBreakpointAtAddress(address)),
+                new Separator(),
+                CreateSymMenuItem("Copy symbol name", () => Clipboard.SetText(symbolName)),
+                CreateSymMenuItem("Copy address", () => Clipboard.SetText($"{address:X16}")),
+            }
+        };
+
+        return new InlineUIContainer(symText) { BaselineAlignment = BaselineAlignment.TextBottom };
+    }
+
+    private static MenuItem CreateSymMenuItem(string header, Action action)
+    {
+        var item = new MenuItem { Header = header };
+        item.Click += (_, _) => action();
+        return item;
+    }
+
+    /// <summary>
+    /// Add mnemonic + operands with syntax highlighting.
+    /// For branch instructions with resolved symbols, replaces hex operand with clickable symbol name.
+    /// </summary>
+    private void AddHighlightedMnemonic(TextBlock tb, Instruction instr)
     {
         // Mnemonic
-        Brush mnemonicBrush = JumpMnemonics.Contains(mnemonic) ? JumpColor : MnemonicColor;
-        tb.Inlines.Add(new Run(mnemonic.PadRight(8)) { Foreground = mnemonicBrush, FontWeight = FontWeights.SemiBold });
+        Brush mnemonicBrush = JumpMnemonics.Contains(instr.Mnemonic) ? JumpColor : MnemonicColor;
+        tb.Inlines.Add(new Run(instr.Mnemonic.PadRight(8)) { Foreground = mnemonicBrush, FontWeight = FontWeights.SemiBold });
 
-        if (string.IsNullOrEmpty(operands))
+        if (string.IsNullOrEmpty(instr.Operands))
             return;
 
-        // Tokenize and highlight operands
-        var tokens = TokenizeOperands(operands);
+        // For branch instructions with a resolved symbol, show the symbol name instead of hex address
+        if (!string.IsNullOrEmpty(instr.BranchTargetSymbol) && instr.BranchTargetAddress != 0)
+        {
+            var symInline = CreateSymbolInline(instr.BranchTargetSymbol, instr.BranchTargetAddress);
+            tb.Inlines.Add(symInline);
+            return;
+        }
+
+        // Normal operands: tokenize and highlight
+        var tokens = TokenizeOperands(instr.Operands);
         foreach (var (text, kind) in tokens)
         {
             Brush brush = kind switch

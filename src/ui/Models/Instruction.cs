@@ -13,6 +13,15 @@ public class Instruction
     /// <summary>Symbol comment shown to the right of operands (e.g. "ntdll!NtDeviceIoControlFile").</summary>
     public string? Comment { get; set; }
 
+    /// <summary>Symbol name for the address column (e.g. "nt!KiSystemCall64" at function entry).</summary>
+    public string? AddressLabel { get; set; }
+
+    /// <summary>Resolved target address for branch instructions (call/jmp/jcc).</summary>
+    public ulong BranchTargetAddress { get; set; }
+
+    /// <summary>Symbol name for the branch target (replaces hex address in operands display).</summary>
+    public string? BranchTargetSymbol { get; set; }
+
     public string AddressHex => $"{Address:X16}";
     public string BytesHex => BitConverter.ToString(Bytes).Replace("-", " ");
     public string FullText => string.IsNullOrEmpty(Operands) ? Mnemonic : $"{Mnemonic} {Operands}";

@@ -307,6 +307,12 @@ KernelFlirt/
 Только для образовательных целей и исследования безопасности. Используйте ответственно в авторизованных средах.
 
 
-com:pipe,port=\\.\pipe\com_1,resets=0,reconnect
+
+
+1. Запусти kd на хосте
+2. Потом загружай/перезагружай VM
+3. kd ловит initial break → g → VM грузится дальше
+
+D:\!GITLOCAL\PsyShoutToolsBundle\bin\Release;srv*C:\Symbols*https://msdl.microsoft.com/download/symbols
 
 srv*C:\Symbols*https://msdl.microsoft.com/download/symbols

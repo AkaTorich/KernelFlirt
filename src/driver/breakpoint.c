@@ -166,6 +166,60 @@ static NTSTATUS KfReadProcessByte(PEPROCESS process, ULONG64 address, PUCHAR out
 }
 
 /* ================================================================== */
+/* Kernel-space boundary                                               */
+/* ================================================================== */
+
+#define KERNEL_SPACE_START  0xFFFF800000000000ULL
+
+/* MDL-based write for kernel code pages (same mechanism as KdTrap patching) */
+static NTSTATUS KfWriteKernelByte(ULONG64 address, UCHAR byte)
+{
+    PMDL    mdl = NULL;
+    PVOID   mapped = NULL;
+    NTSTATUS status = STATUS_SUCCESS;
+
+    if (!MmIsAddressValid((PVOID)address))
+        return STATUS_ACCESS_VIOLATION;
+
+    __try {
+        mdl = IoAllocateMdl((PVOID)address, 1, FALSE, FALSE, NULL);
+        if (!mdl) return STATUS_INSUFFICIENT_RESOURCES;
+
+        MmProbeAndLockPages(mdl, KernelMode, IoReadAccess);
+
+        mapped = MmMapLockedPagesSpecifyCache(
+            mdl, KernelMode, MmNonCached, NULL, FALSE, NormalPagePriority);
+        if (!mapped) { status = STATUS_INSUFFICIENT_RESOURCES; __leave; }
+
+        status = MmProtectMdlSystemAddress(mdl, PAGE_READWRITE);
+        if (NT_SUCCESS(status))
+            *(UCHAR *)mapped = byte;
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        status = GetExceptionCode();
+    }
+
+    if (mapped) MmUnmapLockedPages(mapped, mdl);
+    if (mdl) {
+        __try { MmUnlockPages(mdl); } __except(EXCEPTION_EXECUTE_HANDLER) {}
+        IoFreeMdl(mdl);
+    }
+    return status;
+}
+
+static NTSTATUS KfReadKernelByte(ULONG64 address, PUCHAR outByte)
+{
+    if (!MmIsAddressValid((PVOID)address))
+        return STATUS_ACCESS_VIOLATION;
+    __try {
+        *outByte = *(volatile UCHAR *)address;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return GetExceptionCode();
+    }
+    return STATUS_SUCCESS;
+}
+
+/* ================================================================== */
 /* Software Breakpoint (INT3)                                          */
 /* ================================================================== */
 
@@ -178,6 +232,50 @@ static NTSTATUS KfSetSwBreakpoint(PKF_SET_BP_IN input, PULONG outHandle)
     UCHAR       int3 = 0xCC;
     UCHAR       origByte = 0;
 
+    /* Kernel-space breakpoint: use MDL-based write (no process attach) */
+    if (input->Address >= KERNEL_SPACE_START) {
+        status = KfReadKernelByte(input->Address, &origByte);
+        if (!NT_SUCCESS(status)) {
+            DbgPrint("[KernelFlirt] KernelBP: read failed at %p: 0x%08X\n",
+                     (PVOID)input->Address, status);
+            return status;
+        }
+
+        status = KfWriteKernelByte(input->Address, int3);
+        if (!NT_SUCCESS(status)) {
+            DbgPrint("[KernelFlirt] KernelBP: write INT3 failed at %p: 0x%08X\n",
+                     (PVOID)input->Address, status);
+            return status;
+        }
+
+        DbgPrint("[KernelFlirt] KernelBP: INT3 at %p (orig=0x%02X)\n",
+                 (PVOID)input->Address, origByte);
+
+        /* Record breakpoint */
+        KfBpInit();
+        KeAcquireSpinLock(&g_BpLock, &oldIrql);
+        slot = KfFindFreeSlot();
+        if (slot == (ULONG)-1) {
+            KeReleaseSpinLock(&g_BpLock, oldIrql);
+            /* Restore original byte on failure */
+            KfWriteKernelByte(input->Address, origByte);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        g_Breakpoints[slot].Active    = TRUE;
+        g_Breakpoints[slot].Handle    = g_NextHandle++;
+        g_Breakpoints[slot].ProcessId = 4; /* System PID for kernel BPs */
+        g_Breakpoints[slot].ThreadId  = 0;
+        g_Breakpoints[slot].Address   = input->Address;
+        g_Breakpoints[slot].Type      = KF_BP_SOFTWARE;
+        g_Breakpoints[slot].OrigByte  = origByte;
+
+        *outHandle = g_Breakpoints[slot].Handle;
+        KeReleaseSpinLock(&g_BpLock, oldIrql);
+        return STATUS_SUCCESS;
+    }
+
+    /* User-space breakpoint: original path */
     status = PsLookupProcessByProcessId((HANDLE)(ULONG_PTR)input->ProcessId, &process);
     if (!NT_SUCCESS(status))
         return status;
@@ -582,18 +680,25 @@ KfRemoveBreakpoint(
 
             if (g_Breakpoints[i].Type == KF_BP_SOFTWARE) {
                 /* Restore original byte */
-                PEPROCESS process = NULL;
-                NTSTATUS  lookupStatus;
-
                 KeReleaseSpinLock(&g_BpLock, oldIrql);
 
-                lookupStatus = PsLookupProcessByProcessId(
-                    (HANDLE)(ULONG_PTR)g_Breakpoints[i].ProcessId, &process);
+                if (g_Breakpoints[i].Address >= KERNEL_SPACE_START) {
+                    /* Kernel-space: MDL write */
+                    KfWriteKernelByte(g_Breakpoints[i].Address,
+                                      g_Breakpoints[i].OrigByte);
+                    DbgPrint("[KernelFlirt] KernelBP removed at %p\n",
+                             (PVOID)g_Breakpoints[i].Address);
+                } else {
+                    /* User-space: process-attached write */
+                    PEPROCESS process = NULL;
+                    NTSTATUS  lookupStatus = PsLookupProcessByProcessId(
+                        (HANDLE)(ULONG_PTR)g_Breakpoints[i].ProcessId, &process);
 
-                if (NT_SUCCESS(lookupStatus)) {
-                    KfWriteProcessMemory(process, g_Breakpoints[i].Address,
-                                         &g_Breakpoints[i].OrigByte, 1);
-                    ObDereferenceObject(process);
+                    if (NT_SUCCESS(lookupStatus)) {
+                        KfWriteProcessMemory(process, g_Breakpoints[i].Address,
+                                             &g_Breakpoints[i].OrigByte, 1);
+                        ObDereferenceObject(process);
+                    }
                 }
 
                 KeAcquireSpinLock(&g_BpLock, &oldIrql);
@@ -686,7 +791,8 @@ BOOLEAN KfFindSwBpOrigByte(ULONG64 address, ULONG pid, PUCHAR origByte)
         if (g_Breakpoints[i].Active &&
             g_Breakpoints[i].Type == KF_BP_SOFTWARE &&
             g_Breakpoints[i].Address == address &&
-            (g_Breakpoints[i].ProcessId == pid || g_Breakpoints[i].ProcessId == 0)) {
+            (g_Breakpoints[i].ProcessId == pid || g_Breakpoints[i].ProcessId == 0
+             || address >= KERNEL_SPACE_START)) {
             *origByte = g_Breakpoints[i].OrigByte;
             found = TRUE;
             break;
@@ -721,16 +827,20 @@ void KfRemoveAllBreakpoints(void)
         }
 
         if (g_Breakpoints[i].Type == KF_BP_SOFTWARE) {
-            PEPROCESS process = NULL;
-            ULONG     pid   = g_Breakpoints[i].ProcessId;
             ULONG64   addr  = g_Breakpoints[i].Address;
             UCHAR     orig  = g_Breakpoints[i].OrigByte;
 
             KeReleaseSpinLock(&g_BpLock, oldIrql);
 
-            if (NT_SUCCESS(PsLookupProcessByProcessId((HANDLE)(ULONG_PTR)pid, &process))) {
-                KfWriteProcessMemory(process, addr, &orig, 1);
-                ObDereferenceObject(process);
+            if (addr >= KERNEL_SPACE_START) {
+                KfWriteKernelByte(addr, orig);
+            } else {
+                PEPROCESS process = NULL;
+                ULONG     pid   = g_Breakpoints[i].ProcessId;
+                if (NT_SUCCESS(PsLookupProcessByProcessId((HANDLE)(ULONG_PTR)pid, &process))) {
+                    KfWriteProcessMemory(process, addr, &orig, 1);
+                    ObDereferenceObject(process);
+                }
             }
 
             KeAcquireSpinLock(&g_BpLock, &oldIrql);
