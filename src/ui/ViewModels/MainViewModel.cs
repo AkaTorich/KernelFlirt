@@ -1011,6 +1011,44 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var ok = await Task.Run(() => _driver.ContinueDebugEvent(mode));
         Log($"Run: ContinueDebugEvent returned {ok}");
         _hitSwBp = null;
+
+        // Deferred BP verification: check 0xCC is still present after process runs
+        _ = VerifyBreakpointsAfterDelay();
+    }
+
+    private async Task VerifyBreakpointsAfterDelay()
+    {
+        await Task.Delay(2000);
+        if (!IsRunning || !IsConnected || TargetPid == 0) return;
+        var pid = TargetPid;
+        var swBps = Breakpoints.Where(b => b.Type == BreakpointType.Software).ToList();
+        if (swBps.Count == 0) return;
+        Log($"[BP Verify] Checking {swBps.Count} SW breakpoints...");
+        foreach (var bp in swBps)
+        {
+            var data = await Task.Run(() => _driver.ReadMemory(pid, bp.Address, 16));
+            if (data != null && data.Length >= 1)
+            {
+                string hexDump = BitConverter.ToString(data.Take(8).ToArray()).Replace("-", " ");
+                Log($"[BP Verify] {bp.Address:X16}: first byte=0x{data[0]:X2} {(data[0] == 0xCC ? "OK" : "MISSING!")} [{hexDump}]");
+            }
+            else
+                Log($"[BP Verify] {bp.Address:X16}: read FAILED");
+        }
+
+        // Poll hook stats every 3s while running (up to 30s) to see
+        // if calls/bpHit changes after user triggers the function
+        for (int i = 0; i < 10; i++)
+        {
+            var stats = await Task.Run(() => _driver.GetHookStats());
+            if (stats.HasValue)
+            {
+                var s = stats.Value;
+                Log($"[Hook Stats #{i}] calls={s.hookCalls} target={s.targetCalls} bpHit={s.bpHits} bpSkip={s.bpNotFound} KdE={s.kdEnabled} lastAddr={s.lastTargetAddr:X} lastCode={s.lastTargetCode:X8}");
+            }
+            await Task.Delay(3000);
+            if (!IsRunning || !IsConnected) break;
+        }
     }
 
     [RelayCommand]
@@ -1161,6 +1199,16 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 };
                 Breakpoints.Add(bp);
                 Log($"Set {bp.TypeName} breakpoint at {address:X16}");
+
+                // Readback verification: check that 0xCC was actually written
+                if (type == BreakpointType.Software)
+                {
+                    var readback = await Task.Run(() => _driver.ReadMemory(TargetPid, address, 1));
+                    if (readback != null && readback.Length >= 1)
+                        Log($"BP readback at {address:X16}: 0x{readback[0]:X2} {(readback[0] == 0xCC ? "(OK)" : "(MISMATCH! expected 0xCC)")}");
+                    else
+                        Log($"BP readback at {address:X16}: FAILED to read");
+                }
             }
             else
             {

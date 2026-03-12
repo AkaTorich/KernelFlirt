@@ -52,6 +52,7 @@ public class DriverComm : IDisposable
     private static readonly uint IOCTL_KF_REMOVE_HOOK     = CTL_CODE(DeviceType, 0x841, 0, 0);
     private static readonly uint IOCTL_KF_WAIT_DEBUG_EVENT = CTL_CODE(DeviceType, 0x842, 0, 0);
     private static readonly uint IOCTL_KF_CONTINUE_DEBUG_EVENT = CTL_CODE(DeviceType, 0x843, 0, 0);
+    private static readonly uint IOCTL_KF_GET_HOOK_STATS = CTL_CODE(DeviceType, 0x844, 0, 0);
 
     // Relay pseudo-IOCTLs (handled by relay, not driver)
     private static readonly uint IOCTL_KF_LIST_DRIVES     = CTL_CODE(DeviceType, 0x900, 0, 0);
@@ -224,6 +225,23 @@ public class DriverComm : IDisposable
     {
         public uint Version;
         public uint Magic;
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    private struct KF_HOOK_STATS_OUT
+    {
+        public uint HookCallCount;
+        public uint BpHitCount;
+        public uint BpNotFoundCount;
+        public uint StepCount;
+        public byte KdDebuggerEnabled;
+        public byte KdDebuggerNotPresent;
+        public byte Reserved0;
+        public byte Reserved1;
+        public uint TargetCallCount;
+        public ulong LastTargetAddr;
+        public uint LastTargetCode;
+        public uint LastNonTargetPid;
     }
 
     #endregion
@@ -797,6 +815,16 @@ public class DriverComm : IDisposable
         // Must use CMD channel — DBG channel's _dbgRemoteLock is held by WaitDebugEvent
         var (ok, _) = SendIoctl(IOCTL_KF_CONTINUE_DEBUG_EVENT, input, 0);
         return ok;
+    }
+
+    public (uint hookCalls, uint bpHits, uint bpNotFound, uint steps, byte kdEnabled, byte kdNotPresent,
+            uint targetCalls, ulong lastTargetAddr, uint lastTargetCode, uint lastNonTargetPid)? GetHookStats()
+    {
+        var (ok, data) = SendIoctl(IOCTL_KF_GET_HOOK_STATS, null, Marshal.SizeOf<KF_HOOK_STATS_OUT>());
+        if (!ok || data == null) return null;
+        var s = BytesToStruct<KF_HOOK_STATS_OUT>(data);
+        return (s.HookCallCount, s.BpHitCount, s.BpNotFoundCount, s.StepCount, s.KdDebuggerEnabled, s.KdDebuggerNotPresent,
+                s.TargetCallCount, s.LastTargetAddr, s.LastTargetCode, s.LastNonTargetPid);
     }
 
     public List<ProcessInfo> EnumProcesses()

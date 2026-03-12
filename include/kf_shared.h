@@ -32,6 +32,7 @@
 #define IOCTL_KF_REMOVE_HOOK        CTL_CODE(KF_DEVICE_TYPE, 0x841, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_KF_WAIT_DEBUG_EVENT   CTL_CODE(KF_DEVICE_TYPE, 0x842, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_KF_CONTINUE_DEBUG_EVENT CTL_CODE(KF_DEVICE_TYPE, 0x843, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_KF_GET_HOOK_STATS     CTL_CODE(KF_DEVICE_TYPE, 0x844, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_KF_RESET              CTL_CODE(KF_DEVICE_TYPE, 0x8FE, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_KF_PING               CTL_CODE(KF_DEVICE_TYPE, 0x8FF, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
@@ -180,6 +181,21 @@ typedef struct _KF_DEBUG_EVENT {
     ULONG           PreviousMode;   /* 0=KernelMode, 1=UserMode */
     KF_REGISTERS    Registers;      /* Full register context */
 } KF_DEBUG_EVENT, *PKF_DEBUG_EVENT;
+
+/* IOCTL_KF_GET_HOOK_STATS output */
+typedef struct _KF_HOOK_STATS_OUT {
+    ULONG   HookCallCount;       /* Total times KfDebugHandler was called */
+    ULONG   BpHitCount;          /* BPs found in table and reported */
+    ULONG   BpNotFoundCount;     /* BPs not in table (skipped) */
+    ULONG   StepCount;           /* Single-step events reported */
+    UCHAR   KdDebuggerEnabled;   /* Current value */
+    UCHAR   KdDebuggerNotPresent;/* Current value */
+    UCHAR   Reserved[2];
+    ULONG   TargetCallCount;     /* Calls with isTarget=TRUE */
+    ULONG64 LastTargetAddr;      /* Last exception addr from target */
+    ULONG   LastTargetCode;      /* Last exception code from target */
+    ULONG   LastNonTargetPid;    /* Last non-target PID */
+} KF_HOOK_STATS_OUT, *PKF_HOOK_STATS_OUT;
 
 /* IOCTL_KF_PING output */
 typedef struct _KF_PING_OUT {
