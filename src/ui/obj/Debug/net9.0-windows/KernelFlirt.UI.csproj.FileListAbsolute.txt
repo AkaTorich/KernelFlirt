@@ -57,10 +57,5 @@ C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\obj\Debug\net9.0-windows\Cont
 C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\obj\Debug\net9.0-windows\Controls\DisasmView.g.cs
 C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\obj\Debug\net9.0-windows\Views\ProcessPickerDialog.baml
 C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\obj\Debug\net9.0-windows\Views\ProcessPickerDialog.g.cs
-C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\bin\Debug\net9.0-windows\dbgeng.dll
-C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\bin\Debug\net9.0-windows\dbgcore.dll
-C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\bin\Debug\net9.0-windows\dbghelp.dll
-C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\bin\Debug\net9.0-windows\symsrv.dll
-C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\bin\Debug\net9.0-windows\srcsrv.dll
-C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\bin\Debug\net9.0-windows\DbgModel.dll
-C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\obj\Debug\net9.0-windows\KernelFlirt_Content.g.cs
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\obj\Debug\net9.0-windows\Views\RemoteFileBrowserDialog.baml
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\obj\Debug\net9.0-windows\Views\RemoteFileBrowserDialog.g.cs

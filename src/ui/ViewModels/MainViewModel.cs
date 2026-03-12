@@ -51,6 +51,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public RangeObservableCollection<SehEntry> SehChain { get; } = [];
     public RangeObservableCollection<SearchResult> SearchResults { get; } = [];
     public RangeObservableCollection<ImportEntry> Imports { get; } = [];
+    public RangeObservableCollection<FunctionEntry> Functions { get; } = [];
+    public RangeObservableCollection<FunctionEntry> FilteredFunctions { get; } = [];
+    private List<FunctionEntry> _allFunctions = [];
+    [ObservableProperty] private string _functionFilter = "";
     [ObservableProperty] private byte[] _hexData = [];
 
     private static readonly string SettingsFile =
@@ -458,6 +462,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         RefreshImports();
         RefreshCallStack();
+        _ = RefreshFunctionsAsync();
 
         // We're stopped on a debug event — NOT via SuspendThread
         _isPausedViaSuspend = false;
@@ -680,6 +685,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         // Parse imports from main exe
         RefreshImports();
+        _ = RefreshFunctionsAsync();
 
         // Auto-set breakpoint at real entry point and run
         var autoRan = await TryAutoBreakAtEntryPoint(pid, modules);
@@ -2003,6 +2009,67 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var mods = await Task.Run(() => _driver.EnumModules(pid));
         Modules.ReplaceAll(mods);
         Log($"Found {mods.Count} modules");
+    }
+
+    [RelayCommand]
+    private async Task RefreshFunctionsAsync()
+    {
+        if (!_symbols.IsInitialized) return;
+
+        // Find module containing current RIP
+        var rip = DisasmAddress;
+        ulong targetBase = 0;
+        string targetName = "";
+
+        // Check user modules first
+        var userMod = Modules.FirstOrDefault(m =>
+            rip >= m.BaseAddress && rip < m.BaseAddress + m.Size);
+        if (userMod != null) { targetBase = userMod.BaseAddress; targetName = userMod.Name; }
+
+        // Fall back to kernel modules
+        if (targetBase == 0)
+        {
+            var kernMod = KernelModules.FirstOrDefault(m =>
+                rip >= m.BaseAddress && rip < m.BaseAddress + m.Size);
+            if (kernMod != null) { targetBase = kernMod.BaseAddress; targetName = kernMod.Name; }
+        }
+
+        // Fall back to main exe
+        if (targetBase == 0)
+        {
+            var exeMod = Modules.FirstOrDefault(m =>
+                m.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
+            if (exeMod != null) { targetBase = exeMod.BaseAddress; targetName = exeMod.Name; }
+        }
+
+        if (targetBase == 0) return;
+
+        Log($"Enumerating functions from {targetName}...");
+        var funcs = await Task.Run(() => _symbols.EnumFunctions(targetBase));
+        _allFunctions = funcs
+            .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(f => new FunctionEntry { Name = f.Name, Address = f.Address, Size = f.Size })
+            .ToList();
+        Log($"Found {_allFunctions.Count} functions in {targetName}");
+        ApplyFunctionFilter();
+    }
+
+    partial void OnFunctionFilterChanged(string value) => ApplyFunctionFilter();
+
+    private void ApplyFunctionFilter()
+    {
+        if (string.IsNullOrWhiteSpace(FunctionFilter))
+        {
+            FilteredFunctions.ReplaceAll(_allFunctions);
+        }
+        else
+        {
+            var filter = FunctionFilter;
+            var filtered = _allFunctions
+                .Where(f => f.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            FilteredFunctions.ReplaceAll(filtered);
+        }
     }
 
     public async void RefreshImports(ulong moduleBase = 0)

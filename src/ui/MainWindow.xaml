@@ -514,6 +514,46 @@
                 </DataGrid>
             </TabItem>
 
+            <!-- Tab: Functions -->
+            <TabItem Header="Functions">
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top" Margin="2">
+                        <TextBlock Text="Filter: " VerticalAlignment="Center" Foreground="{StaticResource CommentBrush}" />
+                        <TextBox x:Name="FunctionFilterBox" Text="{Binding FunctionFilter, UpdateSourceTrigger=PropertyChanged}"
+                                 Background="{StaticResource BgLightBrush}" Foreground="{StaticResource FgBrush}"
+                                 BorderBrush="{StaticResource BorderBrush}" Padding="3,1" />
+                    </DockPanel>
+                    <DataGrid x:Name="FunctionsGrid" ItemsSource="{Binding FilteredFunctions}" IsReadOnly="True"
+                              AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
+                              MouseDoubleClick="OnFunctionDoubleClick">
+                        <DataGrid.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Follow in Disassembler" Click="OnFunctionFollowDisasm" />
+                                <MenuItem Header="Set Breakpoint" Click="OnFunctionSetBp" />
+                                <MenuItem Header="Copy Address" Click="OnFunctionCopy" />
+                            </ContextMenu>
+                        </DataGrid.ContextMenu>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Function" Width="350" Binding="{Binding Name}" />
+                            <DataGridTextColumn Header="Address" Width="160" Binding="{Binding AddressHex}">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Size" Width="*" Binding="{Binding SizeHex}">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource HexBrush}" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
             <!-- Tab: Log -->
             <TabItem Header="Log">
                 <ListBox x:Name="LogList" ItemsSource="{Binding LogMessages}"

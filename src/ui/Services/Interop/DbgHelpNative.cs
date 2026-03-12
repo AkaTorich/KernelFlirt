@@ -142,6 +142,26 @@ internal static class DbgHelpNative
         [MarshalAs(UnmanagedType.LPWStr)] string Name,
         IntPtr Symbol); // SYMBOL_INFOW*
 
+    // SymEnumSymbolsW — enumerate symbols in a module
+    // Tag values from SYMBOL_INFO.Tag (SymTagEnum from cvconst.h)
+    public const uint SymTagFunction = 5;
+    public const uint SYMOPT_INCLUDE_32BIT_MODULES = 0x00002000;
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Unicode)]
+    public delegate bool SymEnumSymbolsCallbackW(
+        IntPtr pSymInfo,   // SYMBOL_INFOW*
+        uint SymbolSize,
+        IntPtr UserContext);
+
+    [DllImport(Dll, SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SymEnumSymbolsW(
+        IntPtr hProcess,
+        ulong BaseOfDll,
+        [MarshalAs(UnmanagedType.LPWStr)] string? Mask,
+        SymEnumSymbolsCallbackW EnumSymbolsCallback,
+        IntPtr UserContext);
+
     // SymFindFileInPathW — searches symbol path (including symbol servers) for a PDB
     public const uint SSRVOPT_GUIDPTR = 0x0008;
 
