@@ -136,12 +136,13 @@ static NTSTATUS KfWriteByteInContext(ULONG64 address, UCHAR byte)
     PMDL    mdl = NULL;
     PVOID   mapped = NULL;
     NTSTATUS status = STATUS_SUCCESS;
+    KPROCESSOR_MODE lockMode = (address >= 0xFFFF800000000000ULL) ? KernelMode : UserMode;
 
     mdl = IoAllocateMdl((PVOID)(ULONG_PTR)address, 1, FALSE, FALSE, NULL);
     if (!mdl) return STATUS_INSUFFICIENT_RESOURCES;
 
     __try {
-        MmProbeAndLockPages(mdl, UserMode, IoReadAccess);
+        MmProbeAndLockPages(mdl, lockMode, IoReadAccess);
 
         mapped = MmMapLockedPagesSpecifyCache(
             mdl, KernelMode, MmNonCached, NULL, FALSE, NormalPagePriority);
@@ -664,7 +665,10 @@ static BOOLEAN KfDebugHandler(
 {
     ULONG currentPid = (ULONG)(ULONG_PTR)PsGetCurrentProcessId();
     ULONG currentTid = (ULONG)(ULONG_PTR)PsGetCurrentThreadId();
-    BOOLEAN isTarget = (g_TargetPid == 0 || currentPid == g_TargetPid);
+    ULONG64 excAddr = (ULONG64)ExceptionRecord->ExceptionAddress;
+    /* Treat as target: matching PID, any PID if g_TargetPid==0, or kernel-space address */
+    BOOLEAN isTarget = (g_TargetPid == 0 || currentPid == g_TargetPid
+                        || excAddr >= 0xFFFF800000000000ULL);
 
     UNREFERENCED_PARAMETER(TrapFrame);
     UNREFERENCED_PARAMETER(ExceptionFrame);

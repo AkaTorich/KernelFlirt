@@ -127,6 +127,66 @@ public partial class MainWindow : Window
     }
 
     /* ================================================================== */
+    /*  Kernel module context menu                                         */
+    /* ================================================================== */
+
+    private void OnKernelModuleDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is DataGrid grid && grid.SelectedItem is KernelModuleInfo mod)
+            NavigateToKernelModule(mod);
+    }
+
+    private void OnKernelModuleGoToEntry(object sender, RoutedEventArgs e)
+    {
+        if (KernelModulesGrid.SelectedItem is KernelModuleInfo mod)
+            NavigateToKernelModule(mod);
+    }
+
+    private void OnKernelModuleGoToBase(object sender, RoutedEventArgs e)
+    {
+        if (KernelModulesGrid.SelectedItem is KernelModuleInfo mod)
+        {
+            VM.DisasmAddress = mod.BaseAddress;
+            VM.TargetPid = 4; // kernel PID for memory reads
+            VM.RefreshDisassembly();
+            RefreshDisasmView();
+        }
+    }
+
+    private void OnKernelModuleFollowInDump(object sender, RoutedEventArgs e)
+    {
+        if (KernelModulesGrid.SelectedItem is KernelModuleInfo mod)
+        {
+            VM.HexAddress = mod.BaseAddress;
+            VM.TargetPid = 4;
+            VM.RefreshHexDump();
+        }
+    }
+
+    private void OnKernelModuleCopyBase(object sender, RoutedEventArgs e)
+    {
+        if (KernelModulesGrid.SelectedItem is KernelModuleInfo mod)
+            Clipboard.SetText($"{mod.BaseAddress:X16}");
+    }
+
+    private void OnKernelModuleCopyName(object sender, RoutedEventArgs e)
+    {
+        if (KernelModulesGrid.SelectedItem is KernelModuleInfo mod)
+            Clipboard.SetText(mod.Name);
+    }
+
+    private void NavigateToKernelModule(KernelModuleInfo mod)
+    {
+        // Read PE entry point from kernel memory (PID 4)
+        var ep = VM.ResolveKernelEntryPoint(mod.BaseAddress);
+        VM.DisasmAddress = ep;
+        VM.TargetPid = 4;
+        VM.RefreshDisassembly();
+        RefreshDisasmView();
+        VM.Log($"Kernel module: {mod.Name} entry at {ep:X16}");
+    }
+
+    /* ================================================================== */
     /*  Thread context menu                                                */
     /* ================================================================== */
 

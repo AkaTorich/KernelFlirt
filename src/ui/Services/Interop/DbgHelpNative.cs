@@ -135,6 +135,13 @@ internal static class DbgHelpNative
         Marshal.FreeHGlobal(ptr);
     }
 
+    [DllImport(Dll, SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SymFromNameW(
+        IntPtr hProcess,
+        [MarshalAs(UnmanagedType.LPWStr)] string Name,
+        IntPtr Symbol); // SYMBOL_INFOW*
+
     // SymFindFileInPathW — searches symbol path (including symbol servers) for a PDB
     public const uint SSRVOPT_GUIDPTR = 0x0008;
 
