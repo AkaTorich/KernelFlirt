@@ -491,6 +491,37 @@ public partial class MainWindow : Window
     }
 
     /* ================================================================== */
+    /*  Functions tab                                                       */
+    /* ================================================================== */
+
+    private void OnFunctionDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (FunctionsGrid.SelectedItem is FunctionEntry fn)
+            VM.FollowInDisasmCommand.Execute(fn.Address);
+    }
+
+    private void OnFunctionFollowDisasm(object sender, RoutedEventArgs e)
+    {
+        if (FunctionsGrid.SelectedItem is FunctionEntry fn)
+            VM.FollowInDisasmCommand.Execute(fn.Address);
+    }
+
+    private void OnFunctionSetBp(object sender, RoutedEventArgs e)
+    {
+        if (FunctionsGrid.SelectedItem is FunctionEntry fn)
+        {
+            VM.SelectedDisasmAddress = fn.Address;
+            VM.ToggleBreakpointCommand.Execute(null);
+        }
+    }
+
+    private void OnFunctionCopy(object sender, RoutedEventArgs e)
+    {
+        if (FunctionsGrid.SelectedItem is FunctionEntry fn)
+            Clipboard.SetText($"{fn.Name} {fn.AddressHex}");
+    }
+
+    /* ================================================================== */
     /*  Log context menu                                                   */
     /* ================================================================== */
 

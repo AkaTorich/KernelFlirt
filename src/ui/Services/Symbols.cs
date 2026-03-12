@@ -438,6 +438,38 @@ public class SymbolService : IDisposable
         return NoPdbModules.Contains(name);
     }
 
+    /// <summary>
+    /// Enumerate all function symbols from loaded modules.
+    /// Returns (name, address, size) tuples.
+    /// </summary>
+    public List<(string Name, ulong Address, uint Size)> EnumFunctions(ulong moduleBase = 0)
+    {
+        var results = new List<(string, ulong, uint)>();
+        lock (_lock)
+        {
+            if (!_initialized) return results;
+
+            var bases = moduleBase != 0
+                ? new List<ulong> { moduleBase }
+                : _loadedModules.ToList();
+
+            foreach (var baseDll in bases)
+            {
+                DbgHelpNative.SymEnumSymbolsCallbackW callback = (pSymInfo, symbolSize, ctx) =>
+                {
+                    var (name, addr, sz) = DbgHelpNative.ReadSymbolInfo(pSymInfo);
+                    uint tag = (uint)Marshal.ReadInt32(pSymInfo, 72); // Tag at offset 72
+                    if (tag == DbgHelpNative.SymTagFunction && addr != 0 && !string.IsNullOrEmpty(name))
+                        results.Add((name, addr, sz));
+                    return true; // continue enumeration
+                };
+
+                DbgHelpNative.SymEnumSymbolsW(_hProcess, baseDll, "*", callback, IntPtr.Zero);
+            }
+        }
+        return results;
+    }
+
     public void ClearCache() => _symbolCache.Clear();
 
     public void Reset()

@@ -694,13 +694,18 @@ static BOOLEAN KfDebugHandler(
 
         /* --- Target process: re-arm after step-past --- */
         if (isTarget && g_StepPastPending && currentTid != 0) {
-            NTSTATUS st;
+            UCHAR dummyOrig;
             g_StepPastPending = FALSE;
 
-            /* Re-arm the INT3 */
-            st = KfWriteByteInContext(g_StepPastAddr, 0xCC);
-            DbgPrint("[KernelFlirt] Re-armed 0xCC at %p (status=0x%08X)\n",
-                     (PVOID)g_StepPastAddr, st);
+            /* Only re-arm if BP still exists in table (user may have removed it) */
+            if (KfFindSwBpOrigByte(g_StepPastAddr, currentPid, &dummyOrig)) {
+                NTSTATUS st = KfWriteByteInContext(g_StepPastAddr, 0xCC);
+                DbgPrint("[KernelFlirt] Re-armed 0xCC at %p (status=0x%08X)\n",
+                         (PVOID)g_StepPastAddr, st);
+            } else {
+                DbgPrint("[KernelFlirt] BP at %p was removed, skipping re-arm\n",
+                         (PVOID)g_StepPastAddr);
+            }
 
             /* Clear TF so thread doesn't keep stepping */
             ContextRecord->EFlags &= ~0x100UL;
@@ -715,7 +720,10 @@ static BOOLEAN KfDebugHandler(
                      (PVOID)ContextRecord->Rip);
             KfReportAndBlock(ExceptionRecord, ContextRecord, PreviousMode);
 
-            /* After UI continues from step display, just resume */
+            /* After UI continues: check if another step was requested */
+            if (g_ContinueMode == KF_CONTINUE_STEP_INTO) {
+                ContextRecord->EFlags |= 0x100UL; /* Set TF */
+            }
             return TRUE;
         }
 
@@ -783,23 +791,31 @@ static BOOLEAN KfDebugHandler(
              * Back from UI continue. Check continue mode:
              *   STEP_PAST / STEP_INTO: restore byte, set TF, prepare re-arm
              *   RUN: just resume (for non-SW-BP events)
+             *
+             * Note: BP may have been removed by UI while we were blocked.
+             * Check if it still exists before doing step-past.
              */
             if (g_ContinueMode == KF_CONTINUE_STEP_PAST ||
                 g_ContinueMode == KF_CONTINUE_STEP_INTO) {
-                NTSTATUS st;
+                UCHAR currentOrig;
+                BOOLEAN bpStillExists = KfFindSwBpOrigByte(bpAddr, currentPid, &currentOrig);
 
-                /* Restore original byte */
-                st = KfWriteByteInContext(bpAddr, origByte);
-                DbgPrint("[KernelFlirt] Restored 0x%02X at %p (status=0x%08X)\n",
-                         origByte, (PVOID)bpAddr, st);
+                if (bpStillExists) {
+                    NTSTATUS st;
 
-                /* Set TF for single step */
+                    /* Restore original byte so CPU can execute it */
+                    st = KfWriteByteInContext(bpAddr, currentOrig);
+                    DbgPrint("[KernelFlirt] Restored 0x%02X at %p (status=0x%08X)\n",
+                             currentOrig, (PVOID)bpAddr, st);
+
+                    /* Prepare for re-arm on next SingleStep */
+                    g_StepPastPending = TRUE;
+                    g_StepPastAddr    = bpAddr;
+                    g_StepPastAutoRun = (g_ContinueMode == KF_CONTINUE_STEP_PAST);
+                }
+
+                /* Always set TF for single step (even if BP was removed) */
                 ContextRecord->EFlags |= 0x100UL;
-
-                /* Prepare for re-arm on next SingleStep */
-                g_StepPastPending = TRUE;
-                g_StepPastAddr    = bpAddr;
-                g_StepPastAutoRun = (g_ContinueMode == KF_CONTINUE_STEP_PAST);
             }
 
             return TRUE;
@@ -851,6 +867,11 @@ report_to_ui:
              currentPid, currentTid);
 
     KfReportAndBlock(ExceptionRecord, ContextRecord, PreviousMode);
+
+    /* After UI continues: set TF if step was requested */
+    if (g_ContinueMode == KF_CONTINUE_STEP_INTO) {
+        ContextRecord->EFlags |= 0x100UL;
+    }
     return TRUE;
 }
 
