@@ -436,6 +436,7 @@ public class DriverComm : IDisposable
                     var header = new byte[12];
                     ReadExact(stream, header, 12);
                     uint success = BitConverter.ToUInt32(header, 0);
+                    uint win32err = BitConverter.ToUInt32(header, 4);
                     uint outputSize = BitConverter.ToUInt32(header, 8);
                     byte[]? output = null;
                     if (outputSize > 0)
@@ -443,9 +444,15 @@ public class DriverComm : IDisposable
                         output = new byte[outputSize];
                         ReadExact(stream, output, (int)outputSize);
                     }
+                    if (success == 0)
+                        System.Diagnostics.Debug.WriteLine($"[DriverComm] DBG IOCTL 0x{ioctlCode:X8} failed: win32err={win32err} outSize={outputSize}");
                     return (success != 0, output);
                 }
-                catch { return (false, null); }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DriverComm] DBG IOCTL exception: {ex.Message}");
+                    return (false, null);
+                }
             }
         }
         else
@@ -763,7 +770,9 @@ public class DriverComm : IDisposable
     public DebugEvent? WaitDebugEvent()
     {
         // Use dedicated debug channel to avoid blocking normal IOCTLs
+        System.Diagnostics.Debug.WriteLine("[DriverComm] WaitDebugEvent: sending IOCTL...");
         var (ok, data) = SendIoctlDbg(IOCTL_KF_WAIT_DEBUG_EVENT, null, Marshal.SizeOf<KF_DEBUG_EVENT>());
+        System.Diagnostics.Debug.WriteLine($"[DriverComm] WaitDebugEvent: ok={ok} data={(data != null ? $"{data.Length}b" : "null")}");
         if (!ok || data == null) return null;
 
         var ev = BytesToStruct<KF_DEBUG_EVENT>(data);
