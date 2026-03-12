@@ -853,13 +853,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
         IsRunning = true;
         StatusText = "Stepping...";
 
+        // Start listener before continuing
+        StartDebugListener();
+
         // Driver handles step-past internally for SW BPs:
         //   STEP_INTO on a BP → restore byte, step, re-arm, report SingleStep
         //   STEP_INTO on non-BP → just single step
-        await Task.Run(() => _driver.ContinueDebugEvent(
-            _hitSwBp != null ? DriverComm.CONTINUE_STEP_INTO : DriverComm.CONTINUE_STEP_INTO));
+        await Task.Run(() => _driver.ContinueDebugEvent(DriverComm.CONTINUE_STEP_INTO));
         _hitSwBp = null;
-        StartDebugListener();
     }
 
     /* ================================================================== */
@@ -884,17 +885,18 @@ public partial class MainViewModel : ObservableObject, IDisposable
             var tmpHandle = await Task.Run(() => _driver.SetBreakpoint(TargetPid, 0, nextAddr, BreakpointType.Software));
             if (tmpHandle.HasValue)
                 _tempBpHandle = tmpHandle.Value;
-            // Driver handles step-past for SW BP internally with STEP_PAST
+            // Start listener before continuing
+            StartDebugListener();
             await Task.Run(() => _driver.ContinueDebugEvent(
                 _hitSwBp != null ? DriverComm.CONTINUE_STEP_PAST : DriverComm.CONTINUE_RUN));
         }
         else
         {
-            // Driver handles step-past for SW BP internally with STEP_INTO
+            // Start listener before continuing
+            StartDebugListener();
             await Task.Run(() => _driver.ContinueDebugEvent(DriverComm.CONTINUE_STEP_INTO));
         }
         _hitSwBp = null;
-        StartDebugListener();
     }
 
     /* ================================================================== */
@@ -922,10 +924,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         IsBreakState = false;
         IsRunning = true;
         StatusText = "Stepping out...";
+        StartDebugListener();
         await Task.Run(() => _driver.ContinueDebugEvent(
             _hitSwBp != null ? DriverComm.CONTINUE_STEP_PAST : DriverComm.CONTINUE_RUN));
         _hitSwBp = null;
-        StartDebugListener();
     }
 
     /* ================================================================== */
@@ -948,13 +950,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
             _tempBpHandle = handle.Value;
             Log($"Run to cursor: temp BP at {addr:X16}");
 
-            await Task.Run(() => _driver.ContinueDebugEvent(
-                _hitSwBp != null ? DriverComm.CONTINUE_STEP_PAST : DriverComm.CONTINUE_RUN));
-            _hitSwBp = null;
             IsBreakState = false;
             IsRunning = true;
             StatusText = $"Running to {addr:X16}...";
             StartDebugListener();
+            await Task.Run(() => _driver.ContinueDebugEvent(
+                _hitSwBp != null ? DriverComm.CONTINUE_STEP_PAST : DriverComm.CONTINUE_RUN));
+            _hitSwBp = null;
         }
         else
         {
@@ -991,16 +993,18 @@ public partial class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
-        // Driver handles step-past internally: STEP_PAST = step + auto-continue
-        await Task.Run(() => _driver.ContinueDebugEvent(
-            _hitSwBp != null ? DriverComm.CONTINUE_STEP_PAST : DriverComm.CONTINUE_RUN));
-        _hitSwBp = null;
-
+        // Start listener BEFORE continuing so WaitDebugEvent IRP is pending
+        // when the thread resumes and hits the next breakpoint
         IsBreakState = false;
         IsRunning = true;
         StatusText = "Running...";
-        Log("Run: target resumed");
         StartDebugListener();
+
+        var mode = _hitSwBp != null ? DriverComm.CONTINUE_STEP_PAST : DriverComm.CONTINUE_RUN;
+        Log($"Run: sending ContinueDebugEvent(mode={mode})");
+        var ok = await Task.Run(() => _driver.ContinueDebugEvent(mode));
+        Log($"Run: ContinueDebugEvent returned {ok}");
+        _hitSwBp = null;
     }
 
     [RelayCommand]
@@ -1614,6 +1618,18 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var moduleList = Modules.ToList();
         var pid = TargetPid;
 
+        // Build IAT lookup: IatAddress → "module!Function"
+        Dictionary<ulong, (string sym, ulong resolved)>? iatLookup = null;
+        if (Imports.Count > 0)
+        {
+            iatLookup = new Dictionary<ulong, (string, ulong)>();
+            foreach (var imp in Imports)
+            {
+                var name = !string.IsNullOrEmpty(imp.Function) ? imp.Function : $"#{imp.Ordinal}";
+                iatLookup[imp.IatAddress] = ($"{imp.Module}!{name}", imp.ResolvedAddress);
+            }
+        }
+
         foreach (var instr in instrs)
         {
             // Resolve the instruction's own address to show function name
@@ -1638,8 +1654,56 @@ public partial class MainViewModel : ObservableObject, IDisposable
                         instr.Comment = sym;
                     }
                 }
+                // Resolve indirect RIP-relative calls/jmps: call [rip + 0x...]
+                else if (iatLookup != null && TryParseRipRelative(instr, out ulong iatAddr))
+                {
+                    if (iatLookup.TryGetValue(iatAddr, out var imp))
+                    {
+                        instr.BranchTargetAddress = imp.resolved;
+                        instr.BranchTargetSymbol = imp.sym;
+                        instr.Comment = imp.sym;
+                    }
+                }
             }
         }
+    }
+
+    /// <summary>
+    /// Parse "qword ptr [rip + 0xNNNN]" / "[rip - 0xNNNN]" and compute effective address.
+    /// Effective address = instruction address + instruction size + signed offset.
+    /// </summary>
+    private static bool TryParseRipRelative(Instruction instr, out ulong effectiveAddr)
+    {
+        effectiveAddr = 0;
+        var ops = instr.Operands;
+        // Find [rip + 0x...] or [rip - 0x...]
+        int ripIdx = ops.IndexOf("rip", StringComparison.OrdinalIgnoreCase);
+        if (ripIdx < 0) return false;
+
+        int bracketStart = ops.LastIndexOf('[', ripIdx);
+        int bracketEnd = ops.IndexOf(']', ripIdx);
+        if (bracketStart < 0 || bracketEnd < 0) return false;
+
+        var inner = ops[(ripIdx + 3)..bracketEnd].Trim();
+        if (inner.Length < 2) return false;
+
+        char sign = inner[0];
+        if (sign != '+' && sign != '-') return false;
+
+        var hexStr = inner[1..].Trim().TrimStart('0');
+        if (hexStr.StartsWith("x", StringComparison.OrdinalIgnoreCase))
+            hexStr = hexStr[1..];
+        if (hexStr.Length == 0) hexStr = "0";
+
+        if (!ulong.TryParse(hexStr, System.Globalization.NumberStyles.HexNumber, null, out ulong offset))
+            return false;
+
+        if (sign == '+')
+            effectiveAddr = instr.Address + (ulong)instr.Size + offset;
+        else
+            effectiveAddr = instr.Address + (ulong)instr.Size - offset;
+
+        return true;
     }
 
     private static bool IsBranchMnemonic(string mnemonic) => mnemonic switch
@@ -1800,15 +1864,28 @@ public partial class MainViewModel : ObservableObject, IDisposable
         StopDebugListener();
         _listenerCts = new CancellationTokenSource();
         var ct = _listenerCts.Token;
+        Log("DebugListener: starting WaitDebugEvent...");
 
         _listenerTask = Task.Run(() =>
         {
+            int nullCount = 0;
             while (!ct.IsCancellationRequested)
             {
                 var evt = _driver.WaitDebugEvent();
-                if (evt == null) continue;
+                if (evt == null)
+                {
+                    nullCount++;
+                    if (nullCount <= 3)
+                        Application.Current?.Dispatcher.InvokeAsync(() =>
+                            Log($"DebugListener: WaitDebugEvent returned null (#{nullCount})"));
+                    continue;
+                }
 
-                Application.Current?.Dispatcher.InvokeAsync(() => OnDebugEvent(evt));
+                Application.Current?.Dispatcher.InvokeAsync(() =>
+                {
+                    Log($"DebugListener: got event Type={evt.Type} Addr={evt.Address:X16} PID={evt.ProcessId} TID={evt.ThreadId}");
+                    OnDebugEvent(evt);
+                });
                 return; // One event at a time — UI decides what to do next
             }
         }, ct);
