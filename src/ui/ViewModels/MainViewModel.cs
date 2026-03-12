@@ -191,15 +191,24 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             Log($"Symbol engine OK, path: {_symbols.SymbolPath}");
             Log($"Loading symbols for {mods.Count} kernel modules...");
+            StatusText = $"Loading symbols (0%)...";
             int loaded = 0;
+            int total = mods.Count;
+            int done = 0;
             await Task.Run(() =>
             {
                 foreach (var m in mods)
                 {
                     if (_symbols.LoadModule(0, m.Name, m.BaseAddress, m.Size))
                         loaded++;
+                    int d = Interlocked.Increment(ref done);
+                    int pct = total > 0 ? d * 100 / total : 0;
+                    Application.Current?.Dispatcher.InvokeAsync(
+                        () => StatusText = $"Loading symbols ({pct}%)...");
                 }
             });
+            // Flush dispatcher queue so "100%" doesn't overwrite next StatusText
+            await Application.Current.Dispatcher.InvokeAsync(() => { });
             Log($"Symbols: {loaded}/{mods.Count} kernel modules loaded");
 
             // Test resolve on first kernel module base
@@ -214,6 +223,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             Log($"Symbol engine FAILED: {symErr}");
         }
+
+        Log("Debugger ready");
+        StatusText = "Debugger ready";
     }
 
     /* ================================================================== */
@@ -357,10 +369,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         Log($"Hit entry point at {evt.Address:X16} (PID={evt.ProcessId} TID={evt.ThreadId})");
         SelectedThreadId = evt.ThreadId;
-
-        // After INT3, RIP = BP_address + 1.  Roll it back so the original
-        // first instruction will execute correctly when the user presses Run.
-        await Task.Run(() => _driver.WriteRip(pid, evt.ThreadId, entryPoint));
+        // Driver already adjusted RIP back to BP address in its INT3 handler.
 
         // 8. Now the process is stopped at entry point with loader done.
         //    Enumerate modules, read registers, etc. — same as DoAttachAsync but
@@ -375,12 +384,21 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         // Load symbols
         Log($"Loading symbols for {modules.Count} user modules...");
+        StatusText = $"Loading symbols (0%)...";
         int symLoaded = 0;
+        int symDone = 0;
+        int symTotal = modules.Count;
         await Task.Run(() =>
         {
             foreach (var m in modules)
+            {
                 if (_symbols.LoadModule(pid, m.Name, m.BaseAddress, m.Size))
                     symLoaded++;
+                int d = Interlocked.Increment(ref symDone);
+                int pct = symTotal > 0 ? d * 100 / symTotal : 0;
+                Application.Current?.Dispatcher.InvokeAsync(
+                    () => StatusText = $"Loading symbols ({pct}%)...");
+            }
         });
         Log($"Symbols: {symLoaded}/{modules.Count} user modules loaded");
 
@@ -513,12 +531,21 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         // Load module symbols
         Log($"Loading symbols for {modules.Count} user modules...");
+        StatusText = $"Loading symbols (0%)...";
         int symLoaded = 0;
+        int symDone = 0;
+        int symTotal = modules.Count;
         await Task.Run(() =>
         {
             foreach (var m in modules)
+            {
                 if (_symbols.LoadModule(pid, m.Name, m.BaseAddress, m.Size))
                     symLoaded++;
+                int d = Interlocked.Increment(ref symDone);
+                int pct = symTotal > 0 ? d * 100 / symTotal : 0;
+                Application.Current?.Dispatcher.InvokeAsync(
+                    () => StatusText = $"Loading symbols ({pct}%)...");
+            }
         });
         Log($"Symbols: {symLoaded}/{modules.Count} user modules loaded");
 
@@ -826,14 +853,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
         IsRunning = true;
         StatusText = "Stepping...";
 
-        // If we hit a SW BP, step past it first, then single-step
-        if (_hitSwBp != null)
-        {
-            await StepPastBreakpoint(_hitSwBp);
-            _hitSwBp = null;
-        }
-
-        await Task.Run(() => _driver.ContinueDebugEvent(DriverComm.CONTINUE_STEP_INTO));
+        // Driver handles step-past internally for SW BPs:
+        //   STEP_INTO on a BP → restore byte, step, re-arm, report SingleStep
+        //   STEP_INTO on non-BP → just single step
+        await Task.Run(() => _driver.ContinueDebugEvent(
+            _hitSwBp != null ? DriverComm.CONTINUE_STEP_INTO : DriverComm.CONTINUE_STEP_INTO));
+        _hitSwBp = null;
         StartDebugListener();
     }
 
@@ -851,13 +876,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         IsRunning = true;
         StatusText = "Stepping over...";
 
-        if (_hitSwBp != null)
-        {
-            await StepPastBreakpoint(_hitSwBp);
-            _hitSwBp = null;
-        }
-
-        // Check if current instruction is a CALL — if so, set temp BP after it
+        // Check if current instruction is a CALL — if so, set temp BP after it and run
         var instr = GetInstructionAtRip();
         if (instr != null && IsCallInstruction(instr.Mnemonic))
         {
@@ -865,12 +884,16 @@ public partial class MainViewModel : ObservableObject, IDisposable
             var tmpHandle = await Task.Run(() => _driver.SetBreakpoint(TargetPid, 0, nextAddr, BreakpointType.Software));
             if (tmpHandle.HasValue)
                 _tempBpHandle = tmpHandle.Value;
-            await Task.Run(() => _driver.ContinueDebugEvent(DriverComm.CONTINUE_RUN));
+            // Driver handles step-past for SW BP internally with STEP_PAST
+            await Task.Run(() => _driver.ContinueDebugEvent(
+                _hitSwBp != null ? DriverComm.CONTINUE_STEP_PAST : DriverComm.CONTINUE_RUN));
         }
         else
         {
+            // Driver handles step-past for SW BP internally with STEP_INTO
             await Task.Run(() => _driver.ContinueDebugEvent(DriverComm.CONTINUE_STEP_INTO));
         }
+        _hitSwBp = null;
         StartDebugListener();
     }
 
@@ -896,16 +919,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (tmpHandle.HasValue)
             _tempBpHandle = tmpHandle.Value;
 
-        if (_hitSwBp != null)
-        {
-            await StepPastBreakpoint(_hitSwBp);
-            _hitSwBp = null;
-        }
-
         IsBreakState = false;
         IsRunning = true;
         StatusText = "Stepping out...";
-        await Task.Run(() => _driver.ContinueDebugEvent(DriverComm.CONTINUE_RUN));
+        await Task.Run(() => _driver.ContinueDebugEvent(
+            _hitSwBp != null ? DriverComm.CONTINUE_STEP_PAST : DriverComm.CONTINUE_RUN));
+        _hitSwBp = null;
         StartDebugListener();
     }
 
@@ -929,13 +948,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
             _tempBpHandle = handle.Value;
             Log($"Run to cursor: temp BP at {addr:X16}");
 
-            if (_hitSwBp != null)
-            {
-                await StepPastBreakpoint(_hitSwBp);
-                _hitSwBp = null;
-            }
-
-            await Task.Run(() => _driver.ContinueDebugEvent(DriverComm.CONTINUE_RUN));
+            await Task.Run(() => _driver.ContinueDebugEvent(
+                _hitSwBp != null ? DriverComm.CONTINUE_STEP_PAST : DriverComm.CONTINUE_RUN));
+            _hitSwBp = null;
             IsBreakState = false;
             IsRunning = true;
             StatusText = $"Running to {addr:X16}...";
@@ -976,13 +991,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
-        if (_hitSwBp != null)
-        {
-            await StepPastBreakpoint(_hitSwBp);
-            _hitSwBp = null;
-        }
-
-        await Task.Run(() => _driver.ContinueDebugEvent(DriverComm.CONTINUE_RUN));
+        // Driver handles step-past internally: STEP_PAST = step + auto-continue
+        await Task.Run(() => _driver.ContinueDebugEvent(
+            _hitSwBp != null ? DriverComm.CONTINUE_STEP_PAST : DriverComm.CONTINUE_RUN));
+        _hitSwBp = null;
 
         IsBreakState = false;
         IsRunning = true;
@@ -1050,29 +1062,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
     /*  Step-past: temporarily remove BP, single step, re-arm             */
     /* ================================================================== */
 
-    private async Task StepPastBreakpoint(Breakpoint bp)
-    {
-        var pid = TargetPid;
-        var tid = SelectedThreadId;
-
-        // Remove the BP (restores original byte)
-        await Task.Run(() => _driver.RemoveBreakpoint(bp.Handle));
-
-        // RIP should already be at BP address (fixed in OnDebugEvent),
-        // but ensure it just in case
-        await Task.Run(() => _driver.WriteRip(pid, tid, bp.Address));
-
-        // Single step past the original instruction
-        await Task.Run(() => _driver.ContinueDebugEvent(DriverComm.CONTINUE_STEP_INTO));
-
-        // Wait for step to complete
-        var evt = await Task.Run(() => _driver.WaitDebugEvent());
-
-        // Re-arm the BP
-        var newHandle = await Task.Run(() => _driver.SetBreakpoint(pid, 0, bp.Address, bp.Type));
-        if (newHandle.HasValue)
-            bp.Handle = newHandle.Value;
-    }
+    // NOTE: Step-past is handled internally by the driver via CONTINUE_STEP_PAST
+    // and CONTINUE_STEP_INTO modes. This method is kept only as a fallback
+    // but should not be needed in normal operation.
 
     /* ================================================================== */
     /*  Breakpoints                                                        */
@@ -1848,22 +1840,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
             _tempBpHandle = null;
         }
 
-        // For INT3 breakpoints, RIP = BP_address + 1.  Check both addresses.
+        // Driver already adjusts RIP back to BP address for INT3.
+        // Match BP at evt.Address (driver-adjusted) or evt.Address-1 (fallback).
         var hitBp = Breakpoints.FirstOrDefault(b => b.Address == evt.Address)
                  ?? Breakpoints.FirstOrDefault(b => b.Address == evt.Address - 1);
         _hitSwBp = hitBp?.Type == BreakpointType.Software ? hitBp : null;
 
-        // If we hit a SW BP, fix RIP back to the BP address so the original
-        // instruction will be re-executed correctly on continue/step.
-        ulong displayAddr = evt.Address;
-        if (_hitSwBp != null)
-        {
-            displayAddr = _hitSwBp.Address;
-            await Task.Run(() => _driver.WriteRip(TargetPid, evt.ThreadId, _hitSwBp.Address));
-        }
-
-        Log($"Break at {displayAddr:X16} (PID={evt.ProcessId} TID={evt.ThreadId})");
-        DisasmAddress = displayAddr;
+        Log($"Break at {evt.Address:X16} (PID={evt.ProcessId} TID={evt.ThreadId})");
+        DisasmAddress = evt.Address;
 
         // Read registers (after RIP fixup) then refresh all views
         var pid = TargetPid;
@@ -1948,118 +1932,140 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         if (!IsConnected || TargetPid == 0) return;
 
+        uint moduleSize = 0;
         if (moduleBase == 0)
         {
             var mainMod = Modules.FirstOrDefault();
             if (mainMod == null) return;
             moduleBase = mainMod.BaseAddress;
+            moduleSize = mainMod.Size;
         }
+        else
+        {
+            var mod = Modules.FirstOrDefault(m => m.BaseAddress == moduleBase);
+            if (mod != null) moduleSize = mod.Size;
+        }
+
+        if (moduleSize == 0) moduleSize = 2 * 1024 * 1024;
+        // Cap at 4MB to avoid huge reads
+        uint readSize = Math.Min(moduleSize, 4 * 1024 * 1024);
 
         var pid = TargetPid;
         var modBase = moduleBase;
 
-        var entries = await Task.Run(() =>
+        // Single large read — all PE parsing from local buffer, zero extra network calls
+        var image = await Task.Run(() => _driver.ReadMemory(pid, modBase, readSize));
+        if (image == null || image.Length < 0x40)
         {
-            var result = new List<ImportEntry>();
-            try
-            {
-                var dosHeader = _driver.ReadMemory(pid, modBase + 0x3C, 4);
-                if (dosHeader == null) return result;
-                uint peOffset = BitConverter.ToUInt32(dosHeader, 0);
+            Log("Import parse: failed to read module image");
+            return;
+        }
 
-                var peData = _driver.ReadMemory(pid, modBase + peOffset, 0x80);
-                if (peData == null || peData.Length < 0x80) return result;
-                if (peData[0] != 'P' || peData[1] != 'E') return result;
-
-                ushort magic = BitConverter.ToUInt16(peData, 0x18);
-                bool is64 = magic == 0x20B;
-                int importDirOffset = is64 ? 0x90 : 0x80;
-
-                var headerData = _driver.ReadMemory(pid, modBase + peOffset, (uint)(importDirOffset + 8));
-                if (headerData == null || headerData.Length < importDirOffset + 8) return result;
-
-                uint importRva = BitConverter.ToUInt32(headerData, importDirOffset);
-                uint importSize = BitConverter.ToUInt32(headerData, importDirOffset + 4);
-                if (importRva == 0 || importSize == 0) return result;
-
-                var importTable = _driver.ReadMemory(pid, modBase + importRva, Math.Min(importSize, 8192));
-                if (importTable == null) return result;
-
-                int descriptorSize = 20;
-                int count = importTable.Length / descriptorSize;
-
-                for (int i = 0; i < count; i++)
-                {
-                    int off = i * descriptorSize;
-                    uint iltRva = BitConverter.ToUInt32(importTable, off);
-                    uint nameRva = BitConverter.ToUInt32(importTable, off + 12);
-                    uint iatRva = BitConverter.ToUInt32(importTable, off + 16);
-                    if (nameRva == 0) break;
-
-                    var nameBytes = _driver.ReadMemory(pid, modBase + nameRva, 256);
-                    if (nameBytes == null) continue;
-                    int nameLen = Array.IndexOf(nameBytes, (byte)0);
-                    if (nameLen < 0) nameLen = nameBytes.Length;
-                    string dllName = System.Text.Encoding.ASCII.GetString(nameBytes, 0, nameLen);
-
-                    uint thunkRva = iltRva != 0 ? iltRva : iatRva;
-                    int entrySize = is64 ? 8 : 4;
-
-                    var thunks = _driver.ReadMemory(pid, modBase + thunkRva, (uint)(entrySize * 512));
-                    if (thunks == null) continue;
-
-                    for (int j = 0; j < 512; j++)
-                    {
-                        ulong thunkValue = is64
-                            ? BitConverter.ToUInt64(thunks, j * 8)
-                            : BitConverter.ToUInt32(thunks, j * 4);
-                        if (thunkValue == 0) break;
-
-                        var entry = new ImportEntry
-                        {
-                            Module = dllName,
-                            IatAddress = modBase + iatRva + (ulong)(j * entrySize)
-                        };
-
-                        var iatData = _driver.ReadMemory(pid, entry.IatAddress, (uint)entrySize);
-                        if (iatData != null)
-                            entry.ResolvedAddress = is64
-                                ? BitConverter.ToUInt64(iatData, 0)
-                                : BitConverter.ToUInt32(iatData, 0);
-
-                        bool byOrdinal = is64
-                            ? (thunkValue & 0x8000000000000000UL) != 0
-                            : (thunkValue & 0x80000000UL) != 0;
-
-                        if (byOrdinal)
-                        {
-                            entry.Ordinal = (ushort)(thunkValue & 0xFFFF);
-                        }
-                        else
-                        {
-                            uint hintNameRva = (uint)(thunkValue & 0x7FFFFFFFUL);
-                            var hintName = _driver.ReadMemory(pid, modBase + hintNameRva, 256);
-                            if (hintName != null && hintName.Length >= 3)
-                            {
-                                int fnLen = Array.IndexOf(hintName, (byte)0, 2);
-                                if (fnLen < 2) fnLen = hintName.Length;
-                                entry.Function = System.Text.Encoding.ASCII.GetString(hintName, 2, fnLen - 2);
-                            }
-                        }
-
-                        result.Add(entry);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Import parse error: {ex.Message}");
-            }
-            return result;
-        });
+        var entries = await Task.Run(() => ParseImportsFromBuffer(image, modBase));
 
         Imports.ReplaceAll(entries);
         Log($"Found {entries.Count} imports");
+        Log("Process loaded");
+        StatusText = $"Process loaded - PID {TargetPid}";
+    }
+
+    private static List<ImportEntry> ParseImportsFromBuffer(byte[] image, ulong modBase)
+    {
+        var result = new List<ImportEntry>();
+        try
+        {
+            uint peOffset = BitConverter.ToUInt32(image, 0x3C);
+            if (peOffset + 0x18 > image.Length) return result;
+            if (image[peOffset] != 'P' || image[peOffset + 1] != 'E') return result;
+
+            ushort magic = BitConverter.ToUInt16(image, (int)peOffset + 0x18);
+            bool is64 = magic == 0x20B;
+            int importDirOffset = is64 ? 0x90 : 0x80;
+
+            if (peOffset + importDirOffset + 8 > image.Length) return result;
+
+            uint importRva = BitConverter.ToUInt32(image, (int)peOffset + importDirOffset);
+            uint importSize = BitConverter.ToUInt32(image, (int)peOffset + importDirOffset + 4);
+            if (importRva == 0 || importSize == 0) return result;
+            if (importRva + importSize > image.Length) return result;
+
+            int descriptorSize = 20;
+            int count = (int)Math.Min(importSize / descriptorSize, 256);
+            int entrySize = is64 ? 8 : 4;
+
+            for (int i = 0; i < count; i++)
+            {
+                int off = (int)importRva + i * descriptorSize;
+                if (off + descriptorSize > image.Length) break;
+
+                uint iltRva = BitConverter.ToUInt32(image, off);
+                uint nameRva = BitConverter.ToUInt32(image, off + 12);
+                uint iatRva = BitConverter.ToUInt32(image, off + 16);
+                if (nameRva == 0) break;
+
+                // Read DLL name from buffer
+                if (nameRva >= image.Length) continue;
+                int nameEnd = Array.IndexOf(image, (byte)0, (int)nameRva);
+                if (nameEnd < 0 || nameEnd > nameRva + 256) nameEnd = (int)Math.Min(nameRva + 256, image.Length);
+                string dllName = Encoding.ASCII.GetString(image, (int)nameRva, nameEnd - (int)nameRva);
+
+                uint thunkRva = iltRva != 0 ? iltRva : iatRva;
+                if (thunkRva >= image.Length) continue;
+
+                for (int j = 0; j < 2048; j++)
+                {
+                    int thunkOff = (int)thunkRva + j * entrySize;
+                    if (thunkOff + entrySize > image.Length) break;
+
+                    ulong thunkValue = is64
+                        ? BitConverter.ToUInt64(image, thunkOff)
+                        : BitConverter.ToUInt32(image, thunkOff);
+                    if (thunkValue == 0) break;
+
+                    var entry = new ImportEntry
+                    {
+                        Module = dllName,
+                        IatAddress = modBase + iatRva + (ulong)(j * entrySize)
+                    };
+
+                    // Read resolved address from IAT in buffer
+                    int iatOff = (int)iatRva + j * entrySize;
+                    if (iatOff + entrySize <= image.Length)
+                        entry.ResolvedAddress = is64
+                            ? BitConverter.ToUInt64(image, iatOff)
+                            : BitConverter.ToUInt32(image, iatOff);
+
+                    bool byOrdinal = is64
+                        ? (thunkValue & 0x8000000000000000UL) != 0
+                        : (thunkValue & 0x80000000UL) != 0;
+
+                    if (byOrdinal)
+                    {
+                        entry.Ordinal = (ushort)(thunkValue & 0xFFFF);
+                    }
+                    else
+                    {
+                        uint hintNameRva = (uint)(thunkValue & 0x7FFFFFFFUL);
+                        if (hintNameRva + 3 <= image.Length)
+                        {
+                            int fnEnd = Array.IndexOf(image, (byte)0, (int)hintNameRva + 2);
+                            if (fnEnd < 0 || fnEnd > hintNameRva + 258)
+                                fnEnd = (int)Math.Min(hintNameRva + 258, image.Length);
+                            if (fnEnd > hintNameRva + 2)
+                                entry.Function = Encoding.ASCII.GetString(
+                                    image, (int)hintNameRva + 2, fnEnd - (int)hintNameRva - 2);
+                        }
+                    }
+
+                    result.Add(entry);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Import parse error: {ex.Message}");
+        }
+        return result;
     }
 
     public async void RefreshKernelModules()

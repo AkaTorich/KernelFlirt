@@ -284,19 +284,12 @@ static BOOL HandleCreateProcess(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, D
             PBI pbi = {0};
             ULONG retLen = 0;
             LONG ntStatus = pNtQIP(pi.hProcess, 0 /*ProcessBasicInformation*/, &pbi, sizeof(pbi), &retLen);
-            printf("[relay] NtQIP status=0x%08lX retLen=%lu sizeof(PBI)=%zu\n",
-                   (unsigned long)ntStatus, retLen, sizeof(pbi));
             if (ntStatus == 0) {
-                printf("[relay] PEB @ %p\n", pbi.PebBaseAddress);
-                /* PEB+0x10 = ImageBaseAddress on x64 */
                 SIZE_T bytesRead = 0;
-                BOOL readOk = ReadProcessMemory(pi.hProcess, (BYTE *)pbi.PebBaseAddress + 0x10,
+                ReadProcessMemory(pi.hProcess, (BYTE *)pbi.PebBaseAddress + 0x10,
                                   &imageBase, sizeof(imageBase), &bytesRead);
-                printf("[relay] ReadProcessMemory(PEB+0x10) ok=%d read=%zu ImageBase=0x%llX\n",
-                       readOk, bytesRead, imageBase);
+                printf("[relay] ImageBase = 0x%llX\n", imageBase);
             }
-        } else {
-            printf("[relay] NtQueryInformationProcess not found!\n");
         }
     }
 

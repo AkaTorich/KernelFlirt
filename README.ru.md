@@ -309,7 +309,7 @@ KernelFlirt/
 
 
 
-1. Запусти kd на хосте
+1. Запусти kd на хосте .\Desktop\kd.exe -k com:pipe,port=\\.\pipe\kf_debug,resets=0,reconnect
 2. Потом загружай/перезагружай VM
 3. kd ловит initial break → g → VM грузится дальше
 
