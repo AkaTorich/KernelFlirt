@@ -242,6 +242,11 @@ public class DriverComm : IDisposable
         public ulong LastTargetAddr;
         public uint LastTargetCode;
         public uint LastNonTargetPid;
+        public ulong KiDebugRoutineAddr;
+        public ulong KiDebugRoutineOrig;
+        public ulong KiDebugRoutineNow;
+        public ulong HookedFuncAddr;
+        public ulong KdTrapAddr;
     }
 
     #endregion
@@ -818,13 +823,17 @@ public class DriverComm : IDisposable
     }
 
     public (uint hookCalls, uint bpHits, uint bpNotFound, uint steps, byte kdEnabled, byte kdNotPresent,
-            uint targetCalls, ulong lastTargetAddr, uint lastTargetCode, uint lastNonTargetPid)? GetHookStats()
+            uint targetCalls, ulong lastTargetAddr, uint lastTargetCode, uint lastNonTargetPid,
+            ulong kiDebugAddr, ulong kiDebugOrig, ulong kiDebugNow,
+            ulong hookedFunc, ulong kdTrap)? GetHookStats()
     {
         var (ok, data) = SendIoctl(IOCTL_KF_GET_HOOK_STATS, null, Marshal.SizeOf<KF_HOOK_STATS_OUT>());
         if (!ok || data == null) return null;
         var s = BytesToStruct<KF_HOOK_STATS_OUT>(data);
         return (s.HookCallCount, s.BpHitCount, s.BpNotFoundCount, s.StepCount, s.KdDebuggerEnabled, s.KdDebuggerNotPresent,
-                s.TargetCallCount, s.LastTargetAddr, s.LastTargetCode, s.LastNonTargetPid);
+                s.TargetCallCount, s.LastTargetAddr, s.LastTargetCode, s.LastNonTargetPid,
+                s.KiDebugRoutineAddr, s.KiDebugRoutineOrig, s.KiDebugRoutineNow,
+                s.HookedFuncAddr, s.KdTrapAddr);
     }
 
     public List<ProcessInfo> EnumProcesses()

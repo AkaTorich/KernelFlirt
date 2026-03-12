@@ -195,6 +195,11 @@ typedef struct _KF_HOOK_STATS_OUT {
     ULONG64 LastTargetAddr;      /* Last exception addr from target */
     ULONG   LastTargetCode;      /* Last exception code from target */
     ULONG   LastNonTargetPid;    /* Last non-target PID */
+    ULONG64 KiDebugRoutineAddr;  /* Address of KiDebugRoutine in ntoskrnl (0=not found) */
+    ULONG64 KiDebugRoutineOrig;  /* Original value before redirect */
+    ULONG64 KiDebugRoutineNow;   /* Current value */
+    ULONG64 HookedFuncAddr;      /* Address of inline-hooked function (KdpStub) */
+    ULONG64 KdTrapAddr;          /* Address of KdTrap */
 } KF_HOOK_STATS_OUT, *PKF_HOOK_STATS_OUT;
 
 /* IOCTL_KF_PING output */

@@ -1045,6 +1045,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             {
                 var s = stats.Value;
                 Log($"[Hook Stats #{i}] calls={s.hookCalls} target={s.targetCalls} bpHit={s.bpHits} bpSkip={s.bpNotFound} KdE={s.kdEnabled} lastAddr={s.lastTargetAddr:X} lastCode={s.lastTargetCode:X8}");
+                Log($"  KiDbgR={s.kiDebugAddr:X}|orig={s.kiDebugOrig:X}|now={s.kiDebugNow:X} hooked={s.hookedFunc:X} KdTrap={s.kdTrap:X}");
             }
             await Task.Delay(3000);
             if (!IsRunning || !IsConnected) break;
