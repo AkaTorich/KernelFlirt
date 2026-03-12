@@ -190,6 +190,40 @@ typedef struct _KF_PING_OUT {
 #define KF_VERSION  0x00010000  /* 1.0.0 */
 #define KF_MAGIC    0x4B464C54  /* 'KFLT' */
 
+/* ---- Relay pseudo-IOCTLs (handled by relay, NOT forwarded to driver) ---- */
+/* These use function codes 0x900+ to avoid collision with driver IOCTLs */
+#define IOCTL_KF_LIST_DRIVES        CTL_CODE(KF_DEVICE_TYPE, 0x900, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_KF_LIST_DIRECTORY     CTL_CODE(KF_DEVICE_TYPE, 0x901, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_KF_CREATE_PROCESS     CTL_CODE(KF_DEVICE_TYPE, 0x902, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+/* IOCTL_KF_LIST_DRIVES output: array of KF_DRIVE_ENTRY */
+#define KF_MAX_DRIVE_LABEL 64
+
+typedef struct _KF_DRIVE_ENTRY {
+    CHAR    Letter;         /* e.g. 'C' */
+    CHAR    Padding[3];
+    ULONG   DriveType;      /* DRIVE_FIXED, DRIVE_REMOTE, etc. */
+    WCHAR   Label[KF_MAX_DRIVE_LABEL];
+} KF_DRIVE_ENTRY, *PKF_DRIVE_ENTRY;
+
+/* IOCTL_KF_LIST_DIRECTORY input: null-terminated wide path */
+/* IOCTL_KF_LIST_DIRECTORY output: array of KF_DIR_ENTRY */
+#define KF_MAX_FILENAME 260
+
+typedef struct _KF_DIR_ENTRY {
+    ULONG   IsDirectory;    /* 1 = directory, 0 = file */
+    ULONG64 FileSize;
+    WCHAR   Name[KF_MAX_FILENAME];
+} KF_DIR_ENTRY, *PKF_DIR_ENTRY;
+
+/* IOCTL_KF_CREATE_PROCESS input: null-terminated wide exe path */
+/* IOCTL_KF_CREATE_PROCESS output: KF_CREATE_PROCESS_OUT */
+typedef struct _KF_CREATE_PROCESS_OUT {
+    ULONG   ProcessId;
+    ULONG   ThreadId;
+    ULONG64 ImageBase;      /* PEB.ImageBaseAddress — valid even while suspended */
+} KF_CREATE_PROCESS_OUT, *PKF_CREATE_PROCESS_OUT;
+
 #pragma pack(pop)
 
 #endif /* KF_SHARED_H */

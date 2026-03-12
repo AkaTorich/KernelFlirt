@@ -53,6 +53,11 @@ public class DriverComm : IDisposable
     private static readonly uint IOCTL_KF_WAIT_DEBUG_EVENT = CTL_CODE(DeviceType, 0x842, 0, 0);
     private static readonly uint IOCTL_KF_CONTINUE_DEBUG_EVENT = CTL_CODE(DeviceType, 0x843, 0, 0);
 
+    // Relay pseudo-IOCTLs (handled by relay, not driver)
+    private static readonly uint IOCTL_KF_LIST_DRIVES     = CTL_CODE(DeviceType, 0x900, 0, 0);
+    private static readonly uint IOCTL_KF_LIST_DIRECTORY   = CTL_CODE(DeviceType, 0x901, 0, 0);
+    private static readonly uint IOCTL_KF_CREATE_PROCESS   = CTL_CODE(DeviceType, 0x902, 0, 0);
+
     #endregion
 
     #region Native Structures (matching kf_shared.h)
@@ -171,6 +176,36 @@ public class DriverComm : IDisposable
     {
         public KF_THREAD_TARGET Target;
         public KF_REGISTERS Registers;
+    }
+
+    // Relay pseudo-IOCTL structures
+    private const int KF_MAX_DRIVE_LABEL = 64;
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1, CharSet = CharSet.Unicode)]
+    private unsafe struct KF_DRIVE_ENTRY
+    {
+        public byte Letter;
+        public fixed byte Padding[3];
+        public uint DriveType;
+        public fixed char Label[KF_MAX_DRIVE_LABEL];
+    }
+
+    private const int KF_MAX_FILENAME = 260;
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1, CharSet = CharSet.Unicode)]
+    private unsafe struct KF_DIR_ENTRY
+    {
+        public uint IsDirectory;
+        public ulong FileSize;
+        public fixed char Name[KF_MAX_FILENAME];
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    private struct KF_CREATE_PROCESS_OUT
+    {
+        public uint ProcessId;
+        public uint ThreadId;
+        public ulong ImageBase;
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -780,6 +815,70 @@ public class DriverComm : IDisposable
             }
         }
         return processes;
+    }
+
+    // ── Remote file browser (relay pseudo-IOCTLs) ──
+
+    public List<RemoteDriveInfo> ListRemoteDrives()
+    {
+        int entrySize = Marshal.SizeOf<KF_DRIVE_ENTRY>();
+        int outSize = entrySize * 26; // max 26 drives
+        var (ok, data) = SendIoctl(IOCTL_KF_LIST_DRIVES, null, outSize);
+        var drives = new List<RemoteDriveInfo>();
+        if (!ok || data == null) return drives;
+
+        int count = data.Length / entrySize;
+        for (int i = 0; i < count; i++)
+        {
+            var entry = BytesToStruct<KF_DRIVE_ENTRY>(data, i * entrySize);
+            unsafe
+            {
+                drives.Add(new RemoteDriveInfo
+                {
+                    Letter = (char)entry.Letter,
+                    DriveType = entry.DriveType,
+                    Label = new string(entry.Label).TrimEnd('\0')
+                });
+            }
+        }
+        return drives;
+    }
+
+    public List<RemoteFileEntry> ListRemoteDirectory(string path)
+    {
+        // Input: null-terminated wide string
+        byte[] input = System.Text.Encoding.Unicode.GetBytes(path + "\0");
+        int entrySize = Marshal.SizeOf<KF_DIR_ENTRY>();
+        int outSize = entrySize * 4096; // up to 4096 entries
+        var (ok, data) = SendIoctl(IOCTL_KF_LIST_DIRECTORY, input, outSize);
+        var entries = new List<RemoteFileEntry>();
+        if (!ok || data == null) return entries;
+
+        int count = data.Length / entrySize;
+        for (int i = 0; i < count; i++)
+        {
+            var entry = BytesToStruct<KF_DIR_ENTRY>(data, i * entrySize);
+            unsafe
+            {
+                entries.Add(new RemoteFileEntry
+                {
+                    Name = new string(entry.Name).TrimEnd('\0'),
+                    IsDirectory = entry.IsDirectory != 0,
+                    FileSize = entry.FileSize
+                });
+            }
+        }
+        return entries;
+    }
+
+    public (uint pid, uint tid, ulong imageBase)? CreateRemoteProcess(string exePath)
+    {
+        byte[] input = System.Text.Encoding.Unicode.GetBytes(exePath + "\0");
+        var (ok, data) = SendIoctl(IOCTL_KF_CREATE_PROCESS, input, Marshal.SizeOf<KF_CREATE_PROCESS_OUT>());
+        if (!ok || data == null) return null;
+
+        var result = BytesToStruct<KF_CREATE_PROCESS_OUT>(data);
+        return (result.ProcessId, result.ThreadId, result.ImageBase);
     }
 
     #endregion

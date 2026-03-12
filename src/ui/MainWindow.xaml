@@ -39,6 +39,7 @@
         <Menu DockPanel.Dock="Top" Background="{StaticResource BgLightBrush}">
             <MenuItem Header="_File">
                 <MenuItem Header="_Open Process..." Command="{Binding OpenProcessCommand}" />
+                <MenuItem Header="Open &amp; _Debug (.exe)..." Command="{Binding OpenAndDebugCommand}" />
                 <MenuItem Header="_Connect Kernel..." Command="{Binding ConnectKernelCommand}" />
                 <MenuItem Header="_Disconnect" Command="{Binding DisconnectKernelCommand}" />
                 <Separator />
@@ -96,6 +97,8 @@
             <WrapPanel>
                 <Button Content="Open" Command="{Binding OpenProcessCommand}"
                         ToolTip="Select process to attach" />
+                <Button Content="Debug" Command="{Binding OpenAndDebugCommand}"
+                        ToolTip="Open remote .exe and debug from start" />
                 <Button Command="{Binding ConnectKernelCommand}"
                         ToolTip="Connect to kernel driver"
                         Visibility="{Binding IsConnected, Converter={StaticResource InverseBoolVisConv}}"
