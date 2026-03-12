@@ -124,14 +124,11 @@ static BOOL SendAll(SOCKET s, const void *buf, int len)
 
 /* ── Relay-handled pseudo-IOCTLs ── */
 
-/* Structs KF_DRIVE_ENTRY, KF_DIR_ENTRY, KF_CREATE_PROCESS_OUT come from kf_shared.h */
-
 static BOOL HandleListDrives(BYTE **ppOut, DWORD *pOutSize)
 {
     DWORD mask = GetLogicalDrives();
     if (!mask) return FALSE;
 
-    /* Count drives */
     int count = 0;
     for (int i = 0; i < 26; i++)
         if (mask & (1 << i)) count++;
@@ -152,7 +149,6 @@ static BOOL HandleListDrives(BYTE **ppOut, DWORD *pOutSize)
         WCHAR root[4] = { L'A' + i, L':', L'\\', 0 };
         entries[idx].DriveType = GetDriveTypeW(root);
 
-        /* Try to get volume label */
         WCHAR label[64] = {0};
         GetVolumeInformationW(root, label, 64, NULL, NULL, NULL, NULL, 0);
         wcsncpy(entries[idx].Label, label, 63);
@@ -169,13 +165,10 @@ static BOOL HandleListDirectory(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, D
 {
     if (!inputBuf || inputSize < 4) return FALSE;
 
-    /* Input is a null-terminated wide string (path) */
     WCHAR *path = (WCHAR *)inputBuf;
-    /* Ensure null-terminated */
     int maxChars = inputSize / sizeof(WCHAR);
     path[maxChars - 1] = L'\0';
 
-    /* Build search pattern: path\* */
     WCHAR searchPath[MAX_PATH + 4];
     wcsncpy(searchPath, path, MAX_PATH);
     searchPath[MAX_PATH - 1] = L'\0';
@@ -188,7 +181,6 @@ static BOOL HandleListDirectory(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, D
     HANDLE hFind = FindFirstFileW(searchPath, &fd);
     if (hFind == INVALID_HANDLE_VALUE) return FALSE;
 
-    /* First pass: count entries (skip . and ..) */
     int count = 0;
     KF_DIR_ENTRY *entries = NULL;
     DWORD capacity = 256;
@@ -235,13 +227,10 @@ static BOOL HandleCreateProcess(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, D
     int maxChars = inputSize / sizeof(WCHAR);
     exePath[maxChars - 1] = L'\0';
 
-    STARTUPINFOW si;
-    PROCESS_INFORMATION pi;
-    memset(&si, 0, sizeof(si));
+    STARTUPINFOW si = {0};
+    PROCESS_INFORMATION pi = {0};
     si.cb = sizeof(si);
-    memset(&pi, 0, sizeof(pi));
 
-    /* Create process suspended so debugger can set breakpoints first */
     BOOL ok = CreateProcessW(
         exePath, NULL, NULL, NULL, FALSE,
         CREATE_SUSPENDED,
@@ -252,62 +241,38 @@ static BOOL HandleCreateProcess(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, D
         return FALSE;
     }
 
-    printf("[relay] Created process PID=%lu TID=%lu (suspended)\n", pi.dwProcessId, pi.dwThreadId);
+    printf("[relay] Created PID=%lu TID=%lu (suspended)\n",
+           pi.dwProcessId, pi.dwThreadId);
 
-    /* Query PEB to get ImageBaseAddress (valid even while suspended) */
+    /* Query ImageBase from PEB */
     ULONG64 imageBase = 0;
     {
-        typedef LONG (NTAPI *NtQueryInformationProcess_t)(
-            HANDLE, ULONG, PVOID, ULONG, PULONG);
-        /* x64 PROCESS_BASIC_INFORMATION layout:
-         *   NTSTATUS  ExitStatus       (4 + 4 padding = offset 0)
-         *   PPEB      PebBaseAddress   (8 bytes        = offset 8)
-         *   ULONG_PTR AffinityMask     (8 bytes        = offset 16)
-         *   LONG      BasePriority     (4 + 4 padding  = offset 24)
-         *   ULONG_PTR UniqueProcessId  (8 bytes        = offset 32)
-         *   ULONG_PTR InheritedFrom    (8 bytes        = offset 40)
-         *   Total: 48 bytes */
+        typedef LONG (NTAPI *NtQIP_t)(HANDLE, ULONG, PVOID, ULONG, PULONG);
         typedef struct {
-            LONG      ExitStatus;
-            LONG      Pad0;
-            PVOID     PebBaseAddress;
-            ULONG_PTR AffinityMask;
-            LONG      BasePriority;
-            LONG      Pad1;
-            ULONG_PTR UniqueProcessId;
-            ULONG_PTR InheritedFromUniqueProcessId;
+            LONG Stat; LONG P0; PVOID Peb; ULONG_PTR Aff;
+            LONG Prio; LONG P1; ULONG_PTR Pid; ULONG_PTR Inh;
         } PBI;
-
-        NtQueryInformationProcess_t pNtQIP = (NtQueryInformationProcess_t)
-            GetProcAddress(GetModuleHandleA("ntdll.dll"), "NtQueryInformationProcess");
+        NtQIP_t pNtQIP = (NtQIP_t)GetProcAddress(GetModuleHandleA("ntdll.dll"),
+                                                    "NtQueryInformationProcess");
         if (pNtQIP) {
-            PBI pbi = {0};
-            ULONG retLen = 0;
-            LONG ntStatus = pNtQIP(pi.hProcess, 0 /*ProcessBasicInformation*/, &pbi, sizeof(pbi), &retLen);
-            if (ntStatus == 0) {
-                SIZE_T bytesRead = 0;
-                ReadProcessMemory(pi.hProcess, (BYTE *)pbi.PebBaseAddress + 0x10,
-                                  &imageBase, sizeof(imageBase), &bytesRead);
+            PBI pbi = {0}; ULONG rl = 0;
+            if (pNtQIP(pi.hProcess, 0, &pbi, sizeof(pbi), &rl) == 0) {
+                SIZE_T br = 0;
+                ReadProcessMemory(pi.hProcess, (BYTE *)pbi.Peb + 0x10,
+                                  &imageBase, sizeof(imageBase), &br);
                 printf("[relay] ImageBase = 0x%llX\n", imageBase);
             }
         }
     }
 
-    KF_CREATE_PROCESS_OUT *out = (KF_CREATE_PROCESS_OUT *)calloc(1, sizeof(KF_CREATE_PROCESS_OUT));
-    if (!out) {
-        TerminateProcess(pi.hProcess, 1);
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
-        return FALSE;
-    }
-
-    out->ProcessId = pi.dwProcessId;
-    out->ThreadId = pi.dwThreadId;
-    out->ImageBase = imageBase;
-
-    /* Don't close process/thread handles — we want the process to stay alive */
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
+
+    KF_CREATE_PROCESS_OUT *out = (KF_CREATE_PROCESS_OUT *)calloc(1, sizeof(KF_CREATE_PROCESS_OUT));
+    if (!out) return FALSE;
+    out->ProcessId = pi.dwProcessId;
+    out->ThreadId  = pi.dwThreadId;
+    out->ImageBase = imageBase;
 
     *ppOut = (BYTE *)out;
     *pOutSize = sizeof(KF_CREATE_PROCESS_OUT);
@@ -333,8 +298,10 @@ static BOOL TryHandlePseudoIoctl(DWORD ioctlCode, BYTE *inputBuf, DWORD inputSiz
         *pSuccess = HandleCreateProcess(inputBuf, inputSize, ppOut, pOutSize);
         return TRUE;
     default:
-        return FALSE;
+        break;
     }
+
+    return FALSE;  /* Not a pseudo-IOCTL — forward to driver */
 }
 
 /* ── Per-request work item for thread pool ── */
@@ -343,12 +310,11 @@ typedef struct _REQUEST_ITEM {
     SOCKET      client;
     HANDLE      hDevice;
     const char *tag;
-    CRITICAL_SECTION *pSendLock;  /* serialize responses on the socket */
+    CRITICAL_SECTION *pSendLock;
 
-    /* Pre-read request data (read by the reader thread under recvLock) */
     DWORD       ioctlCode;
     DWORD       inputSize;
-    BYTE       *inputBuf;    /* NULL if inputSize==0 */
+    BYTE       *inputBuf;
 } REQUEST_ITEM;
 
 static DWORD WINAPI RequestWorker(LPVOID param)
@@ -360,7 +326,7 @@ static DWORD WINAPI RequestWorker(LPVOID param)
     BOOL  success;
     DWORD win32Error = 0;
 
-    /* Check if this is a relay pseudo-IOCTL (file browser, create process, etc.) */
+    /* Check if this is a relay pseudo-IOCTL */
     BYTE *pseudoOut = NULL;
     DWORD pseudoOutSize = 0;
     BOOL pseudoSuccess = FALSE;
@@ -368,7 +334,6 @@ static DWORD WINAPI RequestWorker(LPVOID param)
     if (TryHandlePseudoIoctl(req->ioctlCode, req->inputBuf, req->inputSize,
                               &pseudoOut, &pseudoOutSize, &pseudoSuccess))
     {
-        /* Handled locally by relay */
         success = pseudoSuccess;
         outputBuf = pseudoOut;
         bytesReturned = pseudoOutSize;
@@ -421,8 +386,6 @@ static DWORD WINAPI RequestWorker(LPVOID param)
  * Channel loop: reads requests sequentially (they arrive in order on TCP),
  * but dispatches each to a thread pool worker so blocking IOCTLs don't
  * stall the channel.  Responses are serialized via sendLock.
- *
- * Returns when the socket disconnects or on error.
  */
 static void ChannelLoop(SOCKET client, HANDLE hDevice, const char *tag)
 {
@@ -434,7 +397,6 @@ static void ChannelLoop(SOCKET client, HANDLE hDevice, const char *tag)
         BYTE *inputBuf = NULL;
         REQUEST_ITEM *req;
 
-        /* Read header */
         if (!RecvAll(client, &ioctlCode, 4)) break;
         if (!RecvAll(client, &inputSize, 4))  break;
 
@@ -443,7 +405,6 @@ static void ChannelLoop(SOCKET client, HANDLE hDevice, const char *tag)
             break;
         }
 
-        /* Read input data */
         if (inputSize > 0) {
             inputBuf = (BYTE *)malloc(inputSize);
             if (!inputBuf) break;
@@ -453,7 +414,6 @@ static void ChannelLoop(SOCKET client, HANDLE hDevice, const char *tag)
             }
         }
 
-        /* Build work item */
         req = (REQUEST_ITEM *)malloc(sizeof(REQUEST_ITEM));
         if (!req) {
             free(inputBuf);
@@ -467,7 +427,6 @@ static void ChannelLoop(SOCKET client, HANDLE hDevice, const char *tag)
         req->inputSize = inputSize;
         req->inputBuf  = inputBuf;
 
-        /* Dispatch to thread pool */
         if (!QueueUserWorkItem(RequestWorker, req, WT_EXECUTEDEFAULT)) {
             printf("[%s] QueueUserWorkItem failed: %lu\n", tag, GetLastError());
             free(inputBuf);
@@ -476,7 +435,6 @@ static void ChannelLoop(SOCKET client, HANDLE hDevice, const char *tag)
         }
     }
 
-    /* Wait a bit for pending workers to finish sending */
     Sleep(500);
     DeleteCriticalSection(&sendLock);
 }
@@ -506,7 +464,6 @@ static SOCKET AcceptOne(SOCKET listenSock, const char *label)
         return INVALID_SOCKET;
     }
 
-    /* Disable Nagle */
     {
         BOOL opt = TRUE;
         setsockopt(s, IPPROTO_TCP, TCP_NODELAY, (char *)&opt, sizeof(opt));
@@ -525,7 +482,7 @@ int main(int argc, char *argv[])
     USHORT port = KF_RELAY_PORT;
     const char *bindAddr = "0.0.0.0";
 
-    printf("KernelFlirt TCP Relay v3.0 (threaded channels)\n");
+    printf("KernelFlirt TCP Relay v3.0 (kernel driver mode)\n");
 
     /* Parse args */
     for (int i = 1; i < argc; i++) {
@@ -563,7 +520,6 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    /* Allow port reuse */
     {
         BOOL opt = TRUE;
         setsockopt(listenSock, SOL_SOCKET, SO_REUSEADDR, (char *)&opt, sizeof(opt));
@@ -610,7 +566,6 @@ int main(int argc, char *argv[])
 
         printf("[+] Both channels connected — session active\n");
 
-        /* Run DBG channel in a separate thread */
         dbgThread = CreateThread(NULL, 0, DbgChannelThread, (LPVOID)(ULONG_PTR)dbgSock, 0, NULL);
         if (!dbgThread) {
             printf("[!] CreateThread failed: %lu\n", GetLastError());
@@ -625,7 +580,6 @@ int main(int argc, char *argv[])
         printf("[-] CMD channel disconnected\n");
         closesocket(cmdSock);
 
-        /* Wait for DBG thread to finish */
         WaitForSingleObject(dbgThread, 3000);
         CloseHandle(dbgThread);
 
