@@ -37,20 +37,20 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _isRunning;
     [ObservableProperty] private ulong _selectedDisasmAddress;  // Cursor position in disasm
 
-    public ObservableCollection<Instruction> Instructions { get; } = [];
-    public ObservableCollection<Register> Registers { get; } = [];
-    public ObservableCollection<ModuleInfo> Modules { get; } = [];
-    public ObservableCollection<ThreadInfo> Threads { get; } = [];
-    public ObservableCollection<KernelModuleInfo> KernelModules { get; } = [];
+    public RangeObservableCollection<Instruction> Instructions { get; } = [];
+    public RangeObservableCollection<Register> Registers { get; } = [];
+    public RangeObservableCollection<ModuleInfo> Modules { get; } = [];
+    public RangeObservableCollection<ThreadInfo> Threads { get; } = [];
+    public RangeObservableCollection<KernelModuleInfo> KernelModules { get; } = [];
     public ObservableCollection<Breakpoint> Breakpoints { get; } = [];
     public ObservableCollection<string> LogMessages { get; } = [];
-    public ObservableCollection<string> StackEntries { get; } = [];
-    public ObservableCollection<CallStackFrame> CallStack { get; } = [];
+    public RangeObservableCollection<string> StackEntries { get; } = [];
+    public RangeObservableCollection<CallStackFrame> CallStack { get; } = [];
     public ObservableCollection<Bookmark> Bookmarks { get; } = [];
     public ObservableCollection<Patch> Patches { get; } = [];
-    public ObservableCollection<SehEntry> SehChain { get; } = [];
-    public ObservableCollection<SearchResult> SearchResults { get; } = [];
-    public ObservableCollection<ImportEntry> Imports { get; } = [];
+    public RangeObservableCollection<SehEntry> SehChain { get; } = [];
+    public RangeObservableCollection<SearchResult> SearchResults { get; } = [];
+    public RangeObservableCollection<ImportEntry> Imports { get; } = [];
     [ObservableProperty] private byte[] _hexData = [];
 
     private static readonly string SettingsFile =
@@ -181,8 +181,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         Log("Loading kernel modules...");
         var mods = await Task.Run(() => _driver.EnumKernelModules());
-        KernelModules.Clear();
-        foreach (var m in mods) KernelModules.Add(m);
+        KernelModules.ReplaceAll(mods);
         Log($"Found {mods.Count} kernel modules");
 
         // Initialize symbol engine and load kernel module symbols
@@ -231,6 +230,224 @@ public partial class MainViewModel : ObservableObject, IDisposable
             TargetPid = dialog.SelectedPid;
             await DoAttachAsync();
         }
+    }
+
+    [RelayCommand]
+    private async Task OpenAndDebugAsync()
+    {
+        if (!IsConnected || !_driver.IsRemote)
+        {
+            Log("Open & Debug requires a remote connection (via relay)");
+            return;
+        }
+
+        var dialog = new RemoteFileBrowserDialog(_driver);
+        dialog.Owner = Application.Current.MainWindow;
+        if (dialog.ShowDialog() != true || string.IsNullOrEmpty(dialog.SelectedExePath))
+            return;
+
+        var exePath = dialog.SelectedExePath;
+        Log($"Creating process: {exePath}");
+        StatusText = "Creating remote process...";
+
+        var result = await Task.Run(() => _driver.CreateRemoteProcess(exePath));
+        if (result == null)
+        {
+            Log("Failed to create remote process");
+            StatusText = "Create process failed";
+            return;
+        }
+
+        var (pid, tid, imageBase) = result.Value;
+        Log($"Process created: PID={pid} TID={tid} ImageBase={imageBase:X16} (suspended)");
+
+        // With CREATE_SUSPENDED the exe is mapped but the loader hasn't run yet.
+        // Strategy: install hook, set BP at PE entry point, resume, catch BP.
+        // At that point the loader has run and all modules are available.
+
+        TargetPid = pid;
+
+        // 1. Install debug hook so we can catch breakpoints
+        Log("Installing debug hook...");
+        var hookOk = await Task.Run(() => _driver.InstallDebugHook(pid));
+        if (hookOk)
+        {
+            IsDebugHookActive = true;
+            Log("Debug hook installed");
+        }
+        else
+        {
+            Log("Warning: debug hook install failed — falling back to poll attach");
+            await Task.Run(() => _driver.ResumeThread(tid));
+            await Task.Delay(500);
+            await DoAttachAsync();
+            return;
+        }
+
+        if (imageBase == 0)
+        {
+            Log("Relay did not return ImageBase — falling back to poll attach");
+            await Task.Run(() => _driver.ResumeThread(tid));
+            await Task.Delay(500);
+            await DoAttachAsync();
+            return;
+        }
+
+        // 3. Read PE header → AddressOfEntryPoint
+        ulong entryPoint = 0;
+        var peOffsetData = await Task.Run(() => _driver.ReadMemory(pid, imageBase + 0x3C, 4));
+        if (peOffsetData != null && peOffsetData.Length == 4)
+        {
+            uint peOffset = BitConverter.ToUInt32(peOffsetData, 0);
+            var epData = await Task.Run(() => _driver.ReadMemory(pid, imageBase + peOffset + 0x28, 4));
+            if (epData != null && epData.Length == 4)
+            {
+                uint entryRva = BitConverter.ToUInt32(epData, 0);
+                if (entryRva != 0)
+                    entryPoint = imageBase + entryRva;
+            }
+        }
+
+        if (entryPoint == 0)
+        {
+            Log("Could not resolve PE entry point — falling back to poll attach");
+            await Task.Run(() => _driver.ResumeThread(tid));
+            await Task.Delay(500);
+            await DoAttachAsync();
+            return;
+        }
+
+        Log($"PE entry point: {entryPoint:X16}");
+
+        // 4. Set software breakpoint at entry point
+        var bpHandle = await Task.Run(() => _driver.SetBreakpoint(pid, 0, entryPoint, BreakpointType.Software));
+        if (!bpHandle.HasValue)
+        {
+            Log("Failed to set BP at entry point — falling back to poll attach");
+            await Task.Run(() => _driver.ResumeThread(tid));
+            await Task.Delay(500);
+            await DoAttachAsync();
+            return;
+        }
+
+        _tempBpHandle = bpHandle.Value;
+        Log($"BP set at entry point {entryPoint:X16}, resuming thread...");
+        StatusText = "Running to entry point...";
+
+        // 5. Resume the suspended thread — loader will run, then hit our BP
+        await Task.Run(() => _driver.ResumeThread(tid));
+
+        // 6. Wait for the debug event (BP hit at entry point)
+        IsRunning = true;
+        IsBreakState = false;
+
+        var evt = await Task.Run(() => _driver.WaitDebugEvent());
+
+        // 7. Remove the temp BP and fix RIP (INT3 advanced RIP by 1)
+        await Task.Run(() => _driver.RemoveBreakpoint(_tempBpHandle.Value));
+        _tempBpHandle = null;
+
+        if (evt == null)
+        {
+            Log("No debug event received — process may have exited");
+            StatusText = "Debug failed";
+            IsRunning = false;
+            return;
+        }
+
+        Log($"Hit entry point at {evt.Address:X16} (PID={evt.ProcessId} TID={evt.ThreadId})");
+        SelectedThreadId = evt.ThreadId;
+
+        // After INT3, RIP = BP_address + 1.  Roll it back so the original
+        // first instruction will execute correctly when the user presses Run.
+        await Task.Run(() => _driver.WriteRip(pid, evt.ThreadId, entryPoint));
+
+        // 8. Now the process is stopped at entry point with loader done.
+        //    Enumerate modules, read registers, etc. — same as DoAttachAsync but
+        //    we're already hooked and stopped on a debug event (not suspend).
+        HexAddress = 0;
+        DisasmAddress = 0;
+
+        // Enumerate modules (loader has run, all DLLs are mapped)
+        Log("Enumerating modules...");
+        var modules = await Task.Run(() => _driver.EnumModules(pid));
+        Log($"Found {modules.Count} modules");
+
+        // Load symbols
+        Log($"Loading symbols for {modules.Count} user modules...");
+        int symLoaded = 0;
+        await Task.Run(() =>
+        {
+            foreach (var m in modules)
+                if (_symbols.LoadModule(pid, m.Name, m.BaseAddress, m.Size))
+                    symLoaded++;
+        });
+        Log($"Symbols: {symLoaded}/{modules.Count} user modules loaded");
+
+        // Enumerate threads
+        var threads = await Task.Run(() => _driver.EnumThreads(pid));
+        Log($"Found {threads.Count} threads");
+
+        Threads.ReplaceAll(threads);
+        Modules.ReplaceAll(modules);
+
+        // Read registers
+        var regs = await Task.Run(() => _driver.ReadRegisters(pid, SelectedThreadId));
+        Registers.ReplaceAll(regs);
+
+        var rip = Registers.FirstOrDefault(r => r.Name == "RIP");
+        if (rip != null && rip.Value != 0)
+        {
+            DisasmAddress = rip.Value;
+            Log($"RIP = {rip.Value:X16}");
+        }
+
+        // Fetch disasm, stack, hex dump
+        var rspReg = Registers.FirstOrDefault(r => r.Name == "RSP");
+        var disasmAddr = DisasmAddress;
+        var hexAddr = HexAddress != 0 ? HexAddress : disasmAddr;
+        HexAddress = hexAddr;
+
+        Log("Reading memory...");
+        var disasmTask = Task.Run(() => _driver.ReadMemory(pid, disasmAddr, 4096));
+        var stackTask = rspReg != null ? Task.Run(() => _driver.ReadMemory(pid, rspReg.Value, 256)) : Task.FromResult<byte[]?>(null);
+        var hexTask = Task.Run(() => _driver.ReadMemory(pid, hexAddr, 4096));
+        await Task.WhenAll(disasmTask, stackTask, hexTask);
+
+        var disasmData = disasmTask.Result;
+        if (disasmData != null)
+        {
+            var instrs = _disasm.Disassemble(disasmData, disasmAddr);
+            AnnotateInstructionsWithSymbols(instrs);
+            Instructions.ReplaceAll(instrs);
+        }
+
+        var stackData = stackTask.Result;
+        if (stackData != null && rspReg != null)
+        {
+            var stackItems = new List<string>();
+            for (int i = 0; i < stackData.Length; i += 8)
+            {
+                if (i + 8 > stackData.Length) break;
+                ulong val = BitConverter.ToUInt64(stackData, i);
+                stackItems.Add($"RSP+{i:X2}  {val:X16}");
+            }
+            StackEntries.ReplaceAll(stackItems);
+        }
+
+        var hexData = hexTask.Result;
+        if (hexData != null) HexData = hexData;
+
+        RefreshImports();
+        RefreshCallStack();
+
+        // We're stopped on a debug event — NOT via SuspendThread
+        _isPausedViaSuspend = false;
+        _hitSwBp = null;
+        IsBreakState = true;
+        IsRunning = false;
+        StatusText = $"Entry point - PID {pid} TID {SelectedThreadId}";
+        Log($"Stopped at entry point of {exePath}");
     }
 
     [RelayCommand]
@@ -305,10 +522,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         });
         Log($"Symbols: {symLoaded}/{modules.Count} user modules loaded");
 
-        Threads.Clear();
-        foreach (var t in threads) Threads.Add(t);
-        Modules.Clear();
-        foreach (var m in modules) Modules.Add(m);
+        Threads.ReplaceAll(threads);
+        Modules.ReplaceAll(modules);
 
         if (Threads.Count > 0)
             SelectedThreadId = Threads[0].ThreadId;
@@ -317,8 +532,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         Log("Reading registers...");
         var tid = SelectedThreadId;
         var regs = await Task.Run(() => _driver.ReadRegisters(pid, tid));
-        Registers.Clear();
-        foreach (var reg in regs) Registers.Add(reg);
+        Registers.ReplaceAll(regs);
         Log($"Got {regs.Count} registers");
 
         var rip = Registers.FirstOrDefault(r => r.Name == "RIP");
@@ -363,12 +577,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 var instrs = _disasm.Disassemble(disasmData, disasmAddr);
                 Log($"Disassembled {instrs.Count} instructions");
                 AnnotateInstructionsWithSymbols(instrs);
-                Instructions.Clear();
                 foreach (var instr in instrs)
-                {
                     instr.HasBreakpoint = Breakpoints.Any(b => b.Address == instr.Address);
-                    Instructions.Add(instr);
-                }
+                Instructions.ReplaceAll(instrs);
             }
             catch (Exception ex)
             {
@@ -380,21 +591,22 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var stackData = stackTask.Result;
         if (stackData != null && rspReg != null)
         {
-            StackEntries.Clear();
+            var stackItems = new List<string>();
             for (int i = 0; i < stackData.Length; i += 8)
             {
                 if (i + 8 > stackData.Length) break;
                 ulong val = BitConverter.ToUInt64(stackData, i);
-                StackEntries.Add($"RSP+{i:X2}  {val:X16}");
+                stackItems.Add($"RSP+{i:X2}  {val:X16}");
             }
+            StackEntries.ReplaceAll(stackItems);
         }
 
         // Populate call stack
         var csData = callStackTask.Result;
-        CallStack.Clear();
+        var csFrames = new List<CallStackFrame>();
         if (rip != null && rip.Value != 0)
         {
-            CallStack.Add(new CallStackFrame
+            csFrames.Add(new CallStackFrame
             {
                 Index = 0,
                 ReturnAddress = rip.Value,
@@ -414,7 +626,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     val >= m.BaseAddress && val < m.BaseAddress + m.Size);
                 if (mod != null)
                 {
-                    CallStack.Add(new CallStackFrame
+                    csFrames.Add(new CallStackFrame
                     {
                         Index = frameIdx++,
                         ReturnAddress = val,
@@ -425,6 +637,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 }
             }
         }
+        CallStack.ReplaceAll(csFrames);
 
         // Populate hex dump
         var hexData = hexTask.Result;
@@ -809,15 +1022,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
         StopDebugListener();
 
         // Pick first thread and read its state
-        Threads.Clear();
-        foreach (var t in threads) Threads.Add(t);
+        Threads.ReplaceAll(threads);
         if (Threads.Count > 0)
             SelectedThreadId = Threads[0].ThreadId;
 
         var tid = SelectedThreadId;
         var regs = await Task.Run(() => _driver.ReadRegisters(pid, tid));
-        Registers.Clear();
-        foreach (var reg in regs) Registers.Add(reg);
+        Registers.ReplaceAll(regs);
 
         var rip = Registers.FirstOrDefault(r => r.Name == "RIP");
         if (rip != null && rip.Value != 0)
@@ -844,10 +1055,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var pid = TargetPid;
         var tid = SelectedThreadId;
 
-        // Remove the BP
+        // Remove the BP (restores original byte)
         await Task.Run(() => _driver.RemoveBreakpoint(bp.Handle));
 
-        // Single step past
+        // RIP should already be at BP address (fixed in OnDebugEvent),
+        // but ensure it just in case
+        await Task.Run(() => _driver.WriteRip(pid, tid, bp.Address));
+
+        // Single step past the original instruction
         await Task.Run(() => _driver.ContinueDebugEvent(DriverComm.CONTINUE_STEP_INTO));
 
         // Wait for step to complete
@@ -1263,7 +1478,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             return found;
         });
 
-        foreach (var r in results) SearchResults.Add(r);
+        SearchResults.ReplaceAll(results);
         Log($"Binary search: found {SearchResults.Count} results for [{pattern}]");
     }
 
@@ -1298,7 +1513,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             return found;
         });
 
-        foreach (var r in results) SearchResults.Add(r);
+        SearchResults.ReplaceAll(results);
         Log($"String search: found {SearchResults.Count} results for \"{text}\"");
     }
 
@@ -1371,7 +1586,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             return found;
         });
 
-        foreach (var r in results) SearchResults.Add(r);
+        SearchResults.ReplaceAll(results);
         Log($"Intermodular calls: found {SearchResults.Count} results");
     }
 
@@ -1615,7 +1830,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _listenerTask = null;
     }
 
-    private void OnDebugEvent(DebugEvent evt)
+    private async void OnDebugEvent(DebugEvent evt)
     {
         TargetPid = evt.ProcessId;
         SelectedThreadId = evt.ThreadId;
@@ -1627,25 +1842,45 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (_tempBpHandle.HasValue)
         {
             var tmpH = _tempBpHandle.Value;
-            Task.Run(() => _driver.RemoveBreakpoint(tmpH));
+            await Task.Run(() => _driver.RemoveBreakpoint(tmpH));
             Breakpoints.Remove(Breakpoints.FirstOrDefault(
                 b => b.Handle == tmpH)!);
             _tempBpHandle = null;
         }
 
-        Log($"Break at {evt.AddressHex} (PID={evt.ProcessId} TID={evt.ThreadId})");
+        // For INT3 breakpoints, RIP = BP_address + 1.  Check both addresses.
+        var hitBp = Breakpoints.FirstOrDefault(b => b.Address == evt.Address)
+                 ?? Breakpoints.FirstOrDefault(b => b.Address == evt.Address - 1);
+        _hitSwBp = hitBp?.Type == BreakpointType.Software ? hitBp : null;
 
-        DisasmAddress = evt.Address;
+        // If we hit a SW BP, fix RIP back to the BP address so the original
+        // instruction will be re-executed correctly on continue/step.
+        ulong displayAddr = evt.Address;
+        if (_hitSwBp != null)
+        {
+            displayAddr = _hitSwBp.Address;
+            await Task.Run(() => _driver.WriteRip(TargetPid, evt.ThreadId, _hitSwBp.Address));
+        }
 
-        RefreshRegisters();
+        Log($"Break at {displayAddr:X16} (PID={evt.ProcessId} TID={evt.ThreadId})");
+        DisasmAddress = displayAddr;
+
+        // Read registers (after RIP fixup) then refresh all views
+        var pid = TargetPid;
+        var tid = SelectedThreadId;
+        var regs = await Task.Run(() => _driver.ReadRegisters(pid, tid));
+        var oldRegs = Registers.ToDictionary(r => r.Name, r => r.Value);
+        foreach (var reg in regs)
+        {
+            if (oldRegs.TryGetValue(reg.Name, out var prev))
+                reg.PreviousValue = prev;
+        }
+        Registers.ReplaceAll(regs);
+
         NavigateToRip();
         RefreshDisassembly();
         RefreshStack();
         RefreshCallStack();
-
-        // Track SW breakpoint hit for step-past logic
-        var hitBp = Breakpoints.FirstOrDefault(b => b.Address == evt.Address);
-        _hitSwBp = hitBp?.Type == BreakpointType.Software ? hitBp : null;
 
         if (hitBp != null)
         {
@@ -1678,12 +1913,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         var instrs = _disasm.Disassemble(data, addr);
         AnnotateInstructionsWithSymbols(instrs);
-        Instructions.Clear();
         foreach (var instr in instrs)
-        {
             instr.HasBreakpoint = Breakpoints.Any(b => b.Address == instr.Address);
-            Instructions.Add(instr);
-        }
+        Instructions.ReplaceAll(instrs);
     }
 
     public async void RefreshRegisters()
@@ -1695,13 +1927,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var regs = await Task.Run(() => _driver.ReadRegisters(pid, tid));
 
         var oldRegs = Registers.ToDictionary(r => r.Name, r => r.Value);
-        Registers.Clear();
         foreach (var reg in regs)
         {
             if (oldRegs.TryGetValue(reg.Name, out var prev))
                 reg.PreviousValue = prev;
-            Registers.Add(reg);
         }
+        Registers.ReplaceAll(regs);
     }
 
     public async void RefreshModules()
@@ -1709,8 +1940,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (!IsConnected || TargetPid == 0) return;
         var pid = TargetPid;
         var mods = await Task.Run(() => _driver.EnumModules(pid));
-        Modules.Clear();
-        foreach (var m in mods) Modules.Add(m);
+        Modules.ReplaceAll(mods);
         Log($"Found {mods.Count} modules");
     }
 
@@ -1828,8 +2058,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             return result;
         });
 
-        Imports.Clear();
-        foreach (var e in entries) Imports.Add(e);
+        Imports.ReplaceAll(entries);
         Log($"Found {entries.Count} imports");
     }
 
@@ -1837,8 +2066,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         if (!IsConnected) return;
         var mods = await Task.Run(() => _driver.EnumKernelModules());
-        KernelModules.Clear();
-        foreach (var m in mods) KernelModules.Add(m);
+        KernelModules.ReplaceAll(mods);
         Log($"Found {mods.Count} kernel modules");
     }
 
@@ -1847,8 +2075,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (!IsConnected || TargetPid == 0) return;
         var pid = TargetPid;
         var threads = await Task.Run(() => _driver.EnumThreads(pid));
-        Threads.Clear();
-        foreach (var t in threads) Threads.Add(t);
+        Threads.ReplaceAll(threads);
         Log($"Found {threads.Count} threads");
     }
 
@@ -1863,13 +2090,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var data = await Task.Run(() => _driver.ReadMemory(pid, rspVal, 256));
         if (data == null) return;
 
-        StackEntries.Clear();
+        var items = new List<string>();
         for (int i = 0; i < data.Length; i += 8)
         {
             if (i + 8 > data.Length) break;
             ulong val = BitConverter.ToUInt64(data, i);
-            StackEntries.Add($"RSP+{i:X2}  {val:X16}");
+            items.Add($"RSP+{i:X2}  {val:X16}");
         }
+        StackEntries.ReplaceAll(items);
     }
 
     public async void RefreshCallStack()
@@ -1882,11 +2110,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var pid = TargetPid;
         var rspVal = rsp.Value;
 
-        CallStack.Clear();
+        var csFrames = new List<CallStackFrame>();
 
         if (rip != null && rip.Value != 0)
         {
-            CallStack.Add(new CallStackFrame
+            csFrames.Add(new CallStackFrame
             {
                 Index = 0,
                 ReturnAddress = rip.Value,
@@ -1896,7 +2124,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
 
         var stackData = await Task.Run(() => _driver.ReadMemory(pid, rspVal, 2048));
-        if (stackData == null) return;
+        if (stackData == null) { CallStack.ReplaceAll(csFrames); return; }
 
         int frameIdx = 1;
         for (int i = 0; i < stackData.Length && frameIdx < 50; i += 8)
@@ -1909,7 +2137,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 val >= m.BaseAddress && val < m.BaseAddress + m.Size);
             if (mod != null)
             {
-                CallStack.Add(new CallStackFrame
+                csFrames.Add(new CallStackFrame
                 {
                     Index = frameIdx++,
                     ReturnAddress = val,
@@ -1918,6 +2146,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 });
             }
         }
+        CallStack.ReplaceAll(csFrames);
     }
 
     public async void RefreshSehChain()
@@ -1965,8 +2194,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             return result;
         });
 
-        SehChain.Clear();
-        foreach (var e in entries) SehChain.Add(e);
+        SehChain.ReplaceAll(entries);
     }
 
     public async void RefreshHexDump()
@@ -1996,24 +2224,22 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             var instrs = _disasm.Disassemble(disasmData, disasmAddr);
             AnnotateInstructionsWithSymbols(instrs);
-            Instructions.Clear();
             foreach (var instr in instrs)
-            {
                 instr.HasBreakpoint = Breakpoints.Any(b => b.Address == instr.Address);
-                Instructions.Add(instr);
-            }
+            Instructions.ReplaceAll(instrs);
         }
 
         var stackData = stackTask.Result;
         if (stackData != null && rspReg != null)
         {
-            StackEntries.Clear();
+            var stackItems = new List<string>();
             for (int i = 0; i < stackData.Length; i += 8)
             {
                 if (i + 8 > stackData.Length) break;
                 ulong val = BitConverter.ToUInt64(stackData, i);
-                StackEntries.Add($"RSP+{i:X2}  {val:X16}");
+                stackItems.Add($"RSP+{i:X2}  {val:X16}");
             }
+            StackEntries.ReplaceAll(stackItems);
         }
 
         var hexData = hexTask.Result;

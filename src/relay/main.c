@@ -27,10 +27,16 @@
 #include "../../include/kf_shared.h"
 
 #pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "shlwapi.lib")
 
 #define KF_RELAY_PORT       31337
 #define KF_MAX_BUFFER       (4 * 1024 * 1024)  /* 4MB max IOCTL buffer */
 #define KF_DEVICE_PATH      "\\\\.\\KernelFlirt"
+
+/* Pseudo-IOCTL codes handled by relay (must match kf_shared.h) */
+#define KF_PSEUDO_LIST_DRIVES     CTL_CODE(0x00008000, 0x900, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define KF_PSEUDO_LIST_DIRECTORY  CTL_CODE(0x00008000, 0x901, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define KF_PSEUDO_CREATE_PROCESS  CTL_CODE(0x00008000, 0x902, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 static HANDLE g_hDeviceCmd = INVALID_HANDLE_VALUE;  /* CMD channel handle */
 static HANDLE g_hDeviceDbg = INVALID_HANDLE_VALUE;  /* DBG channel handle */
@@ -116,6 +122,228 @@ static BOOL SendAll(SOCKET s, const void *buf, int len)
     return TRUE;
 }
 
+/* ── Relay-handled pseudo-IOCTLs ── */
+
+/* Structs KF_DRIVE_ENTRY, KF_DIR_ENTRY, KF_CREATE_PROCESS_OUT come from kf_shared.h */
+
+static BOOL HandleListDrives(BYTE **ppOut, DWORD *pOutSize)
+{
+    DWORD mask = GetLogicalDrives();
+    if (!mask) return FALSE;
+
+    /* Count drives */
+    int count = 0;
+    for (int i = 0; i < 26; i++)
+        if (mask & (1 << i)) count++;
+
+    DWORD totalSize = (DWORD)(count * sizeof(KF_DRIVE_ENTRY));
+    KF_DRIVE_ENTRY *entries = (KF_DRIVE_ENTRY *)calloc(count, sizeof(KF_DRIVE_ENTRY));
+    if (!entries) return FALSE;
+
+    int idx = 0;
+    for (int i = 0; i < 26; i++) {
+        if (!(mask & (1 << i))) continue;
+
+        entries[idx].Letter = 'A' + (char)i;
+        entries[idx].Padding[0] = 0;
+        entries[idx].Padding[1] = 0;
+        entries[idx].Padding[2] = 0;
+
+        WCHAR root[4] = { L'A' + i, L':', L'\\', 0 };
+        entries[idx].DriveType = GetDriveTypeW(root);
+
+        /* Try to get volume label */
+        WCHAR label[64] = {0};
+        GetVolumeInformationW(root, label, 64, NULL, NULL, NULL, NULL, 0);
+        wcsncpy(entries[idx].Label, label, 63);
+
+        idx++;
+    }
+
+    *ppOut = (BYTE *)entries;
+    *pOutSize = totalSize;
+    return TRUE;
+}
+
+static BOOL HandleListDirectory(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, DWORD *pOutSize)
+{
+    if (!inputBuf || inputSize < 4) return FALSE;
+
+    /* Input is a null-terminated wide string (path) */
+    WCHAR *path = (WCHAR *)inputBuf;
+    /* Ensure null-terminated */
+    int maxChars = inputSize / sizeof(WCHAR);
+    path[maxChars - 1] = L'\0';
+
+    /* Build search pattern: path\* */
+    WCHAR searchPath[MAX_PATH + 4];
+    wcsncpy(searchPath, path, MAX_PATH);
+    searchPath[MAX_PATH - 1] = L'\0';
+    size_t len = wcslen(searchPath);
+    if (len > 0 && searchPath[len - 1] != L'\\')
+        wcscat(searchPath, L"\\");
+    wcscat(searchPath, L"*");
+
+    WIN32_FIND_DATAW fd;
+    HANDLE hFind = FindFirstFileW(searchPath, &fd);
+    if (hFind == INVALID_HANDLE_VALUE) return FALSE;
+
+    /* First pass: count entries (skip . and ..) */
+    int count = 0;
+    KF_DIR_ENTRY *entries = NULL;
+    DWORD capacity = 256;
+    entries = (KF_DIR_ENTRY *)calloc(capacity, sizeof(KF_DIR_ENTRY));
+    if (!entries) { FindClose(hFind); return FALSE; }
+
+    do {
+        if (wcscmp(fd.cFileName, L".") == 0) continue;
+        if (wcscmp(fd.cFileName, L"..") == 0) continue;
+
+        if ((DWORD)count >= capacity) {
+            capacity *= 2;
+            KF_DIR_ENTRY *tmp = (KF_DIR_ENTRY *)realloc(entries, capacity * sizeof(KF_DIR_ENTRY));
+            if (!tmp) { free(entries); FindClose(hFind); return FALSE; }
+            entries = tmp;
+        }
+
+        memset(&entries[count], 0, sizeof(KF_DIR_ENTRY));
+        entries[count].IsDirectory = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? 1 : 0;
+        entries[count].FileSize = ((ULONGLONG)fd.nFileSizeHigh << 32) | fd.nFileSizeLow;
+        wcsncpy(entries[count].Name, fd.cFileName, 259);
+        count++;
+    } while (FindNextFileW(hFind, &fd));
+
+    FindClose(hFind);
+
+    if (count == 0) {
+        free(entries);
+        *ppOut = NULL;
+        *pOutSize = 0;
+        return TRUE;
+    }
+
+    *ppOut = (BYTE *)entries;
+    *pOutSize = (DWORD)(count * sizeof(KF_DIR_ENTRY));
+    return TRUE;
+}
+
+static BOOL HandleCreateProcess(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, DWORD *pOutSize)
+{
+    if (!inputBuf || inputSize < 4) return FALSE;
+
+    WCHAR *exePath = (WCHAR *)inputBuf;
+    int maxChars = inputSize / sizeof(WCHAR);
+    exePath[maxChars - 1] = L'\0';
+
+    STARTUPINFOW si;
+    PROCESS_INFORMATION pi;
+    memset(&si, 0, sizeof(si));
+    si.cb = sizeof(si);
+    memset(&pi, 0, sizeof(pi));
+
+    /* Create process suspended so debugger can set breakpoints first */
+    BOOL ok = CreateProcessW(
+        exePath, NULL, NULL, NULL, FALSE,
+        CREATE_SUSPENDED,
+        NULL, NULL, &si, &pi);
+
+    if (!ok) {
+        printf("[relay] CreateProcess failed: %lu\n", GetLastError());
+        return FALSE;
+    }
+
+    printf("[relay] Created process PID=%lu TID=%lu (suspended)\n", pi.dwProcessId, pi.dwThreadId);
+
+    /* Query PEB to get ImageBaseAddress (valid even while suspended) */
+    ULONG64 imageBase = 0;
+    {
+        typedef LONG (NTAPI *NtQueryInformationProcess_t)(
+            HANDLE, ULONG, PVOID, ULONG, PULONG);
+        /* x64 PROCESS_BASIC_INFORMATION layout:
+         *   NTSTATUS  ExitStatus       (4 + 4 padding = offset 0)
+         *   PPEB      PebBaseAddress   (8 bytes        = offset 8)
+         *   ULONG_PTR AffinityMask     (8 bytes        = offset 16)
+         *   LONG      BasePriority     (4 + 4 padding  = offset 24)
+         *   ULONG_PTR UniqueProcessId  (8 bytes        = offset 32)
+         *   ULONG_PTR InheritedFrom    (8 bytes        = offset 40)
+         *   Total: 48 bytes */
+        typedef struct {
+            LONG      ExitStatus;
+            LONG      Pad0;
+            PVOID     PebBaseAddress;
+            ULONG_PTR AffinityMask;
+            LONG      BasePriority;
+            LONG      Pad1;
+            ULONG_PTR UniqueProcessId;
+            ULONG_PTR InheritedFromUniqueProcessId;
+        } PBI;
+
+        NtQueryInformationProcess_t pNtQIP = (NtQueryInformationProcess_t)
+            GetProcAddress(GetModuleHandleA("ntdll.dll"), "NtQueryInformationProcess");
+        if (pNtQIP) {
+            PBI pbi = {0};
+            ULONG retLen = 0;
+            LONG ntStatus = pNtQIP(pi.hProcess, 0 /*ProcessBasicInformation*/, &pbi, sizeof(pbi), &retLen);
+            printf("[relay] NtQIP status=0x%08lX retLen=%lu sizeof(PBI)=%zu\n",
+                   (unsigned long)ntStatus, retLen, sizeof(pbi));
+            if (ntStatus == 0) {
+                printf("[relay] PEB @ %p\n", pbi.PebBaseAddress);
+                /* PEB+0x10 = ImageBaseAddress on x64 */
+                SIZE_T bytesRead = 0;
+                BOOL readOk = ReadProcessMemory(pi.hProcess, (BYTE *)pbi.PebBaseAddress + 0x10,
+                                  &imageBase, sizeof(imageBase), &bytesRead);
+                printf("[relay] ReadProcessMemory(PEB+0x10) ok=%d read=%zu ImageBase=0x%llX\n",
+                       readOk, bytesRead, imageBase);
+            }
+        } else {
+            printf("[relay] NtQueryInformationProcess not found!\n");
+        }
+    }
+
+    KF_CREATE_PROCESS_OUT *out = (KF_CREATE_PROCESS_OUT *)calloc(1, sizeof(KF_CREATE_PROCESS_OUT));
+    if (!out) {
+        TerminateProcess(pi.hProcess, 1);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        return FALSE;
+    }
+
+    out->ProcessId = pi.dwProcessId;
+    out->ThreadId = pi.dwThreadId;
+    out->ImageBase = imageBase;
+
+    /* Don't close process/thread handles — we want the process to stay alive */
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+
+    *ppOut = (BYTE *)out;
+    *pOutSize = sizeof(KF_CREATE_PROCESS_OUT);
+    return TRUE;
+}
+
+/*
+ * Check if this IOCTL is a relay pseudo-IOCTL.
+ * If so, handle it locally and return TRUE; caller should send response.
+ * On return: *ppOut (malloc'd, caller frees), *pOutSize, *pSuccess.
+ */
+static BOOL TryHandlePseudoIoctl(DWORD ioctlCode, BYTE *inputBuf, DWORD inputSize,
+                                  BYTE **ppOut, DWORD *pOutSize, BOOL *pSuccess)
+{
+    switch (ioctlCode) {
+    case KF_PSEUDO_LIST_DRIVES:
+        *pSuccess = HandleListDrives(ppOut, pOutSize);
+        return TRUE;
+    case KF_PSEUDO_LIST_DIRECTORY:
+        *pSuccess = HandleListDirectory(inputBuf, inputSize, ppOut, pOutSize);
+        return TRUE;
+    case KF_PSEUDO_CREATE_PROCESS:
+        *pSuccess = HandleCreateProcess(inputBuf, inputSize, ppOut, pOutSize);
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
 /* ── Per-request work item for thread pool ── */
 
 typedef struct _REQUEST_ITEM {
@@ -134,29 +362,47 @@ static DWORD WINAPI RequestWorker(LPVOID param)
 {
     REQUEST_ITEM *req = (REQUEST_ITEM *)param;
     BYTE *outputBuf = NULL;
-    DWORD outputSize = KF_MAX_BUFFER;
+    DWORD outputSize = 0;
     DWORD bytesReturned = 0;
     BOOL  success;
     DWORD win32Error = 0;
 
-    /* Allocate output buffer */
-    outputBuf = (BYTE *)malloc(outputSize);
-    if (!outputBuf) {
-        free(req->inputBuf);
-        free(req);
-        return 1;
+    /* Check if this is a relay pseudo-IOCTL (file browser, create process, etc.) */
+    BYTE *pseudoOut = NULL;
+    DWORD pseudoOutSize = 0;
+    BOOL pseudoSuccess = FALSE;
+
+    if (TryHandlePseudoIoctl(req->ioctlCode, req->inputBuf, req->inputSize,
+                              &pseudoOut, &pseudoOutSize, &pseudoSuccess))
+    {
+        /* Handled locally by relay */
+        success = pseudoSuccess;
+        outputBuf = pseudoOut;
+        bytesReturned = pseudoOutSize;
+        if (!success)
+            win32Error = GetLastError();
     }
+    else
+    {
+        /* Forward to driver via DeviceIoControl */
+        outputSize = KF_MAX_BUFFER;
+        outputBuf = (BYTE *)malloc(outputSize);
+        if (!outputBuf) {
+            free(req->inputBuf);
+            free(req);
+            return 1;
+        }
 
-    /* Call DeviceIoControl — may block (e.g. WAIT_DEBUG_EVENT) */
-    success = DeviceIoControl(
-        req->hDevice,
-        req->ioctlCode,
-        req->inputBuf, req->inputSize,
-        outputBuf, outputSize,
-        &bytesReturned, NULL);
+        success = DeviceIoControl(
+            req->hDevice,
+            req->ioctlCode,
+            req->inputBuf, req->inputSize,
+            outputBuf, outputSize,
+            &bytesReturned, NULL);
 
-    if (!success)
-        win32Error = GetLastError();
+        if (!success)
+            win32Error = GetLastError();
+    }
 
     /* Serialize the response on the socket */
     EnterCriticalSection(req->pSendLock);

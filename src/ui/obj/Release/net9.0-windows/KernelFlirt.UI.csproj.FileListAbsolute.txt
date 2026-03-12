@@ -57,3 +57,5 @@ C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\obj\Release\net9.0-windows\re
 C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\obj\Release\net9.0-windows\KernelFlirt.pdb
 C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\obj\Release\net9.0-windows\KernelFlirt.UI.genruntimeconfig.cache
 C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\obj\Release\net9.0-windows\ref\KernelFlirt.dll
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\obj\Release\net9.0-windows\Views\RemoteFileBrowserDialog.baml
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\obj\Release\net9.0-windows\Views\RemoteFileBrowserDialog.g.cs
