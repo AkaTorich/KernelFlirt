@@ -86,11 +86,25 @@ KernelFlirt.exe
 
 ### 4. Debug a Process
 
-1. **File -> Open** — browse VM filesystem, select an EXE
+1. **File -> Open** — browse VM filesystem, select an EXE or SYS
 2. Process is created suspended, entry point BP is set automatically
 3. **F9** (Run) — hits entry point, loads symbols and modules
 4. Set breakpoints on functions via right-click or F2
 5. **F9** to run, **F7** to step into, **F8** to step over
+
+### 5. Debug a Driver
+
+KernelFlirt can also debug kernel-mode drivers. You can set breakpoints on any kernel function — both in your driver and in kernel imports (ntoskrnl, HAL, etc.).
+
+1. Load your test driver on the VM (e.g. via `sc create` + `sc start`)
+2. In KernelFlirt, attach to any process that will trigger your driver (or use a test app)
+3. Open **Kernel Modules** tab — find your driver, double-click to disassemble
+4. Open **Imports** tab — see IAT entries resolved to kernel functions (e.g. `ntoskrnl.exe!DbgPrint`)
+5. Set breakpoints on driver functions or kernel imports via right-click → **Set Breakpoint** or F2
+6. **F9** (Run) — trigger the driver, breakpoint fires
+7. Step through kernel code with **F7** / **F8**, inspect registers and call stack
+
+> **Note:** Software breakpoints on kernel functions (INT3) use MDL-based memory patching. Setting a BP on a shared kernel function (e.g. DbgPrint) will fire for ALL callers — your driver, other drivers, and the kernel itself. The hook transparently handles non-target hits, but be aware of this when debugging hot paths.
 
 ## Symbol Configuration
 

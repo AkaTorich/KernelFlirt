@@ -132,7 +132,7 @@ KfDispatchIoctl(
     case IOCTL_KF_RESET:
         DbgPrint("[KernelFlirt] RESET: removing all breakpoints and hook\n");
         KfRemoveAllBreakpoints();
-        KfRemoveDebugHook();
+        KfDebugHookCleanup();   /* removes hook AND cancels pending WAIT IRP */
         KfSetTargetPid(0);
         status = STATUS_SUCCESS;
         Irp->IoStatus.Information = 0;

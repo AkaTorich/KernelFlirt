@@ -53,6 +53,7 @@ public class DriverComm : IDisposable
     private static readonly uint IOCTL_KF_WAIT_DEBUG_EVENT = CTL_CODE(DeviceType, 0x842, 0, 0);
     private static readonly uint IOCTL_KF_CONTINUE_DEBUG_EVENT = CTL_CODE(DeviceType, 0x843, 0, 0);
     private static readonly uint IOCTL_KF_GET_HOOK_STATS = CTL_CODE(DeviceType, 0x844, 0, 0);
+    private static readonly uint IOCTL_KF_RESET          = CTL_CODE(DeviceType, 0x8FE, 0, 0);
 
     // Relay pseudo-IOCTLs (handled by relay, not driver)
     private static readonly uint IOCTL_KF_LIST_DRIVES     = CTL_CODE(DeviceType, 0x900, 0, 0);
@@ -802,6 +803,15 @@ public class DriverComm : IDisposable
     public bool RemoveDebugHook()
     {
         var (ok, _) = SendIoctl(IOCTL_KF_REMOVE_HOOK, null, 0);
+        return ok;
+    }
+
+    /// <summary>
+    /// Send RESET to driver: removes all BPs, hook, and cancels pending WAIT IRP.
+    /// </summary>
+    public bool ResetDriver()
+    {
+        var (ok, _) = SendIoctl(IOCTL_KF_RESET, null, 0);
         return ok;
     }
 

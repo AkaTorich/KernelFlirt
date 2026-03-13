@@ -887,11 +887,9 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    /* Open driver */
+    /* Try to open driver (non-fatal — will retry when client connects) */
     if (!OpenDriver()) {
-        printf("[!] Cannot open driver. Is it loaded?\n");
-        WSACleanup();
-        return 1;
+        printf("[!] Driver not available yet — will retry on client connect\n");
     }
 
     /* Create listening socket */
@@ -947,6 +945,19 @@ int main(int argc, char *argv[])
             continue;
         }
 
+        /* (Re-)open driver handles if needed — covers both initial failure
+           and driver-reloaded-between-sessions scenarios */
+        if (g_hDeviceCmd == INVALID_HANDLE_VALUE ||
+            g_hDeviceDbg == INVALID_HANDLE_VALUE) {
+            CloseDriver();
+            if (!OpenDriver()) {
+                printf("[!] Driver not available, closing session\n");
+                closesocket(cmdSock);
+                closesocket(dbgSock);
+                continue;
+            }
+        }
+
         printf("[+] Both channels connected — session active\n");
 
         dbgThread = CreateThread(NULL, 0, DbgChannelThread, (LPVOID)(ULONG_PTR)dbgSock, 0, NULL);
@@ -968,6 +979,14 @@ int main(int argc, char *argv[])
 
         /* Reset driver state: remove all BPs, hooks, unblock threads */
         ResetDriver();
+
+        /* Re-open driver handles — the driver may have been reloaded
+           between sessions, making old handles stale. */
+        CloseDriver();
+        if (!OpenDriver()) {
+            printf("[!] Driver not available after session end. "
+                   "Will retry on next connection.\n");
+        }
 
         printf("[-] Session ended (driver reset)\n");
     }
