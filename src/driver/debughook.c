@@ -629,12 +629,23 @@ static void KfCompleteWaitIrp(PIRP Irp, PKF_DEBUG_EVENT event)
 /* ------------------------------------------------------------------ */
 
 static void KfReportAndBlock(
+    PVOID             TrapFrame,
     PEXCEPTION_RECORD ExceptionRecord,
     PCONTEXT          ContextRecord,
     KPROCESSOR_MODE   PreviousMode)
 {
     KIRQL   oldIrql;
     PIRP    irpToComplete = NULL;
+
+    /*
+     * Sync ContextRecord->Rip back to TrapFrame so that ReadRegisters
+     * (which reads KTHREAD->TrapFrame directly) sees the adjusted RIP
+     * while the thread is blocked in KeWaitForSingleObject below.
+     */
+    if (TrapFrame != NULL) {
+        *(ULONG64 *)((UCHAR *)TrapFrame + 0x168) = ContextRecord->Rip;
+        *(ULONG64 *)((UCHAR *)TrapFrame + 0x178) = ContextRecord->EFlags;
+    }
 
     KeAcquireSpinLock(&g_DbgLock, &oldIrql);
 
@@ -688,7 +699,6 @@ static BOOLEAN KfDebugHandler(
     BOOLEAN isTarget = (g_TargetPid == 0 || currentPid == g_TargetPid
                         || excAddr >= 0xFFFF800000000000ULL);
 
-    UNREFERENCED_PARAMETER(TrapFrame);
     UNREFERENCED_PARAMETER(ExceptionFrame);
 
     /*
@@ -740,7 +750,7 @@ static BOOLEAN KfDebugHandler(
 
             /* StepIn mode: report SingleStep event to UI */
             InterlockedIncrement(&g_HookStepCount);
-            KfReportAndBlock(ExceptionRecord, ContextRecord, PreviousMode);
+            KfReportAndBlock(TrapFrame, ExceptionRecord, ContextRecord, PreviousMode);
 
             /* After UI continues: check if another step was requested */
             if (g_ContinueMode == KF_CONTINUE_STEP_INTO) {
@@ -809,7 +819,7 @@ static BOOLEAN KfDebugHandler(
             InterlockedIncrement(&g_HookBpHitCount);
 
             /* Report to UI and block */
-            KfReportAndBlock(ExceptionRecord, ContextRecord, PreviousMode);
+            KfReportAndBlock(TrapFrame, ExceptionRecord, ContextRecord, PreviousMode);
 
             /*
              * Back from UI continue. Check continue mode:
@@ -878,7 +888,7 @@ static BOOLEAN KfDebugHandler(
         return FALSE;
 
 report_to_ui:
-    KfReportAndBlock(ExceptionRecord, ContextRecord, PreviousMode);
+    KfReportAndBlock(TrapFrame, ExceptionRecord, ContextRecord, PreviousMode);
 
     /* After UI continues: set TF if step was requested */
     if (g_ContinueMode == KF_CONTINUE_STEP_INTO) {
