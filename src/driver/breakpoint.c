@@ -171,7 +171,9 @@ static NTSTATUS KfReadProcessByte(PEPROCESS process, ULONG64 address, PUCHAR out
 
 #define KERNEL_SPACE_START  0xFFFF800000000000ULL
 
-/* MDL-based write for kernel code pages (same mechanism as KdTrap patching) */
+/* MDL-based write for kernel code pages — same approach as KfWriteByteInContext
+ * in debughook.c: map via MDL and write directly (MmProtectMdlSystemAddress
+ * silently fails on some Win10 builds, so we skip it). */
 static NTSTATUS KfWriteKernelByte(ULONG64 address, UCHAR byte)
 {
     PMDL    mdl = NULL;
@@ -181,19 +183,19 @@ static NTSTATUS KfWriteKernelByte(ULONG64 address, UCHAR byte)
     if (!MmIsAddressValid((PVOID)address))
         return STATUS_ACCESS_VIOLATION;
 
-    __try {
-        mdl = IoAllocateMdl((PVOID)address, 1, FALSE, FALSE, NULL);
-        if (!mdl) return STATUS_INSUFFICIENT_RESOURCES;
+    mdl = IoAllocateMdl((PVOID)address, 1, FALSE, FALSE, NULL);
+    if (!mdl) return STATUS_INSUFFICIENT_RESOURCES;
 
+    __try {
         MmProbeAndLockPages(mdl, KernelMode, IoReadAccess);
 
         mapped = MmMapLockedPagesSpecifyCache(
             mdl, KernelMode, MmNonCached, NULL, FALSE, NormalPagePriority);
         if (!mapped) { status = STATUS_INSUFFICIENT_RESOURCES; __leave; }
 
-        status = MmProtectMdlSystemAddress(mdl, PAGE_READWRITE);
-        if (NT_SUCCESS(status))
-            *(UCHAR *)mapped = byte;
+        /* Write directly through the MDL mapping — works for read-only
+         * kernel code pages because the MDL mapping bypasses PTE protections */
+        *(UCHAR *)mapped = byte;
     }
     __except (EXCEPTION_EXECUTE_HANDLER) {
         status = GetExceptionCode();

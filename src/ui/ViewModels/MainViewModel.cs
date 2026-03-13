@@ -2481,6 +2481,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         Log($"Found {entries.Count} imports");
         Log("Process loaded");
         StatusText = $"Process loaded - PID {TargetPid}";
+
+        // Re-annotate disassembly now that IAT lookup is available
+        if (entries.Count > 0 && Instructions.Count > 0)
+            RefreshDisassembly();
     }
 
     private static List<ImportEntry> ParseImportsFromBuffer(byte[] image, ulong modBase)

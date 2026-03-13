@@ -169,7 +169,7 @@
             </Grid.RowDefinitions>
 
             <!-- Top: TabControl with all panels -->
-            <TabControl Grid.Row="0">
+            <TabControl Grid.Row="0" x:Name="MainTabControl">
 
                 <!-- Tab: Disassembly + Registers -->
                 <TabItem Header="Disassembly" IsSelected="True">

@@ -457,13 +457,19 @@ public partial class MainWindow : Window
     private void OnImportDoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (ImportsGrid.SelectedItem is ImportEntry imp)
+        {
             VM.FollowInDisasmCommand.Execute(imp.ResolvedAddress);
+            MainTabControl.SelectedIndex = 0;
+        }
     }
 
     private void OnImportFollowDisasm(object sender, RoutedEventArgs e)
     {
         if (ImportsGrid.SelectedItem is ImportEntry imp)
+        {
             VM.FollowInDisasmCommand.Execute(imp.ResolvedAddress);
+            MainTabControl.SelectedIndex = 0;
+        }
     }
 
     private void OnImportFollowDump(object sender, RoutedEventArgs e)
@@ -497,13 +503,19 @@ public partial class MainWindow : Window
     private void OnFunctionDoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (FunctionsGrid.SelectedItem is FunctionEntry fn)
+        {
             VM.FollowInDisasmCommand.Execute(fn.Address);
+            MainTabControl.SelectedIndex = 0;
+        }
     }
 
     private void OnFunctionFollowDisasm(object sender, RoutedEventArgs e)
     {
         if (FunctionsGrid.SelectedItem is FunctionEntry fn)
+        {
             VM.FollowInDisasmCommand.Execute(fn.Address);
+            MainTabControl.SelectedIndex = 0;
+        }
     }
 
     private void OnFunctionSetBp(object sender, RoutedEventArgs e)

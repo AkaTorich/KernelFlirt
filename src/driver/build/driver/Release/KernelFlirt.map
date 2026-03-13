@@ -1,6 +1,6 @@
  KernelFlirt
 
- Timestamp is 69b3dacc (Fri Mar 13 17:37:16 2026)
+ Timestamp is 69b3e823 (Fri Mar 13 18:34:11 2026)
 
  Preferred load address is 0000000180000000
 
@@ -59,19 +59,19 @@
  0001:000002c0       KfDispatchIoctl            00000001800012c0 f   ioctl.obj
  0001:00000c40       KfReadMemory               0000000180001c40 f   memory.obj
  0001:00000f80       KfWriteMemory              0000000180001f80 f   memory.obj
- 0001:00001de0       KfRemoveBreakpoint         0000000180002de0 f   breakpoint.obj
- 0001:00002050       KfFindSwBpOrigByte         0000000180003050 f   breakpoint.obj
- 0001:00002120       KfRemoveAllBreakpoints     0000000180003120 f   breakpoint.obj
- 0001:00002340       KfSingleStep               0000000180003340 f   singlestep.obj
- 0001:00002420       KfReadRegisters            0000000180003420 f   registers.obj
- 0001:000026c0       KfWriteRegisters           00000001800036c0 f   registers.obj
- 0001:000028b0       KfEnumModules              00000001800038b0 f   modules.obj
- 0001:00002a80       KfEnumThreads              0000000180003a80 f   threads.obj
- 0001:00002d30       KfEnumProcesses            0000000180003d30 f   process.obj
- 0001:00003f70       KfInstallDebugHook         0000000180004f70 f   debughook.obj
- 0001:000045a0       KfRemoveDebugHook          00000001800055a0 f   debughook.obj
- 0001:0000475d       __C_specific_handler       000000018000575d f   ntoskrnl:ntoskrnl.exe
- 0001:00004770       __cpu_features_init        0000000180005770 f   ntoskrnl:cpuinfo.obj
+ 0001:00001dc0       KfRemoveBreakpoint         0000000180002dc0 f   breakpoint.obj
+ 0001:00002030       KfFindSwBpOrigByte         0000000180003030 f   breakpoint.obj
+ 0001:00002100       KfRemoveAllBreakpoints     0000000180003100 f   breakpoint.obj
+ 0001:00002320       KfSingleStep               0000000180003320 f   singlestep.obj
+ 0001:00002400       KfReadRegisters            0000000180003400 f   registers.obj
+ 0001:000026a0       KfWriteRegisters           00000001800036a0 f   registers.obj
+ 0001:00002890       KfEnumModules              0000000180003890 f   modules.obj
+ 0001:00002a60       KfEnumThreads              0000000180003a60 f   threads.obj
+ 0001:00002d10       KfEnumProcesses            0000000180003d10 f   process.obj
+ 0001:00003f50       KfInstallDebugHook         0000000180004f50 f   debughook.obj
+ 0001:00004580       KfRemoveDebugHook          0000000180005580 f   debughook.obj
+ 0001:0000473d       __C_specific_handler       000000018000573d f   ntoskrnl:ntoskrnl.exe
+ 0001:00004750       __cpu_features_init        0000000180005750 f   ntoskrnl:cpuinfo.obj
  0001:00004840       memcpy                     0000000180005840 f   ntoskrnl:memcpy.obj
  0001:00004840       memmove                    0000000180005840 f   ntoskrnl:memcpy.obj
  0001:00004b00       memset                     0000000180005b00 f   ntoskrnl:memset.obj
@@ -291,21 +291,21 @@
  0001:00000dc0       KfSafeKernelWrite          0000000180001dc0 f   memory.obj
  0001:000010d0       KfWriteProcessMemory       00000001800020d0 f   breakpoint.obj
  0001:000012b0       KfWriteKernelByte          00000001800022b0 f   breakpoint.obj
- 0001:000013e0       KfReadKernelByte           00000001800023e0 f   breakpoint.obj
- 0001:00001430       KfSetSwBreakpoint          0000000180002430 f   breakpoint.obj
- 0001:00001790       KfSetHwBreakpoint          0000000180002790 f   breakpoint.obj
- 0001:00001aa0       KfSetMemoryBreakpoint      0000000180002aa0 f   breakpoint.obj
- 0001:00001cf0       KfRemoveMemoryBreakpoint   0000000180002cf0 f   breakpoint.obj
- 0001:00002cb0       KfResolveSuspendApis       0000000180003cb0 f   threads.obj
- 0001:00002f30       KfWriteByteInContext       0000000180003f30 f   debughook.obj
- 0001:00003070       KfPatchBytes               0000000180004070 f   debughook.obj
- 0001:000032a0       KfPatternScanKdTrap        00000001800042a0 f   debughook.obj
- 0001:00003550       KfFindKdpTrapCallSite      0000000180004550 f   debughook.obj
- 0001:00003650       KfCompleteWaitIrp          0000000180004650 f   debughook.obj
- 0001:000036f0       KfReportAndBlock           00000001800046f0 f   debughook.obj
- 0001:00003a60       KfDebugHandler             0000000180004a60 f   debughook.obj
- 0001:00003db0       KfCancelWaitIrp            0000000180004db0 f   debughook.obj
- 0001:00003e20       KfDumpBytes                0000000180004e20 f   debughook.obj
+ 0001:000013c0       KfReadKernelByte           00000001800023c0 f   breakpoint.obj
+ 0001:00001410       KfSetSwBreakpoint          0000000180002410 f   breakpoint.obj
+ 0001:00001770       KfSetHwBreakpoint          0000000180002770 f   breakpoint.obj
+ 0001:00001a80       KfSetMemoryBreakpoint      0000000180002a80 f   breakpoint.obj
+ 0001:00001cd0       KfRemoveMemoryBreakpoint   0000000180002cd0 f   breakpoint.obj
+ 0001:00002c90       KfResolveSuspendApis       0000000180003c90 f   threads.obj
+ 0001:00002f10       KfWriteByteInContext       0000000180003f10 f   debughook.obj
+ 0001:00003050       KfPatchBytes               0000000180004050 f   debughook.obj
+ 0001:00003280       KfPatternScanKdTrap        0000000180004280 f   debughook.obj
+ 0001:00003530       KfFindKdpTrapCallSite      0000000180004530 f   debughook.obj
+ 0001:00003630       KfCompleteWaitIrp          0000000180004630 f   debughook.obj
+ 0001:000036d0       KfReportAndBlock           00000001800046d0 f   debughook.obj
+ 0001:00003a40       KfDebugHandler             0000000180004a40 f   debughook.obj
+ 0001:00003d90       KfCancelWaitIrp            0000000180004d90 f   debughook.obj
+ 0001:00003e00       KfDumpBytes                0000000180004e00 f   debughook.obj
  0001:00004840       $$000000                   0000000180005840     ntoskrnl:memcpy.obj
  0001:00004860       mcpy00                     0000000180005860     ntoskrnl:memcpy.obj
  0001:00004880       mcpy10                     0000000180005880     ntoskrnl:memcpy.obj
@@ -355,40 +355,40 @@
  0002:00001af4       $unwind$KfWriteMemory      0000000180007af4     memory.obj
  0002:00001b1c       $unwind$KfWriteProcessMemory 0000000180007b1c     breakpoint.obj
  0002:00001b58       $unwind$KfWriteKernelByte  0000000180007b58     breakpoint.obj
- 0002:00001b94       $unwind$KfReadKernelByte   0000000180007b94     breakpoint.obj
- 0002:00001bb8       $unwind$KfSetSwBreakpoint  0000000180007bb8     breakpoint.obj
- 0002:00001be4       $unwind$KfSetHwBreakpoint  0000000180007be4     breakpoint.obj
- 0002:00001c10       $unwind$KfSetMemoryBreakpoint 0000000180007c10     breakpoint.obj
- 0002:00001c24       $unwind$KfRemoveMemoryBreakpoint 0000000180007c24     breakpoint.obj
- 0002:00001c30       $chain$0$KfRemoveMemoryBreakpoint 0000000180007c30     breakpoint.obj
- 0002:00001c44       $chain$1$KfRemoveMemoryBreakpoint 0000000180007c44     breakpoint.obj
- 0002:00001c54       $unwind$KfRemoveBreakpoint 0000000180007c54     breakpoint.obj
- 0002:00001c80       $unwind$KfFindSwBpOrigByte 0000000180007c80     breakpoint.obj
- 0002:00001c94       $unwind$KfRemoveAllBreakpoints 0000000180007c94     breakpoint.obj
- 0002:00001cc0       $unwind$KfSingleStep       0000000180007cc0     singlestep.obj
- 0002:00001ce8       $unwind$KfReadRegisters    0000000180007ce8     registers.obj
- 0002:00001d10       $unwind$KfWriteRegisters   0000000180007d10     registers.obj
- 0002:00001d38       $unwind$KfEnumModules      0000000180007d38     modules.obj
- 0002:00001d64       $unwind$KfEnumThreads      0000000180007d64     threads.obj
- 0002:00001d90       $unwind$KfResolveSuspendApis 0000000180007d90     threads.obj
- 0002:00001d98       $unwind$KfEnumProcesses    0000000180007d98     process.obj
- 0002:00001dc4       $unwind$KfWriteByteInContext 0000000180007dc4     debughook.obj
- 0002:00001e00       $unwind$KfPatchBytes       0000000180007e00     debughook.obj
- 0002:00001e30       $unwind$KfPatternScanKdTrap 0000000180007e30     debughook.obj
- 0002:00001e38       $chain$0$KfPatternScanKdTrap 0000000180007e38     debughook.obj
- 0002:00001e4c       $chain$2$KfPatternScanKdTrap 0000000180007e4c     debughook.obj
- 0002:00001e60       $chain$10$KfPatternScanKdTrap 0000000180007e60     debughook.obj
- 0002:00001e8c       $chain$12$KfPatternScanKdTrap 0000000180007e8c     debughook.obj
- 0002:00001eb8       $unwind$KfFindKdpTrapCallSite 0000000180007eb8     debughook.obj
- 0002:00001ed0       $unwind$KfReportAndBlock   0000000180007ed0     debughook.obj
- 0002:00001ee8       $unwind$KfDebugHandler     0000000180007ee8     debughook.obj
- 0002:00001f00       $unwind$KfCancelWaitIrp    0000000180007f00     debughook.obj
- 0002:00001f08       $unwind$KfDumpBytes        0000000180007f08     debughook.obj
- 0002:00001f14       $chain$2$KfDumpBytes       0000000180007f14     debughook.obj
- 0002:00001f30       $chain$3$KfDumpBytes       0000000180007f30     debughook.obj
- 0002:00001f40       $unwind$KfInstallDebugHook 0000000180007f40     debughook.obj
- 0002:00001f54       $chain$0$KfRemoveDebugHook 0000000180007f54     debughook.obj
- 0002:00001f68       $chain$1$KfRemoveDebugHook 0000000180007f68     debughook.obj
+ 0002:00001b90       $unwind$KfReadKernelByte   0000000180007b90     breakpoint.obj
+ 0002:00001bb4       $unwind$KfSetSwBreakpoint  0000000180007bb4     breakpoint.obj
+ 0002:00001be0       $unwind$KfSetHwBreakpoint  0000000180007be0     breakpoint.obj
+ 0002:00001c0c       $unwind$KfSetMemoryBreakpoint 0000000180007c0c     breakpoint.obj
+ 0002:00001c20       $unwind$KfRemoveMemoryBreakpoint 0000000180007c20     breakpoint.obj
+ 0002:00001c2c       $chain$0$KfRemoveMemoryBreakpoint 0000000180007c2c     breakpoint.obj
+ 0002:00001c40       $chain$1$KfRemoveMemoryBreakpoint 0000000180007c40     breakpoint.obj
+ 0002:00001c50       $unwind$KfRemoveBreakpoint 0000000180007c50     breakpoint.obj
+ 0002:00001c7c       $unwind$KfFindSwBpOrigByte 0000000180007c7c     breakpoint.obj
+ 0002:00001c90       $unwind$KfRemoveAllBreakpoints 0000000180007c90     breakpoint.obj
+ 0002:00001cbc       $unwind$KfSingleStep       0000000180007cbc     singlestep.obj
+ 0002:00001ce4       $unwind$KfReadRegisters    0000000180007ce4     registers.obj
+ 0002:00001d0c       $unwind$KfWriteRegisters   0000000180007d0c     registers.obj
+ 0002:00001d34       $unwind$KfEnumModules      0000000180007d34     modules.obj
+ 0002:00001d60       $unwind$KfEnumThreads      0000000180007d60     threads.obj
+ 0002:00001d8c       $unwind$KfResolveSuspendApis 0000000180007d8c     threads.obj
+ 0002:00001d94       $unwind$KfEnumProcesses    0000000180007d94     process.obj
+ 0002:00001dc0       $unwind$KfWriteByteInContext 0000000180007dc0     debughook.obj
+ 0002:00001dfc       $unwind$KfPatchBytes       0000000180007dfc     debughook.obj
+ 0002:00001e2c       $unwind$KfPatternScanKdTrap 0000000180007e2c     debughook.obj
+ 0002:00001e34       $chain$0$KfPatternScanKdTrap 0000000180007e34     debughook.obj
+ 0002:00001e48       $chain$2$KfPatternScanKdTrap 0000000180007e48     debughook.obj
+ 0002:00001e5c       $chain$10$KfPatternScanKdTrap 0000000180007e5c     debughook.obj
+ 0002:00001e88       $chain$12$KfPatternScanKdTrap 0000000180007e88     debughook.obj
+ 0002:00001eb4       $unwind$KfFindKdpTrapCallSite 0000000180007eb4     debughook.obj
+ 0002:00001ecc       $unwind$KfReportAndBlock   0000000180007ecc     debughook.obj
+ 0002:00001ee4       $unwind$KfDebugHandler     0000000180007ee4     debughook.obj
+ 0002:00001efc       $unwind$KfCancelWaitIrp    0000000180007efc     debughook.obj
+ 0002:00001f04       $unwind$KfDumpBytes        0000000180007f04     debughook.obj
+ 0002:00001f10       $chain$2$KfDumpBytes       0000000180007f10     debughook.obj
+ 0002:00001f2c       $chain$3$KfDumpBytes       0000000180007f2c     debughook.obj
+ 0002:00001f3c       $unwind$KfInstallDebugHook 0000000180007f3c     debughook.obj
+ 0002:00001f50       $chain$0$KfRemoveDebugHook 0000000180007f50     debughook.obj
+ 0002:00001f64       $chain$1$KfRemoveDebugHook 0000000180007f64     debughook.obj
  0002:00001f78       $xdatasym$memcpy           0000000180007f78     ntoskrnl:memcpy.obj
  0002:00001f78       $xdatasym$memset           0000000180007f78     ntoskrnl:memset.obj
  0002:00001f80       $xdatasym$__memset_repmovs 0000000180007f80     ntoskrnl:memset.obj
