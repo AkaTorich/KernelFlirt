@@ -1,7 +1,7 @@
 <Window x:Class="KernelFlirt.UI.Views.RemoteFileBrowserDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Open Remote File (.exe)"
+        Title="Open Remote File (.exe / .sys)"
         Width="700" Height="550"
         WindowStartupLocation="CenterOwner"
         Background="{StaticResource BgBrush}"
