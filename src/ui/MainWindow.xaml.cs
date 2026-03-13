@@ -451,6 +451,20 @@ public partial class MainWindow : Window
     }
 
     /* ================================================================== */
+    /*  Shared: right-click selects DataGrid row under cursor              */
+    /* ================================================================== */
+
+    private void DataGrid_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not DataGrid dg) return;
+        var dep = (DependencyObject)e.OriginalSource;
+        while (dep != null && dep is not DataGridRow)
+            dep = System.Windows.Media.VisualTreeHelper.GetParent(dep);
+        if (dep is DataGridRow row)
+            dg.SelectedItem = row.Item;
+    }
+
+    /* ================================================================== */
     /*  Imports context menu                                               */
     /* ================================================================== */
 
