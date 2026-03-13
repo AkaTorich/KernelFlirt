@@ -160,8 +160,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
-    private void DisconnectKernel()
+    private async Task DisconnectKernel()
     {
+        // Detach first — unblocks threads, removes BPs/hook, cancels pending IRP
+        if (TargetPid != 0 || IsDebugHookActive)
+            await DetachProcess();
+
         // Unload driver before disconnecting
         if (!string.IsNullOrEmpty(_loadedDriverServiceName))
         {
@@ -169,24 +173,17 @@ public partial class MainViewModel : ObservableObject, IDisposable
             _loadedDriverServiceName = null;
         }
 
-        _listenerCts?.Cancel();
         _driver.Disconnect();
         _symbols.Reset();
         IsConnected = false;
-        IsDebugHookActive = false;
-        IsBreakState = false;
-        IsRunning = false;
-        TargetPid = 0;
-        SelectedThreadId = 0;
+
+        // Clear all tabs
         KernelModules.Clear();
-        Modules.Clear();
-        Threads.Clear();
-        Registers.Clear();
-        Instructions.Clear();
-        CallStack.Clear();
-        StackEntries.Clear();
-        SehChain.Clear();
-        Imports.Clear();
+        Bookmarks.Clear();
+        Patches.Clear();
+        SearchResults.Clear();
+        LogMessages.Clear();
+
         StatusText = "Disconnected";
         Log("Disconnected");
     }
@@ -1092,15 +1089,17 @@ public partial class MainViewModel : ObservableObject, IDisposable
             }
         }
 
+        // Send RESET — removes hook, all BPs, AND cancels pending WAIT IRP in driver.
+        // This unblocks the listener task's WaitDebugEvent call.
+        await Task.Run(() => _driver.ResetDriver());
+        IsDebugHookActive = false;
+        Log("Driver reset (hook removed, pending WAIT cancelled)");
+
         StopDebugListener();
-        if (IsDebugHookActive)
-        {
-            await Task.Run(() => _driver.RemoveDebugHook());
-            IsDebugHookActive = false;
-            Log("Debug hook removed");
-        }
 
         _hitSwBp = null;
+        _tempBpHandle = null;
+        _allFunctions = [];
         TargetPid = 0;
         SelectedThreadId = 0;
         Instructions.Clear();
@@ -1109,6 +1108,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         Threads.Clear();
         StackEntries.Clear();
         CallStack.Clear();
+        SehChain.Clear();
+        Imports.Clear();
+        Functions.Clear();
+        FilteredFunctions.Clear();
         HexData = [];
         IsBreakState = false;
         IsRunning = false;
@@ -2220,6 +2223,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private void StopDebugListener()
     {
         _listenerCts?.Cancel();
+        // Wait for the listener task to finish (RESET should have cancelled the pending IRP,
+        // so WaitDebugEvent will return null and the task will exit).
+        if (_listenerTask != null)
+        {
+            try { _listenerTask.Wait(3000); } catch { /* timeout or cancelled — ok */ }
+        }
         _listenerCts?.Dispose();
         _listenerCts = null;
         _listenerTask = null;

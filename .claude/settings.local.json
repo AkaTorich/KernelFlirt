@@ -7,7 +7,8 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:docs.hex-rays.com)",
       "WebFetch(domain:book.rizin.re)",
-      "Read(//c/Program Files \\(x86\\)/Windows Kits/10/Debuggers/x64//**)"
+      "Read(//c/Program Files \\(x86\\)/Windows Kits/10/Debuggers/x64//**)",
+      "Bash(powershell -ExecutionPolicy Bypass -File build.ps1)"
     ]
   }
 }
