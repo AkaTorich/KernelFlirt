@@ -539,8 +539,19 @@ static void KfFillDebugEvent(
     } else if (ExceptionRecord->ExceptionCode == STATUS_BREAKPOINT) {
         evt->Type = KF_DBG_BREAKPOINT;
     } else if (ExceptionRecord->ExceptionCode == STATUS_SINGLE_STEP) {
-        if (ContextRecord->Dr6 & 0x0F) {
-            ULONG64 dr6 = ContextRecord->Dr6;
+        ULONG64 dr6 = ContextRecord->Dr6;
+        /*
+         * DR6 bit 14 (BS) = single-step trap (TF was set).
+         * DR6 bits 0-3 = hardware breakpoint match on DR0-DR3.
+         * The CPU does NOT clear DR6 automatically, so stale bits
+         * from previous HW BP events can persist. Check BS first
+         * to correctly identify TF-triggered single steps.
+         */
+        if (dr6 & (1ULL << 14)) {
+            /* TF-triggered single step — clear BS and stale HW bits */
+            evt->Type = KF_DBG_SINGLE_STEP;
+            ContextRecord->Dr6 = 0;
+        } else if (dr6 & 0x0F) {
             ULONG64 dr7 = ContextRecord->Dr7;
             int slot;
             BOOLEAN isWatchpoint = FALSE;
@@ -552,8 +563,11 @@ static void KfFillDebugEvent(
                 }
             }
             evt->Type = isWatchpoint ? KF_DBG_HW_WATCHPOINT : KF_DBG_HW_BREAKPOINT;
+            /* Clear DR6 to prevent stale bits on next exception */
+            ContextRecord->Dr6 = 0;
         } else {
             evt->Type = KF_DBG_SINGLE_STEP;
+            ContextRecord->Dr6 = 0;
         }
     } else {
         evt->Type = KF_DBG_BREAKPOINT;

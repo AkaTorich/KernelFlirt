@@ -162,6 +162,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void DisconnectKernel()
     {
+        // Unload driver before disconnecting
+        if (!string.IsNullOrEmpty(_loadedDriverServiceName))
+        {
+            try { _driver.UnloadRemoteDriver(_loadedDriverServiceName); } catch { }
+            _loadedDriverServiceName = null;
+        }
+
         _listenerCts?.Cancel();
         _driver.Disconnect();
         _symbols.Reset();
@@ -485,6 +492,18 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     private async Task OpenAndDebugDriverAsync(string sysPath)
     {
+        // 0. Unload previous driver if still loaded
+        if (!string.IsNullOrEmpty(_loadedDriverServiceName))
+        {
+            Log($"Unloading previous driver: {_loadedDriverServiceName}");
+            StatusText = "Unloading previous driver...";
+            var unloadOk = await Task.Run(() => _driver.UnloadRemoteDriver(_loadedDriverServiceName));
+            Log(unloadOk
+                ? $"Previous driver '{_loadedDriverServiceName}' unloaded"
+                : $"Warning: failed to unload '{_loadedDriverServiceName}' (may already be stopped)");
+            _loadedDriverServiceName = null;
+        }
+
         Log($"Loading driver: {sysPath}");
         StatusText = "Installing debug hook for kernel...";
 
@@ -504,13 +523,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
-        // 2. Start waiting for debug event BEFORE loading the driver
-        //    (async — runs on DBG channel while LOAD_DRIVER goes on CMD channel)
-        StatusText = "Loading driver (waiting for DriverEntry)...";
-        var waitTask = Task.Run(() => _driver.WaitDebugEvent());
-
-        // 3. Send LOAD_DRIVER — relay installs service, patches entry to INT3,
+        // 2. Send LOAD_DRIVER — relay installs service, patches entry to INT3,
         //    starts driver in background. Returns immediately with info.
+        StatusText = "Loading driver (waiting for DriverEntry)...";
         var loadResult = await Task.Run(() => _driver.LoadRemoteDriver(sysPath));
         if (loadResult == null)
         {
@@ -528,39 +543,80 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _driverEntryRva = entryRva;
         Log($"Driver installed: service={serviceName} EntryRVA=0x{entryRva:X} OrigByte=0x{originalByte:X2}");
 
-        // 4. Wait for DriverEntry to hit INT3
+        // 3. Wait for DriverEntry INT3 — skip spurious kernel INT3s
+        //    The hook catches ALL kernel-space INT3s (PID=4), but we only want
+        //    the one at our driver's DriverEntry. Loop until we find it.
         IsRunning = true;
         IsBreakState = false;
 
-        var evt = await waitTask;
+        DebugEvent? evt = null;
+        ulong driverBase = 0;
+        List<KernelModuleInfo> kmodules = new();
+        const int maxEventRetries = 30;
+
+        for (int attempt = 0; attempt < maxEventRetries; attempt++)
+        {
+            evt = await Task.Run(() => _driver.WaitDebugEvent());
+            if (evt == null)
+            {
+                Log("No debug event — driver may have failed to load");
+                StatusText = "No debug event";
+                IsRunning = false;
+                return;
+            }
+
+            // Discover driver base if not yet known
+            if (driverBase == 0)
+            {
+                kmodules = await Task.Run(() => _driver.EnumKernelModules());
+                foreach (var km in kmodules)
+                {
+                    if (km.Name.Contains(serviceName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        driverBase = km.BaseAddress;
+                        Log($"Driver module: {km.Name} base=0x{km.BaseAddress:X16} size=0x{km.Size:X}");
+                        break;
+                    }
+                }
+            }
+
+            // Check if this event is at our DriverEntry
+            ulong expectedAddr = driverBase != 0 ? driverBase + entryRva : 0;
+            if (expectedAddr != 0 && evt.Address == expectedAddr)
+            {
+                Log($"DriverEntry hit at {evt.Address:X16} (PID={evt.ProcessId} TID={evt.ThreadId})");
+                break;
+            }
+
+            // Also accept if the event is within the driver module range
+            // (in case of slight RIP adjustment)
+            if (driverBase != 0 && evt.Address >= driverBase &&
+                evt.Address < driverBase + 0x10000 &&
+                Math.Abs((long)(evt.Address - expectedAddr)) <= 2)
+            {
+                Log($"DriverEntry hit at {evt.Address:X16} (near expected {expectedAddr:X16})");
+                break;
+            }
+
+            // Not our event — skip it and wait for the next one
+            Log($"Skipping spurious event at {evt.Address:X16} Type={evt.Type} (expected ~{expectedAddr:X16})");
+            await Task.Run(() => _driver.ContinueDebugEvent(DriverComm.CONTINUE_RUN));
+            evt = null;
+        }
+
         if (evt == null)
         {
-            Log("No debug event — driver may have failed to load");
-            StatusText = "No debug event";
+            Log("Failed to catch DriverEntry INT3 after multiple attempts");
+            StatusText = "DriverEntry not reached";
             IsRunning = false;
             return;
         }
 
-        Log($"DriverEntry hit at {evt.Address:X16} (PID={evt.ProcessId} TID={evt.ThreadId})");
         SelectedThreadId = evt.ThreadId;
-        TargetPid = evt.ProcessId; // Should be 4 (System)
-
-        // 5. Find the driver's base address from kernel module enumeration
-        var kmodules = await Task.Run(() => _driver.EnumKernelModules());
+        TargetPid = evt.ProcessId;
         Log($"Found {kmodules.Count} kernel modules");
 
-        ulong driverBase = 0;
-        foreach (var km in kmodules)
-        {
-            if (km.Name.Contains(serviceName, StringComparison.OrdinalIgnoreCase))
-            {
-                driverBase = km.BaseAddress;
-                Log($"Driver module: {km.Name} base=0x{km.BaseAddress:X16} size=0x{km.Size:X}");
-                break;
-            }
-        }
-
-        // 6. Restore original byte at DriverEntry (replace INT3 with real byte)
+        // 4. Restore original byte at DriverEntry (replace INT3 with real byte)
         if (driverBase != 0 && entryRva != 0)
         {
             ulong entryVA = driverBase + entryRva;
@@ -572,7 +628,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 Log($"Warning: failed to restore byte at 0x{entryVA:X16}");
         }
 
-        // 7. Read registers, set up views
+        // 5. Use registers from debug event (thread is blocked in KeWaitForSingleObject,
+        //    so KTRAP_FRAME-based ReadRegisters would return wrong values)
         HexAddress = 0;
         DisasmAddress = 0;
 
@@ -598,38 +655,68 @@ public partial class MainViewModel : ObservableObject, IDisposable
         });
         Log($"Symbols: {symLoaded}/{kmodules.Count} kernel modules loaded");
 
-        // Read registers
-        var regs = await Task.Run(() => _driver.ReadRegisters(TargetPid, SelectedThreadId));
+        // Use registers from debug event context (captured at INT3 moment)
+        var evtRegs = evt.Registers;
+        ulong evtRip = evtRegs?.Rip ?? evt.Address;
+        var regs = new List<Register>();
+        if (evtRegs != null)
+        {
+            regs.AddRange(new[]
+            {
+                new Register { Name = "RAX", Value = evtRegs.Rax },
+                new Register { Name = "RBX", Value = evtRegs.Rbx },
+                new Register { Name = "RCX", Value = evtRegs.Rcx },
+                new Register { Name = "RDX", Value = evtRegs.Rdx },
+                new Register { Name = "RSI", Value = evtRegs.Rsi },
+                new Register { Name = "RDI", Value = evtRegs.Rdi },
+                new Register { Name = "RBP", Value = evtRegs.Rbp },
+                new Register { Name = "RSP", Value = evtRegs.Rsp },
+                new Register { Name = "R8",  Value = evtRegs.R8 },
+                new Register { Name = "R9",  Value = evtRegs.R9 },
+                new Register { Name = "R10", Value = evtRegs.R10 },
+                new Register { Name = "R11", Value = evtRegs.R11 },
+                new Register { Name = "R12", Value = evtRegs.R12 },
+                new Register { Name = "R13", Value = evtRegs.R13 },
+                new Register { Name = "R14", Value = evtRegs.R14 },
+                new Register { Name = "R15", Value = evtRegs.R15 },
+                new Register { Name = "RIP", Value = evtRip },
+                new Register { Name = "RFLAGS", Value = evtRegs.Rflags },
+            });
+        }
         Registers.ReplaceAll(regs);
 
-        var rip = Registers.FirstOrDefault(r => r.Name == "RIP");
-        if (rip != null && rip.Value != 0)
+        if (evtRip != 0)
         {
-            DisasmAddress = rip.Value;
-            Log($"RIP = {rip.Value:X16}");
+            DisasmAddress = evtRip;
+            Log($"RIP = {evtRip:X16}");
         }
 
         // Fetch disasm, stack, hex dump
-        var rspReg = Registers.FirstOrDefault(r => r.Name == "RSP");
+        var rspReg = regs.FirstOrDefault(r => r.Name == "RSP");
         var disasmAddr = DisasmAddress;
         var hexAddr = HexAddress != 0 ? HexAddress : disasmAddr;
         HexAddress = hexAddr;
 
-        Log("Reading memory...");
+        Log($"Reading memory: disasm=0x{disasmAddr:X16} hex=0x{hexAddr:X16} rsp={rspReg?.Value:X16}");
         var disasmTask = Task.Run(() => _driver.ReadMemory(TargetPid, disasmAddr, 4096));
-        var stackTask = rspReg != null ? Task.Run(() => _driver.ReadMemory(TargetPid, rspReg.Value, 256)) : Task.FromResult<byte[]?>(null);
+        var stackTask = rspReg != null && rspReg.Value != 0
+            ? Task.Run(() => _driver.ReadMemory(TargetPid, rspReg.Value, 256))
+            : Task.FromResult<byte[]?>(null);
         var hexTask = Task.Run(() => _driver.ReadMemory(TargetPid, hexAddr, 4096));
         await Task.WhenAll(disasmTask, stackTask, hexTask);
 
         var disasmData = disasmTask.Result;
+        Log($"Disasm data: {(disasmData != null ? $"{disasmData.Length}b" : "null")}");
         if (disasmData != null)
         {
             var instrs = _disasm.Disassemble(disasmData, disasmAddr);
+            Log($"Disassembled {instrs.Count} instructions");
             AnnotateInstructionsWithSymbols(instrs);
             Instructions.ReplaceAll(instrs);
         }
 
         var stackData = stackTask.Result;
+        Log($"Stack data: {(stackData != null ? $"{stackData.Length}b" : "null")}");
         if (stackData != null && rspReg != null)
         {
             var stackItems = new List<string>();
@@ -646,6 +733,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (hexData != null) HexData = hexData;
 
         RefreshCallStack();
+        RefreshImports();
+        _ = RefreshFunctionsAsync();
 
         _isPausedViaSuspend = false;
         _hitSwBp = null;
@@ -2163,10 +2252,41 @@ public partial class MainViewModel : ObservableObject, IDisposable
         Log($"Break at {evt.Address:X16} (PID={evt.ProcessId} TID={evt.ThreadId})");
         DisasmAddress = evt.Address;
 
-        // Read registers (after RIP fixup) then refresh all views
+        // Use registers from debug event (captured at exception time) when available.
+        // ReadRegisters reads KTRAP_FRAME which is invalid for kernel threads
+        // blocked in KeWaitForSingleObject.
         var pid = TargetPid;
         var tid = SelectedThreadId;
-        var regs = await Task.Run(() => _driver.ReadRegisters(pid, tid));
+        List<Register> regs;
+        if (evt.Registers != null)
+        {
+            var r = evt.Registers;
+            regs = new List<Register>
+            {
+                new() { Name = "RAX", Value = r.Rax },
+                new() { Name = "RBX", Value = r.Rbx },
+                new() { Name = "RCX", Value = r.Rcx },
+                new() { Name = "RDX", Value = r.Rdx },
+                new() { Name = "RSI", Value = r.Rsi },
+                new() { Name = "RDI", Value = r.Rdi },
+                new() { Name = "RBP", Value = r.Rbp },
+                new() { Name = "RSP", Value = r.Rsp },
+                new() { Name = "R8",  Value = r.R8 },
+                new() { Name = "R9",  Value = r.R9 },
+                new() { Name = "R10", Value = r.R10 },
+                new() { Name = "R11", Value = r.R11 },
+                new() { Name = "R12", Value = r.R12 },
+                new() { Name = "R13", Value = r.R13 },
+                new() { Name = "R14", Value = r.R14 },
+                new() { Name = "R15", Value = r.R15 },
+                new() { Name = "RIP", Value = r.Rip },
+                new() { Name = "RFLAGS", Value = r.Rflags },
+            };
+        }
+        else
+        {
+            regs = await Task.Run(() => _driver.ReadRegisters(pid, tid));
+        }
         var oldRegs = Registers.ToDictionary(r => r.Name, r => r.Value);
         foreach (var reg in regs)
         {
@@ -2310,15 +2430,34 @@ public partial class MainViewModel : ObservableObject, IDisposable
         uint moduleSize = 0;
         if (moduleBase == 0)
         {
+            // Try user-mode modules first, then kernel modules
             var mainMod = Modules.FirstOrDefault();
-            if (mainMod == null) return;
-            moduleBase = mainMod.BaseAddress;
-            moduleSize = mainMod.Size;
+            if (mainMod != null)
+            {
+                moduleBase = mainMod.BaseAddress;
+                moduleSize = mainMod.Size;
+            }
+            else
+            {
+                // For driver debugging: find the module containing current RIP
+                var rip = DisasmAddress;
+                var kernMod = KernelModules.FirstOrDefault(m =>
+                    rip >= m.BaseAddress && rip < m.BaseAddress + m.Size);
+                if (kernMod == null) return;
+                moduleBase = kernMod.BaseAddress;
+                moduleSize = kernMod.Size;
+            }
         }
         else
         {
             var mod = Modules.FirstOrDefault(m => m.BaseAddress == moduleBase);
-            if (mod != null) moduleSize = mod.Size;
+            if (mod != null)
+                moduleSize = mod.Size;
+            else
+            {
+                var kernMod = KernelModules.FirstOrDefault(m => m.BaseAddress == moduleBase);
+                if (kernMod != null) moduleSize = kernMod.Size;
+            }
         }
 
         if (moduleSize == 0) moduleSize = 2 * 1024 * 1024;
