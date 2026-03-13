@@ -2656,6 +2656,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var stackData = await Task.Run(() => _driver.ReadMemory(pid, rspVal, 2048));
         if (stackData == null) { CallStack.ReplaceAll(csFrames); return; }
 
+        var moduleList = Modules.ToList();
         int frameIdx = 1;
         for (int i = 0; i < stackData.Length && frameIdx < 50; i += 8)
         {
@@ -2663,16 +2664,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
             ulong val = BitConverter.ToUInt64(stackData, i);
             if (val == 0) continue;
 
-            var mod = Modules.FirstOrDefault(m =>
+            // Check user-mode modules first, then kernel modules
+            bool inModule = Modules.Any(m =>
+                val >= m.BaseAddress && val < m.BaseAddress + m.Size)
+                || KernelModules.Any(m =>
                 val >= m.BaseAddress && val < m.BaseAddress + m.Size);
-            if (mod != null)
+            if (inModule)
             {
                 csFrames.Add(new CallStackFrame
                 {
                     Index = frameIdx++,
                     ReturnAddress = val,
                     StackAddress = rspVal + (ulong)i,
-                    ModuleName = $"{mod.Name}+0x{val - mod.BaseAddress:X}"
+                    ModuleName = _symbols.ResolveAddress(pid, val, moduleList) ?? $"0x{val:X}"
                 });
             }
         }
