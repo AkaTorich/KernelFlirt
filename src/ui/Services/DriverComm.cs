@@ -820,7 +820,19 @@ public class DriverComm : IDisposable
             ProcessId = ev.ProcessId,
             ThreadId = ev.ThreadId,
             Address = ev.Address,
-            IsKernelMode = ev.PreviousMode == 0
+            IsKernelMode = ev.PreviousMode == 0,
+            Registers = new DebugEventRegisters
+            {
+                Rax = ev.Registers.Rax, Rbx = ev.Registers.Rbx,
+                Rcx = ev.Registers.Rcx, Rdx = ev.Registers.Rdx,
+                Rsi = ev.Registers.Rsi, Rdi = ev.Registers.Rdi,
+                Rbp = ev.Registers.Rbp, Rsp = ev.Registers.Rsp,
+                R8  = ev.Registers.R8,  R9  = ev.Registers.R9,
+                R10 = ev.Registers.R10, R11 = ev.Registers.R11,
+                R12 = ev.Registers.R12, R13 = ev.Registers.R13,
+                R14 = ev.Registers.R14, R15 = ev.Registers.R15,
+                Rip = ev.Registers.Rip, Rflags = ev.Registers.Rflags
+            }
         };
     }
 

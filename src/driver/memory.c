@@ -151,6 +151,75 @@ KfReadMemory(
     return status;
 }
 
+/*
+ * Safe kernel memory write: uses MDL to bypass page protection (read-only .text).
+ * Writes page-by-page, checking MmIsAddressValid before each page.
+ * Returns number of bytes successfully written (may be partial).
+ */
+static SIZE_T
+KfSafeKernelWrite(
+    _In_  PVOID   destAddress,
+    _In_  PVOID   srcBuffer,
+    _In_  SIZE_T  size
+)
+{
+    SIZE_T  written = 0;
+    PUCHAR  dst = (PUCHAR)destAddress;
+    PUCHAR  src = (PUCHAR)srcBuffer;
+
+    while (written < size) {
+        SIZE_T pageOffset = (ULONG_PTR)(dst + written) & (PAGE_SIZE - 1);
+        SIZE_T chunkSize  = PAGE_SIZE - pageOffset;
+        PMDL   mdl        = NULL;
+        PVOID  mapped      = NULL;
+
+        if (chunkSize > size - written)
+            chunkSize = size - written;
+
+        if (!MmIsAddressValid(dst + written))
+            break;
+
+        __try {
+            mdl = IoAllocateMdl(dst + written, (ULONG)chunkSize, FALSE, FALSE, NULL);
+            if (!mdl) break;
+
+            MmProbeAndLockPages(mdl, KernelMode, IoReadAccess);
+
+            mapped = MmMapLockedPagesSpecifyCache(
+                mdl, KernelMode, MmNonCached, NULL, FALSE, NormalPagePriority);
+            if (!mapped) {
+                MmUnlockPages(mdl);
+                IoFreeMdl(mdl);
+                break;
+            }
+
+            if (NT_SUCCESS(MmProtectMdlSystemAddress(mdl, PAGE_READWRITE))) {
+                RtlCopyMemory(mapped, src + written, chunkSize);
+                written += chunkSize;
+            } else {
+                MmUnmapLockedPages(mapped, mdl);
+                MmUnlockPages(mdl);
+                IoFreeMdl(mdl);
+                break;
+            }
+
+            MmUnmapLockedPages(mapped, mdl);
+            MmUnlockPages(mdl);
+            IoFreeMdl(mdl);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {
+            if (mapped && mdl) MmUnmapLockedPages(mapped, mdl);
+            if (mdl) {
+                __try { MmUnlockPages(mdl); } __except(EXCEPTION_EXECUTE_HANDLER) {}
+                IoFreeMdl(mdl);
+            }
+            break;
+        }
+    }
+
+    return written;
+}
+
 NTSTATUS
 KfWriteMemory(
     _In_ PIRP               Irp,
@@ -187,7 +256,23 @@ KfWriteMemory(
     /* Data follows the header struct */
     data = (PUCHAR)input + sizeof(KF_WRITE_MEMORY_IN);
 
-    /* Look up the target process */
+    /*
+     * For kernel-space addresses (PID 4): use MDL-based write
+     * to bypass read-only page protection on .text sections.
+     * MmCopyVirtualMemory does NOT bypass page protection and
+     * causes ATTEMPTED_WRITE_TO_READONLY_MEMORY bugcheck.
+     */
+    if (input->ProcessId == 4 && input->Address >= KERNEL_SPACE_START) {
+        bytesWritten = KfSafeKernelWrite(
+            (PVOID)input->Address,
+            data,
+            (SIZE_T)input->Size
+        );
+        Irp->IoStatus.Information = bytesWritten;
+        return (bytesWritten > 0) ? STATUS_SUCCESS : STATUS_PARTIAL_COPY;
+    }
+
+    /* User-space: use MmCopyVirtualMemory as before */
     status = PsLookupProcessByProcessId((HANDLE)(ULONG_PTR)input->ProcessId, &process);
     if (!NT_SUCCESS(status)) {
         Irp->IoStatus.Information = 0;

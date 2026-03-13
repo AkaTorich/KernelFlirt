@@ -466,6 +466,31 @@ static BOOL HandleLoadDriver(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, DWOR
 
     printf("[relay] Service name: %s\n", serviceName);
 
+    /* Stop and delete any existing service with the same name BEFORE copying.
+       The old driver may still be loaded, locking the .sys file in System32. */
+    {
+        SC_HANDLE scmPre = OpenSCManagerA(NULL, NULL, SC_MANAGER_CONNECT);
+        if (scmPre) {
+            SC_HANDLE svcPre = OpenServiceA(scmPre, serviceName, SERVICE_ALL_ACCESS);
+            if (svcPre) {
+                SERVICE_STATUS ss;
+                printf("[relay] Stopping existing service '%s'...\n", serviceName);
+                ControlService(svcPre, SERVICE_CONTROL_STOP, &ss);
+                /* Wait for the driver to actually stop (file unlock) */
+                for (int i = 0; i < 20; i++) {
+                    Sleep(100);
+                    if (QueryServiceStatus(svcPre, &ss) && ss.dwCurrentState == SERVICE_STOPPED)
+                        break;
+                }
+                DeleteService(svcPre);
+                CloseServiceHandle(svcPre);
+                printf("[relay] Old service stopped and deleted\n");
+                Sleep(200); /* extra delay for file release */
+            }
+            CloseServiceHandle(scmPre);
+        }
+    }
+
     /* Copy .sys to System32\drivers\ */
     char winDir[MAX_PATH];
     char destPath[MAX_PATH];

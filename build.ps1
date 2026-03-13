@@ -33,6 +33,7 @@ $BinUI     = Join-Path $BinDir "UI"
 $BinDriver = Join-Path $BinDir "Driver"
 $BinLoader = Join-Path $BinDir "Loader"
 $BinRelay  = Join-Path $BinDir "Relay"
+$BinTest   = Join-Path $BinDir "TestDriver"
 
 # ── Clean ─────────────────────────────────────────────────────────────────────
 
@@ -46,7 +47,7 @@ if ($Clean) {
 
 # ── Create output dirs ──────────────────────────────────────────────────────
 
-foreach ($d in @($BinUI, $BinDriver, $BinLoader, $BinRelay)) {
+foreach ($d in @($BinUI, $BinDriver, $BinLoader, $BinRelay, $BinTest)) {
     if (!(Test-Path $d)) { New-Item -ItemType Directory -Path $d -Force | Out-Null }
 }
 
@@ -72,7 +73,7 @@ $MSBuild = Find-MSBuild
 $canBuildNative = $null -ne $MSBuild
 
 $stepNum = 1
-$totalSteps = if ($UIOnly) { 1 } else { 4 }
+$totalSteps = if ($UIOnly) { 1 } else { 5 }
 
 # ── Build Driver (.sys) ─────────────────────────────────────────────────────
 
@@ -126,6 +127,20 @@ if (!$UIOnly) {
             Write-Host "  -> bin\Relay\KfRelay.exe" -ForegroundColor DarkGreen
         }
         $stepNum++
+
+        # ── Build Test Driver ───────────────────────────────────────────────
+        Write-Host "`n[$stepNum/$totalSteps] Building TestDriver ($Configuration) ..." -ForegroundColor Green
+        $testProj = Join-Path $Root "src\testdriver\testdriver.vcxproj"
+        & $MSBuild $testProj /p:Configuration=$Configuration /p:Platform=x64 /v:minimal /nologo
+        if ($LASTEXITCODE -ne 0) { throw "TestDriver build failed." }
+
+        $testOut = Join-Path $Root "src\testdriver\build\testdriver\$Configuration"
+        if (Test-Path "$testOut\KfTestDriver.sys") {
+            Copy-Item "$testOut\KfTestDriver.sys" $BinTest -Force
+            Copy-Item "$testOut\KfTestDriver.pdb" $BinTest -Force -ErrorAction SilentlyContinue
+            Write-Host "  -> bin\TestDriver\KfTestDriver.sys" -ForegroundColor DarkGreen
+        }
+        $stepNum++
     }
 }
 
@@ -153,15 +168,116 @@ foreach ($dll in @("dbghelp.dll", "symsrv.dll")) {
     }
 }
 
+# ── Sign Drivers ─────────────────────────────────────────────────────────────
+
+$driversToSign = @()
+$driverSys = Join-Path $BinDriver "KernelFlirt.sys"
+$testSys   = Join-Path $BinTest   "KfTestDriver.sys"
+if (Test-Path $driverSys) { $driversToSign += $driverSys }
+if (Test-Path $testSys)   { $driversToSign += $testSys }
+
+$isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+if ($driversToSign.Count -gt 0 -and !$isAdmin) {
+    Write-Host "`n[WARNING] Not running as Administrator - skipping driver signing." -ForegroundColor Yellow
+    Write-Host "  Run build.ps1 from an elevated PowerShell to auto-sign drivers." -ForegroundColor Yellow
+}
+elseif ($driversToSign.Count -gt 0) {
+    Write-Host "`nSigning drivers ..." -ForegroundColor Green
+
+    # Find signtool.exe
+    function Find-SignTool {
+        $pf86 = [Environment]::GetFolderPath("ProgramFilesX86")
+        $sdkRoot = Join-Path $pf86 "Windows Kits\10\bin"
+        if (Test-Path $sdkRoot) {
+            $versions = Get-ChildItem $sdkRoot -Directory |
+                Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+$' } |
+                Sort-Object Name -Descending
+            foreach ($v in $versions) {
+                $st = Join-Path $v.FullName "x64\signtool.exe"
+                if (Test-Path $st) { return $st }
+            }
+        }
+        $inPath = Get-Command signtool.exe -ErrorAction SilentlyContinue
+        if ($inPath) { return $inPath.Source }
+        return $null
+    }
+
+    $SignTool = Find-SignTool
+    if (!$SignTool) {
+        Write-Host "  [WARNING] signtool.exe not found - skipping signing. Install Windows SDK." -ForegroundColor Yellow
+    }
+    else {
+        $CertName = "KernelFlirt Test"
+        $certStore = "Cert:\LocalMachine\My"
+        $rootStore = "Cert:\LocalMachine\Root"
+        $tpStore   = "Cert:\LocalMachine\TrustedPublisher"
+
+        $cert = Get-ChildItem $certStore |
+            Where-Object { $_.Subject -eq "CN=$CertName" } |
+            Select-Object -First 1
+
+        if (!$cert) {
+            Write-Host "  Creating self-signed certificate '$CertName' ..." -ForegroundColor Green
+            $certParams = @{
+                Type              = "CodeSigningCert"
+                Subject           = "CN=$CertName"
+                CertStoreLocation = $certStore
+                NotAfter          = (Get-Date).AddYears(5)
+                KeyAlgorithm      = "RSA"
+                KeyLength         = 2048
+                HashAlgorithm     = "SHA256"
+                Provider          = "Microsoft Enhanced RSA and AES Cryptographic Provider"
+            }
+            $cert = New-SelfSignedCertificate @certParams
+            Write-Host "  Thumbprint: $($cert.Thumbprint)" -ForegroundColor DarkGreen
+
+            # Export to Trusted Root CA and TrustedPublisher
+            $tmpCer = Join-Path $env:TEMP "KernelFlirt_test.cer"
+            Export-Certificate -Cert $cert -FilePath $tmpCer -Force | Out-Null
+            Import-Certificate -FilePath $tmpCer -CertStoreLocation $rootStore | Out-Null
+            Import-Certificate -FilePath $tmpCer -CertStoreLocation $tpStore | Out-Null
+            Remove-Item $tmpCer -Force
+            Write-Host "  Certificate added to Root and TrustedPublisher stores." -ForegroundColor DarkGreen
+        }
+        else {
+            Write-Host "  Using existing certificate '$CertName' ($($cert.Thumbprint))" -ForegroundColor Cyan
+        }
+
+        $thumbprint = $cert.Thumbprint
+        foreach ($sysFile in $driversToSign) {
+            $fileName = [System.IO.Path]::GetFileName($sysFile)
+            Write-Host "  Signing $fileName ..." -ForegroundColor Green
+            $signArgs = @("sign", "/v", "/sm", "/sha1", $thumbprint, "/fd", "SHA256", "/t", "http://timestamp.digicert.com", $sysFile)
+            & $SignTool @signArgs 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                # Retry without timestamp
+                $signArgs2 = @("sign", "/v", "/sm", "/sha1", $thumbprint, "/fd", "SHA256", $sysFile)
+                & $SignTool @signArgs2 2>$null
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Host "  [WARNING] Failed to sign $fileName" -ForegroundColor Yellow
+                }
+                else {
+                    Write-Host "  -> $fileName signed (no timestamp)" -ForegroundColor DarkGreen
+                }
+            }
+            else {
+                Write-Host "  -> $fileName signed" -ForegroundColor DarkGreen
+            }
+        }
+    }
+}
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 
 Write-Host "`n========================================" -ForegroundColor Cyan
 Write-Host " Build complete ($Configuration)" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  bin\Driver\  KernelFlirt.sys"
-Write-Host "  bin\Loader\  KfLoader.exe"
-Write-Host "  bin\Relay\   KfRelay.exe"
-Write-Host "  bin\UI\      KernelFlirt.exe"
+Write-Host "  bin\Driver\      KernelFlirt.sys"
+Write-Host "  bin\Loader\      KfLoader.exe"
+Write-Host "  bin\Relay\       KfRelay.exe"
+Write-Host "  bin\TestDriver\  KfTestDriver.sys"
+Write-Host "  bin\UI\          KernelFlirt.exe"
 Write-Host ""
 Write-Host "Usage:" -ForegroundColor Yellow
 Write-Host "  1. On VM: KfLoader.exe install + start"
