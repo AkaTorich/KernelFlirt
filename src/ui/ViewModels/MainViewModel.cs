@@ -2482,9 +2482,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
         Log("Process loaded");
         StatusText = $"Process loaded - PID {TargetPid}";
 
-        // Re-annotate disassembly now that IAT lookup is available
+        // Re-annotate existing disassembly with IAT symbols (no memory read)
         if (entries.Count > 0 && Instructions.Count > 0)
-            RefreshDisassembly();
+        {
+            var instrs = Instructions.ToList();
+            AnnotateInstructionsWithSymbols(instrs);
+            foreach (var instr in instrs)
+                instr.HasBreakpoint = Breakpoints.Any(b => b.Address == instr.Address);
+            Instructions.ReplaceAll(instrs);
+        }
     }
 
     private static List<ImportEntry> ParseImportsFromBuffer(byte[] image, ulong modBase)
