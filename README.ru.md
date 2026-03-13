@@ -12,7 +12,7 @@
 └──────────────────┘                 └──────────────────┘                └──────────────────┘
                                      ┌──────────────────┐  SCM API
                                      │  KfLoader.exe    │──────────────────────┘
-                                     │  (C / Console)   │  install / start / stop
+                                     │  (C / Console)   │  load / unload / status
                                      └──────────────────┘
 ```
 
@@ -68,8 +68,7 @@ disable_kernel_protection.ps1
 ::   KernelFlirt.sys, KfLoader.exe, KfRelay.exe
 
 :: Загрузите драйвер
-KfLoader.exe install
-KfLoader.exe start
+KfLoader.exe load
 
 :: Запустите relay
 KfRelay.exe
