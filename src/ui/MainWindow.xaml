@@ -484,7 +484,8 @@
             <TabItem Header="Imports">
                 <DataGrid x:Name="ImportsGrid" ItemsSource="{Binding Imports}" IsReadOnly="True"
                           AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
-                          MouseDoubleClick="OnImportDoubleClick">
+                          MouseDoubleClick="OnImportDoubleClick"
+                          PreviewMouseRightButtonDown="DataGrid_PreviewMouseRightButtonDown">
                     <DataGrid.ContextMenu>
                         <ContextMenu>
                             <MenuItem Header="Follow in Disassembler" Click="OnImportFollowDisasm" />
@@ -525,7 +526,8 @@
                     </DockPanel>
                     <DataGrid x:Name="FunctionsGrid" ItemsSource="{Binding FilteredFunctions}" IsReadOnly="True"
                               AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
-                              MouseDoubleClick="OnFunctionDoubleClick">
+                              MouseDoubleClick="OnFunctionDoubleClick"
+                              PreviewMouseRightButtonDown="DataGrid_PreviewMouseRightButtonDown">
                         <DataGrid.ContextMenu>
                             <ContextMenu>
                                 <MenuItem Header="Follow in Disassembler" Click="OnFunctionFollowDisasm" />

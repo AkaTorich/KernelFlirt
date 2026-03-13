@@ -171,14 +171,25 @@ static NTSTATUS KfReadProcessByte(PEPROCESS process, ULONG64 address, PUCHAR out
 
 #define KERNEL_SPACE_START  0xFFFF800000000000ULL
 
-/* MDL-based write for kernel code pages — same approach as KfWriteByteInContext
- * in debughook.c: map via MDL and write directly (MmProtectMdlSystemAddress
- * silently fails on some Win10 builds, so we skip it). */
+/* MDL-based write for kernel code pages.
+ * Same technique as KfPatchBytes() in debughook.c (proven to work for KdTrap patching):
+ *   1. MmProbeAndLockPages(KernelMode, IoReadAccess)
+ *   2. MmMapLockedPagesSpecifyCache(MmCached)  — MUST be MmCached, not MmNonCached!
+ *   3. MmProtectMdlSystemAddress(PAGE_EXECUTE_READWRITE)
+ *   4. Write through the new mapping
+ *
+ * Previous failed approaches:
+ *   - MmNonCached + direct write: hangs at PASSIVE_LEVEL
+ *   - IoWriteAccess: MmProbeAndLockPages fails (page is read-only)
+ *   - MmBuildMdlForNonPagedPool: BUGCHECKS on image section pages (ntoskrnl .text)
+ *   - MmCached + MmProtectMdlSystemAddress was believed to "silently fail"
+ *     but actually WORKS (same as KfPatchBytes in debughook.c)
+ */
 static NTSTATUS KfWriteKernelByte(ULONG64 address, UCHAR byte)
 {
     PMDL    mdl = NULL;
     PVOID   mapped = NULL;
-    NTSTATUS status = STATUS_SUCCESS;
+    NTSTATUS status;
 
     if (!MmIsAddressValid((PVOID)address))
         return STATUS_ACCESS_VIOLATION;
@@ -188,24 +199,27 @@ static NTSTATUS KfWriteKernelByte(ULONG64 address, UCHAR byte)
 
     __try {
         MmProbeAndLockPages(mdl, KernelMode, IoReadAccess);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        IoFreeMdl(mdl);
+        return GetExceptionCode();
+    }
 
-        mapped = MmMapLockedPagesSpecifyCache(
-            mdl, KernelMode, MmNonCached, NULL, FALSE, NormalPagePriority);
-        if (!mapped) { status = STATUS_INSUFFICIENT_RESOURCES; __leave; }
+    mapped = MmMapLockedPagesSpecifyCache(
+        mdl, KernelMode, MmCached, NULL, FALSE, NormalPagePriority);
+    if (!mapped) {
+        MmUnlockPages(mdl);
+        IoFreeMdl(mdl);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
 
-        /* Write directly through the MDL mapping — works for read-only
-         * kernel code pages because the MDL mapping bypasses PTE protections */
+    status = MmProtectMdlSystemAddress(mdl, PAGE_EXECUTE_READWRITE);
+    if (NT_SUCCESS(status)) {
         *(UCHAR *)mapped = byte;
     }
-    __except (EXCEPTION_EXECUTE_HANDLER) {
-        status = GetExceptionCode();
-    }
 
-    if (mapped) MmUnmapLockedPages(mapped, mdl);
-    if (mdl) {
-        __try { MmUnlockPages(mdl); } __except(EXCEPTION_EXECUTE_HANDLER) {}
-        IoFreeMdl(mdl);
-    }
+    MmUnmapLockedPages(mapped, mdl);
+    MmUnlockPages(mdl);
+    IoFreeMdl(mdl);
     return status;
 }
 
@@ -234,24 +248,18 @@ static NTSTATUS KfSetSwBreakpoint(PKF_SET_BP_IN input, PULONG outHandle)
     UCHAR       int3 = 0xCC;
     UCHAR       origByte = 0;
 
-    /* Kernel-space breakpoint: use MDL-based write (no process attach) */
+    /* Kernel-space breakpoint: use MDL-based write (no process attach).
+     * IMPORTANT: No DbgPrint after writing 0xCC — the patched function
+     * might BE DbgPrint, and calling it would hit our own INT3,
+     * deadlocking the IOCTL thread in the hook handler. */
     if (input->Address >= KERNEL_SPACE_START) {
         status = KfReadKernelByte(input->Address, &origByte);
-        if (!NT_SUCCESS(status)) {
-            DbgPrint("[KernelFlirt] KernelBP: read failed at %p: 0x%08X\n",
-                     (PVOID)input->Address, status);
+        if (!NT_SUCCESS(status))
             return status;
-        }
 
         status = KfWriteKernelByte(input->Address, int3);
-        if (!NT_SUCCESS(status)) {
-            DbgPrint("[KernelFlirt] KernelBP: write INT3 failed at %p: 0x%08X\n",
-                     (PVOID)input->Address, status);
+        if (!NT_SUCCESS(status))
             return status;
-        }
-
-        DbgPrint("[KernelFlirt] KernelBP: INT3 at %p (orig=0x%02X)\n",
-                 (PVOID)input->Address, origByte);
 
         /* Record breakpoint */
         KfBpInit();
@@ -685,11 +693,10 @@ KfRemoveBreakpoint(
                 KeReleaseSpinLock(&g_BpLock, oldIrql);
 
                 if (g_Breakpoints[i].Address >= KERNEL_SPACE_START) {
-                    /* Kernel-space: MDL write */
+                    /* Kernel-space: MDL write. No DbgPrint — patched func
+                     * might be DbgPrint itself. */
                     KfWriteKernelByte(g_Breakpoints[i].Address,
                                       g_Breakpoints[i].OrigByte);
-                    DbgPrint("[KernelFlirt] KernelBP removed at %p\n",
-                             (PVOID)g_Breakpoints[i].Address);
                 } else {
                     /* User-space: process-attached write */
                     PEPROCESS process = NULL;
