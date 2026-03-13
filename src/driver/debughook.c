@@ -780,8 +780,14 @@ static BOOLEAN KfDebugHandler(
         /* --- Target process --- */
         if (isTarget) {
             if (!KfFindSwBpOrigByte(bpAddr, currentPid, &origByte)) {
-                /* Not our BP (compiler int3 padding, etc.) */
+                /* Not in our BP table. For kernel addresses this may be a
+                   file-patched INT3 (e.g. DriverEntry debug break) — report
+                   to UI so the debugger can handle it. For user-mode addresses
+                   it's likely compiler padding — skip it. */
                 InterlockedIncrement(&g_HookBpNotFoundCount);
+                if (bpAddr >= 0xFFFF800000000000ULL) {
+                    goto report_to_ui;
+                }
                 ContextRecord->Rip = bpAddr + 1;
                 return TRUE;
             }

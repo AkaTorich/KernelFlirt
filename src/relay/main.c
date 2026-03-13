@@ -37,6 +37,8 @@
 #define KF_PSEUDO_LIST_DRIVES     CTL_CODE(0x00008000, 0x900, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define KF_PSEUDO_LIST_DIRECTORY  CTL_CODE(0x00008000, 0x901, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define KF_PSEUDO_CREATE_PROCESS  CTL_CODE(0x00008000, 0x902, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define KF_PSEUDO_LOAD_DRIVER     CTL_CODE(0x00008000, 0x903, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define KF_PSEUDO_UNLOAD_DRIVER   CTL_CODE(0x00008000, 0x904, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 static HANDLE g_hDeviceCmd = INVALID_HANDLE_VALUE;  /* CMD channel handle */
 static HANDLE g_hDeviceDbg = INVALID_HANDLE_VALUE;  /* DBG channel handle */
@@ -279,6 +281,356 @@ static BOOL HandleCreateProcess(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, D
     return TRUE;
 }
 
+/* ── Driver load/unload via SCM ── */
+
+/* Background thread: calls StartServiceA (may block if driver hits INT3) */
+typedef struct _START_DRIVER_CTX {
+    char serviceName[64];
+} START_DRIVER_CTX;
+
+static DWORD WINAPI StartDriverThread(LPVOID param)
+{
+    START_DRIVER_CTX *ctx = (START_DRIVER_CTX *)param;
+    SC_HANDLE scm = OpenSCManagerA(NULL, NULL, SC_MANAGER_CONNECT);
+    if (scm) {
+        SC_HANDLE svc = OpenServiceA(scm, ctx->serviceName, SERVICE_START);
+        if (svc) {
+            if (!StartServiceA(svc, 0, NULL)) {
+                DWORD err = GetLastError();
+                if (err != ERROR_SERVICE_ALREADY_RUNNING)
+                    printf("[relay] StartService('%s') failed: %lu\n", ctx->serviceName, err);
+            } else {
+                printf("[relay] Driver '%s' started (DriverEntry returned)\n", ctx->serviceName);
+            }
+            CloseServiceHandle(svc);
+        } else {
+            printf("[relay] OpenService('%s') failed: %lu\n", ctx->serviceName, GetLastError());
+        }
+        CloseServiceHandle(scm);
+    }
+    free(ctx);
+    return 0;
+}
+
+/* Read PE AddressOfEntryPoint RVA from a file */
+static ULONG ReadPeEntryRva(const char *filePath)
+{
+    HANDLE hFile = CreateFileA(filePath, GENERIC_READ, FILE_SHARE_READ,
+                                NULL, OPEN_EXISTING, 0, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) return 0;
+
+    DWORD br = 0;
+    USHORT dosMagic = 0;
+    ReadFile(hFile, &dosMagic, 2, &br, NULL);
+    if (dosMagic != 0x5A4D) { CloseHandle(hFile); return 0; }
+
+    SetFilePointer(hFile, 0x3C, NULL, FILE_BEGIN);
+    ULONG peOffset = 0;
+    ReadFile(hFile, &peOffset, 4, &br, NULL);
+
+    SetFilePointer(hFile, peOffset, NULL, FILE_BEGIN);
+    ULONG peSig = 0;
+    ReadFile(hFile, &peSig, 4, &br, NULL);
+    if (peSig != 0x00004550) { CloseHandle(hFile); return 0; }
+
+    /* AddressOfEntryPoint at OptionalHeader+16 = peOffset+24+16 */
+    SetFilePointer(hFile, peOffset + 24 + 16, NULL, FILE_BEGIN);
+    ULONG entryRva = 0;
+    ReadFile(hFile, &entryRva, 4, &br, NULL);
+
+    CloseHandle(hFile);
+    return entryRva;
+}
+
+/* Map RVA to file offset using section headers */
+static ULONG RvaToFileOffset(const char *filePath, ULONG rva)
+{
+    HANDLE hFile = CreateFileA(filePath, GENERIC_READ, FILE_SHARE_READ,
+                                NULL, OPEN_EXISTING, 0, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) return 0;
+
+    DWORD br = 0;
+    SetFilePointer(hFile, 0x3C, NULL, FILE_BEGIN);
+    ULONG peOffset = 0;
+    ReadFile(hFile, &peOffset, 4, &br, NULL);
+
+    SetFilePointer(hFile, peOffset + 6, NULL, FILE_BEGIN);
+    USHORT numSections = 0;
+    ReadFile(hFile, &numSections, 2, &br, NULL);
+
+    SetFilePointer(hFile, peOffset + 20, NULL, FILE_BEGIN);
+    USHORT optHdrSize = 0;
+    ReadFile(hFile, &optHdrSize, 2, &br, NULL);
+
+    ULONG sectionStart = peOffset + 24 + optHdrSize;
+    ULONG result = 0;
+
+    for (USHORT i = 0; i < numSections; i++) {
+        ULONG secOff = sectionStart + i * 40;
+        ULONG secVirtSize, secVA, secRawSize, secRawPtr;
+
+        SetFilePointer(hFile, secOff + 8, NULL, FILE_BEGIN);
+        ReadFile(hFile, &secVirtSize, 4, &br, NULL);
+        ReadFile(hFile, &secVA, 4, &br, NULL);
+        ReadFile(hFile, &secRawSize, 4, &br, NULL);
+        ReadFile(hFile, &secRawPtr, 4, &br, NULL);
+
+        if (rva >= secVA && rva < secVA + secVirtSize) {
+            result = secRawPtr + (rva - secVA);
+            break;
+        }
+    }
+
+    CloseHandle(hFile);
+    return result;
+}
+
+/* Patch a single byte in a file at given offset */
+static BOOL PatchFileByteAt(const char *filePath, ULONG fileOffset,
+                             UCHAR newByte, UCHAR *pOrigByte)
+{
+    HANDLE hFile = CreateFileA(filePath, GENERIC_READ | GENERIC_WRITE,
+                                0, NULL, OPEN_EXISTING, 0, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) return FALSE;
+
+    DWORD br = 0;
+    SetFilePointer(hFile, fileOffset, NULL, FILE_BEGIN);
+    UCHAR orig = 0;
+    ReadFile(hFile, &orig, 1, &br, NULL);
+
+    SetFilePointer(hFile, fileOffset, NULL, FILE_BEGIN);
+    WriteFile(hFile, &newByte, 1, &br, NULL);
+    FlushFileBuffers(hFile);
+    CloseHandle(hFile);
+
+    if (pOrigByte) *pOrigByte = orig;
+    return TRUE;
+}
+
+/* Re-sign a driver file using PowerShell + self-signed test cert.
+   Requires testsigning enabled on the VM. */
+static BOOL TestSignDriver(const char *filePath)
+{
+    /* PowerShell one-liner:
+       - Get or create a test cert named "KernelFlirt Test"
+       - Sign the file with it */
+    char cmd[1024];
+    _snprintf(cmd, sizeof(cmd) - 1,
+        "powershell -NoProfile -ExecutionPolicy Bypass -Command \""
+        "$cert = Get-ChildItem Cert:\\CurrentUser\\My -CodeSigningCert | "
+            "Where-Object { $_.Subject -eq 'CN=KernelFlirt Test' } | "
+            "Select-Object -First 1; "
+        "if (-not $cert) { "
+            "$cert = New-SelfSignedCertificate -Type CodeSigningCert "
+                "-Subject 'CN=KernelFlirt Test' "
+                "-CertStoreLocation Cert:\\CurrentUser\\My "
+                "-NotAfter (Get-Date).AddYears(10) "
+        "}; "
+        "Set-AuthenticodeSignature -FilePath '%s' -Certificate $cert"
+        "\"", filePath);
+    cmd[sizeof(cmd) - 1] = '\0';
+
+    printf("[relay] Signing: %s\n", filePath);
+    int rc = system(cmd);
+    printf("[relay] Sign result: %d\n", rc);
+    return (rc == 0);
+}
+
+static BOOL HandleLoadDriver(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, DWORD *pOutSize)
+{
+    if (!inputBuf || inputSize < 4) return FALSE;
+
+    /* Input: wide path to .sys file on VM */
+    WCHAR *sysPath = (WCHAR *)inputBuf;
+    int maxChars = inputSize / sizeof(WCHAR);
+    sysPath[maxChars - 1] = L'\0';
+
+    printf("[relay] LoadDriver: %ls\n", sysPath);
+
+    /* Extract service name from filename (strip path and .sys extension) */
+    char serviceName[64] = {0};
+    {
+        WCHAR *lastSlash = wcsrchr(sysPath, L'\\');
+        WCHAR *fname = lastSlash ? lastSlash + 1 : sysPath;
+        char ansiName[128] = {0};
+        WideCharToMultiByte(CP_ACP, 0, fname, -1, ansiName, sizeof(ansiName) - 1, NULL, NULL);
+        char *dot = strrchr(ansiName, '.');
+        if (dot) *dot = '\0';
+        _snprintf(serviceName, sizeof(serviceName) - 1, "%s", ansiName);
+    }
+
+    if (serviceName[0] == '\0') {
+        printf("[relay] Could not extract service name\n");
+        return FALSE;
+    }
+
+    printf("[relay] Service name: %s\n", serviceName);
+
+    /* Copy .sys to System32\drivers\ */
+    char winDir[MAX_PATH];
+    char destPath[MAX_PATH];
+    GetWindowsDirectoryA(winDir, MAX_PATH);
+    _snprintf(destPath, MAX_PATH, "%s\\System32\\drivers\\%s.sys", winDir, serviceName);
+    destPath[MAX_PATH - 1] = '\0';
+
+    char ansiSrcPath[MAX_PATH] = {0};
+    WideCharToMultiByte(CP_ACP, 0, sysPath, -1, ansiSrcPath, MAX_PATH - 1, NULL, NULL);
+
+    if (!CopyFileA(ansiSrcPath, destPath, FALSE)) {
+        printf("[relay] CopyFile to %s failed: %lu\n", destPath, GetLastError());
+        return FALSE;
+    }
+    printf("[relay] Copied to %s\n", destPath);
+
+    /* Read PE entry point RVA and patch to INT3 */
+    ULONG entryRva = ReadPeEntryRva(destPath);
+    UCHAR originalByte = 0;
+
+    if (entryRva != 0) {
+        ULONG entryFileOffset = RvaToFileOffset(destPath, entryRva);
+        if (entryFileOffset != 0) {
+            PatchFileByteAt(destPath, entryFileOffset, 0xCC, &originalByte);
+            printf("[relay] Patched entry RVA=0x%lX fileOff=0x%lX: 0x%02X -> 0xCC\n",
+                   entryRva, entryFileOffset, originalByte);
+
+            /* Re-sign the patched driver with a test certificate */
+            if (!TestSignDriver(destPath)) {
+                printf("[relay] Warning: test signing failed, driver may not load\n");
+            }
+        } else {
+            printf("[relay] Could not map entry RVA to file offset\n");
+            entryRva = 0; /* signal failure */
+        }
+    } else {
+        printf("[relay] PE entry point RVA is 0\n");
+    }
+
+    /* Create SCM service (stop+delete old one if exists) */
+    SC_HANDLE scm = OpenSCManagerA(NULL, NULL, SC_MANAGER_CREATE_SERVICE);
+    if (!scm) {
+        printf("[relay] OpenSCManager failed: %lu\n", GetLastError());
+        return FALSE;
+    }
+
+    SC_HANDLE svc = CreateServiceA(scm, serviceName, serviceName,
+                                    SERVICE_ALL_ACCESS, SERVICE_KERNEL_DRIVER,
+                                    SERVICE_DEMAND_START, SERVICE_ERROR_NORMAL,
+                                    destPath, NULL, NULL, NULL, NULL, NULL);
+    if (!svc) {
+        DWORD err = GetLastError();
+        if (err == ERROR_SERVICE_EXISTS) {
+            printf("[relay] Service exists, removing old...\n");
+            svc = OpenServiceA(scm, serviceName, SERVICE_ALL_ACCESS);
+            if (svc) {
+                SERVICE_STATUS ss;
+                ControlService(svc, SERVICE_CONTROL_STOP, &ss);
+                Sleep(200);
+                DeleteService(svc);
+                CloseServiceHandle(svc);
+            }
+            svc = CreateServiceA(scm, serviceName, serviceName,
+                                  SERVICE_ALL_ACCESS, SERVICE_KERNEL_DRIVER,
+                                  SERVICE_DEMAND_START, SERVICE_ERROR_NORMAL,
+                                  destPath, NULL, NULL, NULL, NULL, NULL);
+            if (!svc) {
+                printf("[relay] CreateService retry failed: %lu\n", GetLastError());
+                CloseServiceHandle(scm);
+                return FALSE;
+            }
+        } else {
+            printf("[relay] CreateService failed: %lu\n", err);
+            CloseServiceHandle(scm);
+            return FALSE;
+        }
+    }
+
+    printf("[relay] Service created: %s\n", serviceName);
+    CloseServiceHandle(svc);
+    CloseServiceHandle(scm);
+
+    /* Start the driver in a background thread (StartService blocks until
+       DriverEntry returns — and DriverEntry will hit our INT3 and block) */
+    START_DRIVER_CTX *ctx = (START_DRIVER_CTX *)calloc(1, sizeof(START_DRIVER_CTX));
+    if (ctx) {
+        strncpy(ctx->serviceName, serviceName, sizeof(ctx->serviceName) - 1);
+        HANDLE hThread = CreateThread(NULL, 0, StartDriverThread, ctx, 0, NULL);
+        if (hThread) {
+            CloseHandle(hThread);
+            printf("[relay] StartService dispatched in background\n");
+        } else {
+            free(ctx);
+        }
+    }
+
+    /* Build output */
+    KF_LOAD_DRIVER_OUT *out = (KF_LOAD_DRIVER_OUT *)calloc(1, sizeof(KF_LOAD_DRIVER_OUT));
+    if (!out) return FALSE;
+
+    strncpy(out->ServiceName, serviceName, KF_MAX_SERVICE_NAME - 1);
+    out->EntryPointRva = entryRva;
+    out->OriginalByte = originalByte;
+
+    *ppOut = (BYTE *)out;
+    *pOutSize = sizeof(KF_LOAD_DRIVER_OUT);
+    return TRUE;
+}
+
+static BOOL HandleUnloadDriver(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, DWORD *pOutSize)
+{
+    if (!inputBuf || inputSize < 2) return FALSE;
+
+    /* Input: null-terminated ANSI service name */
+    char *serviceName = (char *)inputBuf;
+    serviceName[inputSize - 1] = '\0';
+
+    printf("[relay] UnloadDriver: %s\n", serviceName);
+
+    SC_HANDLE scm = OpenSCManagerA(NULL, NULL, SC_MANAGER_CONNECT);
+    if (!scm) {
+        printf("[relay] OpenSCManager failed: %lu\n", GetLastError());
+        return FALSE;
+    }
+
+    SC_HANDLE svc = OpenServiceA(scm, serviceName, SERVICE_ALL_ACCESS);
+    if (!svc) {
+        printf("[relay] OpenService('%s') failed: %lu\n", serviceName, GetLastError());
+        CloseServiceHandle(scm);
+        return FALSE;
+    }
+
+    /* Stop */
+    SERVICE_STATUS ss;
+    if (!ControlService(svc, SERVICE_CONTROL_STOP, &ss)) {
+        DWORD err = GetLastError();
+        if (err != ERROR_SERVICE_NOT_ACTIVE)
+            printf("[relay] StopService failed: %lu\n", err);
+    } else {
+        printf("[relay] Driver stopped\n");
+    }
+
+    /* Delete */
+    if (!DeleteService(svc)) {
+        printf("[relay] DeleteService failed: %lu\n", GetLastError());
+    } else {
+        printf("[relay] Service deleted\n");
+    }
+
+    CloseServiceHandle(svc);
+    CloseServiceHandle(scm);
+
+    /* Remove .sys from System32\drivers\ */
+    char winDir[MAX_PATH];
+    char destPath[MAX_PATH];
+    GetWindowsDirectoryA(winDir, MAX_PATH);
+    _snprintf(destPath, MAX_PATH, "%s\\System32\\drivers\\%s.sys", winDir, serviceName);
+    destPath[MAX_PATH - 1] = '\0';
+    DeleteFileA(destPath);
+
+    *ppOut = NULL;
+    *pOutSize = 0;
+    return TRUE;
+}
+
 /*
  * Check if this IOCTL is a relay pseudo-IOCTL.
  * If so, handle it locally and return TRUE; caller should send response.
@@ -296,6 +648,12 @@ static BOOL TryHandlePseudoIoctl(DWORD ioctlCode, BYTE *inputBuf, DWORD inputSiz
         return TRUE;
     case KF_PSEUDO_CREATE_PROCESS:
         *pSuccess = HandleCreateProcess(inputBuf, inputSize, ppOut, pOutSize);
+        return TRUE;
+    case KF_PSEUDO_LOAD_DRIVER:
+        *pSuccess = HandleLoadDriver(inputBuf, inputSize, ppOut, pOutSize);
+        return TRUE;
+    case KF_PSEUDO_UNLOAD_DRIVER:
+        *pSuccess = HandleUnloadDriver(inputBuf, inputSize, ppOut, pOutSize);
         return TRUE;
     default:
         break;

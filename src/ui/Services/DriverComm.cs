@@ -58,6 +58,8 @@ public class DriverComm : IDisposable
     private static readonly uint IOCTL_KF_LIST_DRIVES     = CTL_CODE(DeviceType, 0x900, 0, 0);
     private static readonly uint IOCTL_KF_LIST_DIRECTORY   = CTL_CODE(DeviceType, 0x901, 0, 0);
     private static readonly uint IOCTL_KF_CREATE_PROCESS   = CTL_CODE(DeviceType, 0x902, 0, 0);
+    private static readonly uint IOCTL_KF_LOAD_DRIVER      = CTL_CODE(DeviceType, 0x903, 0, 0);
+    private static readonly uint IOCTL_KF_UNLOAD_DRIVER    = CTL_CODE(DeviceType, 0x904, 0, 0);
 
     #endregion
 
@@ -207,6 +209,19 @@ public class DriverComm : IDisposable
         public uint ProcessId;
         public uint ThreadId;
         public ulong ImageBase;
+    }
+
+    private const int KF_MAX_SERVICE_NAME = 64;
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    private unsafe struct KF_LOAD_DRIVER_OUT
+    {
+        public fixed byte ServiceName[KF_MAX_SERVICE_NAME];
+        public uint EntryPointRva;
+        public byte OriginalByte;
+        public byte Reserved0;
+        public byte Reserved1;
+        public byte Reserved2;
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -925,6 +940,29 @@ public class DriverComm : IDisposable
 
         var result = BytesToStruct<KF_CREATE_PROCESS_OUT>(data);
         return (result.ProcessId, result.ThreadId, result.ImageBase);
+    }
+
+    public (string serviceName, uint entryRva, byte originalByte)? LoadRemoteDriver(string sysPath)
+    {
+        byte[] input = System.Text.Encoding.Unicode.GetBytes(sysPath + "\0");
+        var (ok, data) = SendIoctl(IOCTL_KF_LOAD_DRIVER, input, Marshal.SizeOf<KF_LOAD_DRIVER_OUT>());
+        if (!ok || data == null) return null;
+
+        // Parse service name from raw bytes (first 64 bytes, ANSI null-terminated)
+        int nameLen = 0;
+        while (nameLen < KF_MAX_SERVICE_NAME && nameLen < data.Length && data[nameLen] != 0)
+            nameLen++;
+        string name = System.Text.Encoding.ASCII.GetString(data, 0, nameLen);
+
+        var result = BytesToStruct<KF_LOAD_DRIVER_OUT>(data);
+        return (name, result.EntryPointRva, result.OriginalByte);
+    }
+
+    public bool UnloadRemoteDriver(string serviceName)
+    {
+        byte[] input = System.Text.Encoding.ASCII.GetBytes(serviceName + "\0");
+        var (ok, _) = SendIoctl(IOCTL_KF_UNLOAD_DRIVER, input, 0);
+        return ok;
     }
 
     #endregion

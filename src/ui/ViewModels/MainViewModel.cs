@@ -25,6 +25,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private Breakpoint? _hitSwBp;
     // True if paused via thread suspend (not debug event)
     private bool _isPausedViaSuspend;
+    // Driver debugging state
+    private string? _loadedDriverServiceName;
+    private byte _driverOriginalByte;
+    private uint _driverEntryRva;
 
     [ObservableProperty] private bool _isConnected;
     [ObservableProperty] private uint _targetPid;
@@ -262,6 +266,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (dialog.ShowDialog() != true || string.IsNullOrEmpty(dialog.SelectedExePath))
             return;
 
+        if (dialog.IsDriverFile)
+        {
+            await OpenAndDebugDriverAsync(dialog.SelectedExePath);
+            return;
+        }
+
         var exePath = dialog.SelectedExePath;
         Log($"Creating process: {exePath}");
         StatusText = "Creating remote process...";
@@ -471,6 +481,178 @@ public partial class MainViewModel : ObservableObject, IDisposable
         IsRunning = false;
         StatusText = $"Entry point - PID {pid} TID {SelectedThreadId}";
         Log($"Stopped at entry point of {exePath}");
+    }
+
+    private async Task OpenAndDebugDriverAsync(string sysPath)
+    {
+        Log($"Loading driver: {sysPath}");
+        StatusText = "Installing debug hook for kernel...";
+
+        // 1. Install debug hook with PID=4 (System) BEFORE loading the driver
+        //    so the hook is ready when DriverEntry hits INT3
+        TargetPid = 4; // System process
+        var hookOk = await Task.Run(() => _driver.InstallDebugHook(4));
+        if (hookOk)
+        {
+            IsDebugHookActive = true;
+            Log("Debug hook installed (target: System PID=4)");
+        }
+        else
+        {
+            Log("Failed to install debug hook — cannot debug driver");
+            StatusText = "Hook install failed";
+            return;
+        }
+
+        // 2. Start waiting for debug event BEFORE loading the driver
+        //    (async — runs on DBG channel while LOAD_DRIVER goes on CMD channel)
+        StatusText = "Loading driver (waiting for DriverEntry)...";
+        var waitTask = Task.Run(() => _driver.WaitDebugEvent());
+
+        // 3. Send LOAD_DRIVER — relay installs service, patches entry to INT3,
+        //    starts driver in background. Returns immediately with info.
+        var loadResult = await Task.Run(() => _driver.LoadRemoteDriver(sysPath));
+        if (loadResult == null)
+        {
+            Log("Failed to load driver on VM");
+            StatusText = "Driver load failed";
+            // Cancel the wait by removing hook
+            await Task.Run(() => _driver.RemoveDebugHook());
+            IsDebugHookActive = false;
+            return;
+        }
+
+        var (serviceName, entryRva, originalByte) = loadResult.Value;
+        _loadedDriverServiceName = serviceName;
+        _driverOriginalByte = originalByte;
+        _driverEntryRva = entryRva;
+        Log($"Driver installed: service={serviceName} EntryRVA=0x{entryRva:X} OrigByte=0x{originalByte:X2}");
+
+        // 4. Wait for DriverEntry to hit INT3
+        IsRunning = true;
+        IsBreakState = false;
+
+        var evt = await waitTask;
+        if (evt == null)
+        {
+            Log("No debug event — driver may have failed to load");
+            StatusText = "No debug event";
+            IsRunning = false;
+            return;
+        }
+
+        Log($"DriverEntry hit at {evt.Address:X16} (PID={evt.ProcessId} TID={evt.ThreadId})");
+        SelectedThreadId = evt.ThreadId;
+        TargetPid = evt.ProcessId; // Should be 4 (System)
+
+        // 5. Find the driver's base address from kernel module enumeration
+        var kmodules = await Task.Run(() => _driver.EnumKernelModules());
+        Log($"Found {kmodules.Count} kernel modules");
+
+        ulong driverBase = 0;
+        foreach (var km in kmodules)
+        {
+            if (km.Name.Contains(serviceName, StringComparison.OrdinalIgnoreCase))
+            {
+                driverBase = km.BaseAddress;
+                Log($"Driver module: {km.Name} base=0x{km.BaseAddress:X16} size=0x{km.Size:X}");
+                break;
+            }
+        }
+
+        // 6. Restore original byte at DriverEntry (replace INT3 with real byte)
+        if (driverBase != 0 && entryRva != 0)
+        {
+            ulong entryVA = driverBase + entryRva;
+            var writeOk = await Task.Run(() =>
+                _driver.WriteMemory(TargetPid, entryVA, new byte[] { originalByte }));
+            if (writeOk)
+                Log($"Restored original byte 0x{originalByte:X2} at DriverEntry 0x{entryVA:X16}");
+            else
+                Log($"Warning: failed to restore byte at 0x{entryVA:X16}");
+        }
+
+        // 7. Read registers, set up views
+        HexAddress = 0;
+        DisasmAddress = 0;
+
+        KernelModules.ReplaceAll(kmodules);
+
+        // Load symbols for kernel modules
+        Log("Loading symbols for kernel modules...");
+        StatusText = "Loading symbols...";
+        int symLoaded = 0;
+        int symDone = 0;
+        int symTotal = kmodules.Count;
+        await Task.Run(() =>
+        {
+            foreach (var km in kmodules)
+            {
+                if (_symbols.LoadModule(TargetPid, km.Name, km.BaseAddress, (uint)km.Size))
+                    symLoaded++;
+                int d = Interlocked.Increment(ref symDone);
+                int pct = symTotal > 0 ? d * 100 / symTotal : 0;
+                Application.Current?.Dispatcher.InvokeAsync(
+                    () => StatusText = $"Loading symbols ({pct}%)...");
+            }
+        });
+        Log($"Symbols: {symLoaded}/{kmodules.Count} kernel modules loaded");
+
+        // Read registers
+        var regs = await Task.Run(() => _driver.ReadRegisters(TargetPid, SelectedThreadId));
+        Registers.ReplaceAll(regs);
+
+        var rip = Registers.FirstOrDefault(r => r.Name == "RIP");
+        if (rip != null && rip.Value != 0)
+        {
+            DisasmAddress = rip.Value;
+            Log($"RIP = {rip.Value:X16}");
+        }
+
+        // Fetch disasm, stack, hex dump
+        var rspReg = Registers.FirstOrDefault(r => r.Name == "RSP");
+        var disasmAddr = DisasmAddress;
+        var hexAddr = HexAddress != 0 ? HexAddress : disasmAddr;
+        HexAddress = hexAddr;
+
+        Log("Reading memory...");
+        var disasmTask = Task.Run(() => _driver.ReadMemory(TargetPid, disasmAddr, 4096));
+        var stackTask = rspReg != null ? Task.Run(() => _driver.ReadMemory(TargetPid, rspReg.Value, 256)) : Task.FromResult<byte[]?>(null);
+        var hexTask = Task.Run(() => _driver.ReadMemory(TargetPid, hexAddr, 4096));
+        await Task.WhenAll(disasmTask, stackTask, hexTask);
+
+        var disasmData = disasmTask.Result;
+        if (disasmData != null)
+        {
+            var instrs = _disasm.Disassemble(disasmData, disasmAddr);
+            AnnotateInstructionsWithSymbols(instrs);
+            Instructions.ReplaceAll(instrs);
+        }
+
+        var stackData = stackTask.Result;
+        if (stackData != null && rspReg != null)
+        {
+            var stackItems = new List<string>();
+            for (int i = 0; i < stackData.Length; i += 8)
+            {
+                if (i + 8 > stackData.Length) break;
+                ulong val = BitConverter.ToUInt64(stackData, i);
+                stackItems.Add($"RSP+{i:X2}  {val:X16}");
+            }
+            StackEntries.ReplaceAll(stackItems);
+        }
+
+        var hexData = hexTask.Result;
+        if (hexData != null) HexData = hexData;
+
+        RefreshCallStack();
+
+        _isPausedViaSuspend = false;
+        _hitSwBp = null;
+        IsBreakState = true;
+        IsRunning = false;
+        StatusText = $"DriverEntry - {serviceName} PID {TargetPid} TID {SelectedThreadId}";
+        Log($"Stopped at DriverEntry of {sysPath}");
     }
 
     [RelayCommand]

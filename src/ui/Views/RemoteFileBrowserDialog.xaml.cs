@@ -13,6 +13,7 @@ public partial class RemoteFileBrowserDialog : Window
     private RemoteFileEntry[] _currentFiles = [];
 
     public string SelectedExePath { get; private set; } = "";
+    public bool IsDriverFile { get; private set; }
 
     public RemoteFileBrowserDialog(DriverComm driver)
     {
@@ -102,7 +103,8 @@ public partial class RemoteFileBrowserDialog : Window
                 string newPath = _currentPath.TrimEnd('\\') + "\\" + entry.Name + "\\";
                 NavigateTo(newPath);
             }
-            else if (entry.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            else if (entry.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
+                     entry.Name.EndsWith(".sys", StringComparison.OrdinalIgnoreCase))
             {
                 SelectAndClose(entry);
             }
@@ -114,7 +116,8 @@ public partial class RemoteFileBrowserDialog : Window
         if (FileGrid.SelectedItem is RemoteFileEntry entry)
         {
             OpenBtn.IsEnabled = !entry.IsDirectory &&
-                entry.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
+                (entry.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
+                 entry.Name.EndsWith(".sys", StringComparison.OrdinalIgnoreCase));
         }
         else
         {
@@ -139,6 +142,7 @@ public partial class RemoteFileBrowserDialog : Window
     private void SelectAndClose(RemoteFileEntry entry)
     {
         SelectedExePath = _currentPath.TrimEnd('\\') + "\\" + entry.Name;
+        IsDriverFile = entry.Name.EndsWith(".sys", StringComparison.OrdinalIgnoreCase);
         DialogResult = true;
         Close();
     }

@@ -216,6 +216,8 @@ typedef struct _KF_PING_OUT {
 #define IOCTL_KF_LIST_DRIVES        CTL_CODE(KF_DEVICE_TYPE, 0x900, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_KF_LIST_DIRECTORY     CTL_CODE(KF_DEVICE_TYPE, 0x901, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_KF_CREATE_PROCESS     CTL_CODE(KF_DEVICE_TYPE, 0x902, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_KF_LOAD_DRIVER        CTL_CODE(KF_DEVICE_TYPE, 0x903, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_KF_UNLOAD_DRIVER      CTL_CODE(KF_DEVICE_TYPE, 0x904, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 /* IOCTL_KF_LIST_DRIVES output: array of KF_DRIVE_ENTRY */
 #define KF_MAX_DRIVE_LABEL 64
@@ -244,6 +246,19 @@ typedef struct _KF_CREATE_PROCESS_OUT {
     ULONG   ThreadId;
     ULONG64 ImageBase;      /* PEB.ImageBaseAddress — valid even while suspended */
 } KF_CREATE_PROCESS_OUT, *PKF_CREATE_PROCESS_OUT;
+
+/* IOCTL_KF_LOAD_DRIVER input: null-terminated wide .sys path on VM */
+/* IOCTL_KF_LOAD_DRIVER output: KF_LOAD_DRIVER_OUT */
+#define KF_MAX_SERVICE_NAME 64
+
+typedef struct _KF_LOAD_DRIVER_OUT {
+    CHAR    ServiceName[KF_MAX_SERVICE_NAME]; /* ANSI service name for unload */
+    ULONG   EntryPointRva;                    /* AddressOfEntryPoint from PE header */
+    UCHAR   OriginalByte;                     /* Original byte at entry point (patched to 0xCC) */
+    UCHAR   Reserved[3];
+} KF_LOAD_DRIVER_OUT, *PKF_LOAD_DRIVER_OUT;
+
+/* IOCTL_KF_UNLOAD_DRIVER input: null-terminated ANSI service name */
 
 #pragma pack(pop)
 
