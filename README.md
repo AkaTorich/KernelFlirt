@@ -13,7 +13,7 @@ Windows kernel-level debugger with an OllyDbg-style interface. Designed for secu
 └──────────────────┘                 └──────────────────┘                └──────────────────┘
                                      ┌──────────────────┐  SCM API
                                      │  KfLoader.exe    │──────────────────────┘
-                                     │  (C / Console)   │  install / start / stop
+                                     │  (C / Console)   │  load / unload / status
                                      └──────────────────┘
 ```
 
@@ -72,8 +72,7 @@ Sometimes the kernel debug exception path (KdTrap -> KdpStub) is not active unti
 ::   KernelFlirt.sys, KfLoader.exe, KfRelay.exe
 
 :: Load the driver
-KfLoader.exe install
-KfLoader.exe start
+KfLoader.exe load
 
 :: Start the relay
 KfRelay.exe
@@ -275,7 +274,7 @@ KernelFlirt/
 │   ├── relay/                         # TCP relay agent (C)
 │   │   └── main.c                     # CMD+DBG channels, pseudo-IOCTLs
 │   ├── loader/                        # Driver loader CLI (C)
-│   │   ├── main.c                     # CLI (install/start/stop/unload)
+│   │   ├── main.c                     # CLI (load/unload/status)
 │   │   ├── service.c                  # Windows SCM API
 │   │   └── vmdetect.c                 # Hypervisor detection
 │   └── ui/                            # WPF debugger UI (C#)
