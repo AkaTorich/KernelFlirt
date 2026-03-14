@@ -63,6 +63,63 @@ typedef struct _LDR_ENTRY_KF {
     UNICODE_STRING  BaseDllName;                /* 0x58 */
 } LDR_ENTRY_KF, *PLDR_ENTRY_KF;
 
+/*
+ * WoW64 (32-bit) PEB/LDR structures:
+ *
+ * LIST_ENTRY32: { Flink: ULONG, Blink: ULONG }
+ * UNICODE_STRING32: { Length: USHORT, MaximumLength: USHORT, Buffer: ULONG }
+ *
+ * PEB32 — offsets:
+ *   0x0C  Ldr (ULONG ptr to PEB_LDR_DATA32)
+ *
+ * PEB_LDR_DATA32 — offsets:
+ *   0x0C  InLoadOrderModuleList (LIST_ENTRY32)
+ *
+ * LDR_DATA_TABLE_ENTRY32 — offsets:
+ *   0x00  InLoadOrderLinks     (LIST_ENTRY32, 8)
+ *   0x08  InMemoryOrderLinks   (LIST_ENTRY32, 8)
+ *   0x10  InInitOrderLinks     (LIST_ENTRY32, 8)
+ *   0x18  DllBase              (ULONG, 4)
+ *   0x1C  EntryPoint           (ULONG, 4)
+ *   0x20  SizeOfImage          (ULONG, 4)
+ *   0x24  FullDllName          (UNICODE_STRING32, 8)
+ *   0x2C  BaseDllName          (UNICODE_STRING32, 8)
+ */
+
+#pragma pack(push, 4)
+typedef struct _LIST_ENTRY32_KF {
+    ULONG   Flink;
+    ULONG   Blink;
+} LIST_ENTRY32_KF;
+
+typedef struct _UNICODE_STRING32_KF {
+    USHORT  Length;
+    USHORT  MaximumLength;
+    ULONG   Buffer;         /* 32-bit pointer */
+} UNICODE_STRING32_KF;
+
+typedef struct _PEB_LDR_DATA32_KF {
+    UCHAR           _pad0[0x0C];            /* skip to InLoadOrderModuleList */
+    LIST_ENTRY32_KF InLoadOrderModuleList;  /* 0x0C */
+} PEB_LDR_DATA32_KF, *PPEB_LDR_DATA32_KF;
+
+typedef struct _PEB32_KF {
+    UCHAR   _pad0[0x0C];   /* skip to Ldr */
+    ULONG   Ldr;            /* 0x0C — 32-bit pointer to PEB_LDR_DATA32 */
+} PEB32_KF, *PPEB32_KF;
+
+typedef struct _LDR_ENTRY32_KF {
+    LIST_ENTRY32_KF     InLoadOrderLinks;       /* 0x00 */
+    LIST_ENTRY32_KF     InMemoryOrderLinks;     /* 0x08 */
+    LIST_ENTRY32_KF     InInitOrderLinks;       /* 0x10 */
+    ULONG               DllBase;                /* 0x18 */
+    ULONG               EntryPoint;             /* 0x1C */
+    ULONG               SizeOfImage;            /* 0x20 */
+    UNICODE_STRING32_KF FullDllName;            /* 0x24 */
+    UNICODE_STRING32_KF BaseDllName;            /* 0x2C */
+} LDR_ENTRY32_KF;
+#pragma pack(pop)
+
 NTSTATUS
 KfEnumModules(
     _In_ PIRP               Irp,
@@ -133,6 +190,64 @@ KfEnumModules(
         } else {
             DbgPrint("[KernelFlirt] PEB or Ldr is NULL for PID %u\n", targetPid);
         }
+
+        /*
+         * WoW64 PEB32: enumerate 32-bit modules loaded via WoW64 subsystem.
+         * These include kernel32.dll, user32.dll, etc. that the 32-bit EXE uses.
+         */
+        {
+            PVOID               peb32Raw;
+            PPEB32_KF           peb32;
+            PPEB_LDR_DATA32_KF  ldr32;
+            ULONG               headAddr32;
+            ULONG               curAddr32;
+
+            peb32Raw = PsGetProcessWow64Process(process);
+            if (peb32Raw) {
+                peb32 = (PPEB32_KF)peb32Raw;
+                if (peb32->Ldr) {
+                    ldr32 = (PPEB_LDR_DATA32_KF)(ULONG_PTR)peb32->Ldr;
+                    headAddr32 = (ULONG)((ULONG_PTR)&ldr32->InLoadOrderModuleList);
+                    curAddr32  = ldr32->InLoadOrderModuleList.Flink;
+
+                    while (curAddr32 != headAddr32 && count < maxEntries && curAddr32 != 0) {
+                        LDR_ENTRY32_KF *ldr32Entry;
+                        ULONG           ii;
+                        BOOLEAN         duplicate;
+
+                        ldr32Entry = (LDR_ENTRY32_KF *)(ULONG_PTR)curAddr32;
+                        duplicate = FALSE;
+
+                        for (ii = 0; ii < count; ii++) {
+                            if (outputEntries[ii].BaseAddress == (ULONG64)ldr32Entry->DllBase) {
+                                duplicate = TRUE;
+                                break;
+                            }
+                        }
+
+                        if (!duplicate) {
+                            USHORT copyLen;
+                            RtlZeroMemory(&outputEntries[count], sizeof(KF_MODULE_ENTRY));
+                            outputEntries[count].BaseAddress = (ULONG64)ldr32Entry->DllBase;
+                            outputEntries[count].Size        = ldr32Entry->SizeOfImage;
+
+                            if (ldr32Entry->BaseDllName.Length > 0 && ldr32Entry->BaseDllName.Buffer) {
+                                copyLen = ldr32Entry->BaseDllName.Length;
+                                if (copyLen > (KF_MAX_MODULE_NAME - 1) * sizeof(WCHAR))
+                                    copyLen = (KF_MAX_MODULE_NAME - 1) * sizeof(WCHAR);
+                                RtlCopyMemory(outputEntries[count].Name,
+                                              (PVOID)(ULONG_PTR)ldr32Entry->BaseDllName.Buffer,
+                                              copyLen);
+                            }
+                            count++;
+                        }
+
+                        curAddr32 = ldr32Entry->InLoadOrderLinks.Flink;
+                    }
+                }
+            }
+        }
+
         status = STATUS_SUCCESS;
     }
     __except (EXCEPTION_EXECUTE_HANDLER) {

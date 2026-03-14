@@ -14,8 +14,9 @@ public class SectionEntry
     public uint RawDataSize { get; set; }
     public uint Characteristics { get; set; }
     public bool HasBreakpoint { get; set; }
+    public bool Is32Bit { get; set; }
 
-    public string VaHex => $"{VirtualAddress:X16}";
+    public string VaHex => Is32Bit ? $"{VirtualAddress:X8}" : $"{VirtualAddress:X16}";
     public string VirtualSizeHex => $"0x{VirtualSize:X}";
     public string RawOffsetHex => $"0x{RawDataOffset:X}";
     public string RawSizeHex => $"0x{RawDataSize:X}";

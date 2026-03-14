@@ -272,28 +272,59 @@ KfWriteMemory(
         return (bytesWritten > 0) ? STATUS_SUCCESS : STATUS_PARTIAL_COPY;
     }
 
-    /* User-space: use MmCopyVirtualMemory as before */
+    /*
+     * User-space: use KeStackAttachProcess + ZwProtectVirtualMemory
+     * to handle code pages (PAGE_EXECUTE_READ) that MmCopyVirtualMemory
+     * cannot write to. Same approach as KfWriteProcessMemory in breakpoint.c.
+     */
     status = PsLookupProcessByProcessId((HANDLE)(ULONG_PTR)input->ProcessId, &process);
     if (!NT_SUCCESS(status)) {
         Irp->IoStatus.Information = 0;
         return status;
     }
 
-    /* Write data to target process memory */
-    __try {
-        status = MmCopyVirtualMemory(
-            PsGetCurrentProcess(),
-            data,
-            process,
-            (PVOID)input->Address,
-            (SIZE_T)input->Size,
-            KernelMode,
-            &bytesWritten
-        );
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER) {
-        status = GetExceptionCode();
-        bytesWritten = 0;
+    {
+        KAPC_STATE  apcState;
+        PVOID       targetAddr = (PVOID)input->Address;
+        ULONG       oldProtect = 0;
+        SIZE_T      regionSize = (SIZE_T)input->Size;
+
+        KeStackAttachProcess(process, &apcState);
+
+        __try {
+            /* Change protection to RWX to handle code pages */
+            status = ZwProtectVirtualMemory(
+                ZwCurrentProcess(), &targetAddr, &regionSize,
+                PAGE_EXECUTE_READWRITE, &oldProtect);
+
+            if (!NT_SUCCESS(status)) {
+                /* Protection change failed — fall back to direct copy attempt */
+                ProbeForWrite((PVOID)(ULONG_PTR)input->Address, (SIZE_T)input->Size, 1);
+                RtlCopyMemory((PVOID)(ULONG_PTR)input->Address, data, (SIZE_T)input->Size);
+                bytesWritten = (SIZE_T)input->Size;
+                status = STATUS_SUCCESS;
+                __leave;
+            }
+
+            /* Write to the now-writable page */
+            ProbeForWrite((PVOID)(ULONG_PTR)input->Address, (SIZE_T)input->Size, 1);
+            RtlCopyMemory((PVOID)(ULONG_PTR)input->Address, data, (SIZE_T)input->Size);
+            bytesWritten = (SIZE_T)input->Size;
+            status = STATUS_SUCCESS;
+
+            /* Restore original protection */
+            targetAddr = (PVOID)input->Address;
+            regionSize = (SIZE_T)input->Size;
+            ZwProtectVirtualMemory(
+                ZwCurrentProcess(), &targetAddr, &regionSize,
+                oldProtect, &oldProtect);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {
+            status = GetExceptionCode();
+            bytesWritten = 0;
+        }
+
+        KeUnstackDetachProcess(&apcState);
     }
 
     ObDereferenceObject(process);

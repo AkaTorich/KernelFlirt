@@ -580,13 +580,39 @@ public class DriverComm : IDisposable
         return ok;
     }
 
-    public List<Register> ReadRegisters(uint pid, uint tid)
+    public List<Register> ReadRegisters(uint pid, uint tid, bool is32Bit = false)
     {
         var input = new KF_THREAD_TARGET { ProcessId = pid, ThreadId = tid };
         var (ok, data) = SendIoctl(IOCTL_KF_READ_REGISTERS, StructToBytes(input), Marshal.SizeOf<KF_REGISTERS>());
         if (!ok || data == null) return [];
 
         var r = BytesToStruct<KF_REGISTERS>(data);
+
+        if (is32Bit)
+        {
+            // 32-bit: truncate to lower 32 bits, use x86 names, no R8-R15
+            return
+            [
+                new() { Name = "EAX", Value = (uint)r.Rax, Is32Bit = true },
+                new() { Name = "EBX", Value = (uint)r.Rbx, Is32Bit = true },
+                new() { Name = "ECX", Value = (uint)r.Rcx, Is32Bit = true },
+                new() { Name = "EDX", Value = (uint)r.Rdx, Is32Bit = true },
+                new() { Name = "ESI", Value = (uint)r.Rsi, Is32Bit = true },
+                new() { Name = "EDI", Value = (uint)r.Rdi, Is32Bit = true },
+                new() { Name = "EBP", Value = (uint)r.Rbp, Is32Bit = true },
+                new() { Name = "ESP", Value = (uint)r.Rsp, Is32Bit = true },
+                new() { Name = "EIP", Value = (uint)r.Rip, Is32Bit = true },
+                new() { Name = "EFLAGS", Value = (uint)r.Rflags, Is32Bit = true },
+                ..Register.ExpandFlags(r.Rflags),
+                new() { Name = "DR0", Value = (uint)r.Dr0, Is32Bit = true },
+                new() { Name = "DR1", Value = (uint)r.Dr1, Is32Bit = true },
+                new() { Name = "DR2", Value = (uint)r.Dr2, Is32Bit = true },
+                new() { Name = "DR3", Value = (uint)r.Dr3, Is32Bit = true },
+                new() { Name = "DR6", Value = (uint)r.Dr6, Is32Bit = true },
+                new() { Name = "DR7", Value = (uint)r.Dr7, Is32Bit = true },
+            ];
+        }
+
         return
         [
             new() { Name = "RAX", Value = r.Rax },
@@ -742,14 +768,14 @@ public class DriverComm : IDisposable
         {
             switch (reg.Name)
             {
-                case "RAX": r.Rax = reg.Value; break;
-                case "RBX": r.Rbx = reg.Value; break;
-                case "RCX": r.Rcx = reg.Value; break;
-                case "RDX": r.Rdx = reg.Value; break;
-                case "RSI": r.Rsi = reg.Value; break;
-                case "RDI": r.Rdi = reg.Value; break;
-                case "RBP": r.Rbp = reg.Value; break;
-                case "RSP": r.Rsp = reg.Value; break;
+                case "RAX": case "EAX": r.Rax = reg.Value; break;
+                case "RBX": case "EBX": r.Rbx = reg.Value; break;
+                case "RCX": case "ECX": r.Rcx = reg.Value; break;
+                case "RDX": case "EDX": r.Rdx = reg.Value; break;
+                case "RSI": case "ESI": r.Rsi = reg.Value; break;
+                case "RDI": case "EDI": r.Rdi = reg.Value; break;
+                case "RBP": case "EBP": r.Rbp = reg.Value; break;
+                case "RSP": case "ESP": r.Rsp = reg.Value; break;
                 case "R8":  r.R8  = reg.Value; break;
                 case "R9":  r.R9  = reg.Value; break;
                 case "R10": r.R10 = reg.Value; break;
@@ -758,8 +784,8 @@ public class DriverComm : IDisposable
                 case "R13": r.R13 = reg.Value; break;
                 case "R14": r.R14 = reg.Value; break;
                 case "R15": r.R15 = reg.Value; break;
-                case "RIP": r.Rip = reg.Value; break;
-                case "RFLAGS": r.Rflags = reg.Value; break;
+                case "RIP": case "EIP": r.Rip = reg.Value; break;
+                case "RFLAGS": case "EFLAGS": r.Rflags = reg.Value; break;
                 case "DR0": r.Dr0 = reg.Value; break;
                 case "DR1": r.Dr1 = reg.Value; break;
                 case "DR2": r.Dr2 = reg.Value; break;

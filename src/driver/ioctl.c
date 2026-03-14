@@ -38,6 +38,15 @@ KfDispatchIoctl(
     ioStack = IoGetCurrentIrpStackLocation(Irp);
     ioctl   = ioStack->Parameters.DeviceIoControl.IoControlCode;
 
+    /*
+     * Re-assert KdDebuggerEnabled=TRUE on every IOCTL when hook is active.
+     * DbgPrint calls in IOCTL handlers (ReadMemory, SetBreakpoint, etc.)
+     * go through the KD transport which may detect no real debugger and
+     * reset KdDebuggerEnabled=FALSE. Without this, KiDispatchException
+     * skips calling our hook for user-mode exceptions (INT3 from debuggee).
+     */
+    KfReassertDebugFlags();
+
     switch (ioctl) {
 
     case IOCTL_KF_PING: {

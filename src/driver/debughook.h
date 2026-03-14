@@ -31,4 +31,7 @@ void KfSetTargetPid(ULONG pid);
 /* Check if hook is active */
 BOOLEAN KfIsDebugHookActive(void);
 
+/* Re-assert KdDebuggerEnabled=TRUE (call before expecting debug events) */
+void KfReassertDebugFlags(void);
+
 #endif /* KF_DEBUGHOOK_H */
