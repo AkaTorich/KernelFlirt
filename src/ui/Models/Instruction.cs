@@ -22,7 +22,8 @@ public class Instruction
     /// <summary>Symbol name for the branch target (replaces hex address in operands display).</summary>
     public string? BranchTargetSymbol { get; set; }
 
-    public string AddressHex => $"{Address:X16}";
+    public bool Is32Bit { get; set; }
+    public string AddressHex => Is32Bit ? $"{Address:X8}" : $"{Address:X16}";
     public string BytesHex => BitConverter.ToString(Bytes).Replace("-", " ");
     public string FullText => string.IsNullOrEmpty(Operands) ? Mnemonic : $"{Mnemonic} {Operands}";
 }

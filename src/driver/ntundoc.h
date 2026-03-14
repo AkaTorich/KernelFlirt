@@ -55,6 +55,11 @@ NTKERNELAPI PVOID PsGetProcessPeb(
     _In_ PEPROCESS Process
 );
 
+/* WoW64 PEB access (returns PEB32 pointer, NULL if not WoW64) */
+NTKERNELAPI PVOID PsGetProcessWow64Process(
+    _In_ PEPROCESS Process
+);
+
 /* Memory copy between processes */
 NTKERNELAPI NTSTATUS NTAPI MmCopyVirtualMemory(
     _In_ PEPROCESS SourceProcess,

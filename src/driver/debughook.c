@@ -95,6 +95,10 @@ static BOOLEAN  g_UsedInlineHook          = FALSE;
 /* Original KdpTrap as callable function pointer */
 static PKDEBUG_ROUTINE g_OrigKdpTrap      = NULL;
 
+/* KiDebugRoutine function pointer (in ntoskrnl .data section) */
+static PKDEBUG_ROUTINE *g_pKiDebugRoutine  = NULL;
+static PKDEBUG_ROUTINE  g_OrigKiDebugRoutine = NULL;
+
 static BOOLEAN          g_HookInstalled   = FALSE;
 static ULONG            g_TargetPid       = 0;
 
@@ -519,6 +523,157 @@ static PUCHAR KfFindKdpTrapCallSite(PUCHAR kdTrap, PUCHAR *outKdpTrap, ULONG sel
     }
 
     DbgPrint("[KernelFlirt] Target CALL not found in KdTrap (select=%u)\n", selectValue);
+    return NULL;
+}
+
+/* ------------------------------------------------------------------ */
+/* Find KiDebugRoutine: a function pointer in ntoskrnl that              */
+/* KiDispatchException calls for user-mode debug exceptions.             */
+/* It holds the address of KdpStub (no debugger) or KdpTrap (debugger). */
+/*                                                                       */
+/* Strategy 1: Scan ALL data sections for a QWORD == KdpStub address.    */
+/* Strategy 2: Scan code sections for MOV reg,[rip+disp32] where the     */
+/*   resolved pointer location holds KdpStub's address. This catches     */
+/*   references even when KiDebugRoutine is in an unexpected section.     */
+/* ------------------------------------------------------------------ */
+
+static PKDEBUG_ROUTINE * KfFindKiDebugRoutineInData(
+    PUCHAR ntBase, PIMAGE_NT_HEADERS64 nt, ULONG_PTR target)
+{
+    PIMAGE_SECTION_HEADER sec = IMAGE_FIRST_SECTION(nt);
+    USHORT i;
+
+    for (i = 0; i < nt->FileHeader.NumberOfSections; i++) {
+        PUCHAR secBase;
+        ULONG secSize, off;
+
+        if (!MmIsAddressValid(&sec[i])) break;
+
+        /* Skip EXECUTABLE sections — code uses rel32, not raw QWORDs */
+        if (sec[i].Characteristics & IMAGE_SCN_MEM_EXECUTE) continue;
+
+        secBase = ntBase + sec[i].VirtualAddress;
+        secSize = sec[i].Misc.VirtualSize;
+        if (secSize < 8) continue;
+
+        DbgPrint("[KernelFlirt] Scanning section %.8s (%p, 0x%X, char=0x%08X) "
+                 "for KiDebugRoutine\n",
+                 sec[i].Name, secBase, secSize, sec[i].Characteristics);
+
+        for (off = 0; off <= secSize - 8; off += 8) {
+            PUCHAR p = secBase + off;
+            if (!MmIsAddressValid(p)) {
+                ULONG_PTR nextPage = ((ULONG_PTR)p + 0x1000) & ~(ULONG_PTR)0xFFF;
+                off = (ULONG)(nextPage - (ULONG_PTR)secBase);
+                if (off > 0) off -= 8;
+                continue;
+            }
+            if (*(ULONG_PTR *)p == target) {
+                DbgPrint("[KernelFlirt] Found KiDebugRoutine candidate at %p "
+                         "(section %.8s+0x%X, value=%p)\n",
+                         p, sec[i].Name, off, (PVOID)target);
+                return (PKDEBUG_ROUTINE *)p;
+            }
+        }
+    }
+    return NULL;
+}
+
+static PKDEBUG_ROUTINE * KfFindKiDebugRoutineInCode(
+    PUCHAR ntBase, PIMAGE_NT_HEADERS64 nt, ULONG_PTR target)
+{
+    /*
+     * Scan code sections for pattern: 48 8B XX [disp32]
+     * where XX = {05,0D,15,1D,25,2D,35,3D} (MOV reg, [rip+disp32])
+     * and the resolved address ([rip+7+disp32]) holds a QWORD == target.
+     *
+     * Also look for: FF 15 [disp32] (CALL [rip+disp32])
+     * where resolved address holds target.
+     */
+    PIMAGE_SECTION_HEADER sec = IMAGE_FIRST_SECTION(nt);
+    USHORT i;
+
+    for (i = 0; i < nt->FileHeader.NumberOfSections; i++) {
+        PUCHAR secBase;
+        ULONG secSize, off;
+
+        if (!MmIsAddressValid(&sec[i])) break;
+        if (!(sec[i].Characteristics & IMAGE_SCN_MEM_EXECUTE)) continue;
+
+        secBase = ntBase + sec[i].VirtualAddress;
+        secSize = sec[i].Misc.VirtualSize;
+        if (secSize < 16) continue;
+
+        DbgPrint("[KernelFlirt] Code-scanning section %.8s (%p, 0x%X) "
+                 "for KiDebugRoutine refs\n",
+                 sec[i].Name, secBase, secSize);
+
+        for (off = 0; off < secSize - 8; off++) {
+            PUCHAR p = secBase + off;
+            INT32 disp;
+            PULONG_PTR candidate;
+
+            if (!MmIsAddressValid(p)) {
+                ULONG_PTR nextPage = ((ULONG_PTR)p + 0x1000) & ~(ULONG_PTR)0xFFF;
+                off = (ULONG)(nextPage - (ULONG_PTR)secBase);
+                if (off > 0) off--;
+                continue;
+            }
+            if (!MmIsAddressValid(p + 7)) continue;
+
+            /* Pattern 1: 48 8B [05|0D|15|1D|25|2D|35|3D] [disp32]
+             * = REX.W MOV reg, [rip+disp32]  (7 bytes total) */
+            if (p[0] == 0x48 && p[1] == 0x8B &&
+                (p[2] & 0xC7) == 0x05 /* ModRM: mod=00, r/m=101 (RIP-relative) */) {
+                disp = *(INT32 *)(p + 3);
+                candidate = (PULONG_PTR)(p + 7 + disp);
+                if (MmIsAddressValid(candidate) && *candidate == target) {
+                    DbgPrint("[KernelFlirt] Found KiDebugRoutine via MOV at code %p "
+                             "-> var at %p (value=%p)\n",
+                             p, candidate, (PVOID)target);
+                    return (PKDEBUG_ROUTINE *)candidate;
+                }
+            }
+
+            /* Pattern 2: FF 15 [disp32] = CALL [rip+disp32] (6 bytes) */
+            if (p[0] == 0xFF && p[1] == 0x15) {
+                disp = *(INT32 *)(p + 2);
+                candidate = (PULONG_PTR)(p + 6 + disp);
+                if (MmIsAddressValid(candidate) && *candidate == target) {
+                    DbgPrint("[KernelFlirt] Found KiDebugRoutine via CALL [rip] at code %p "
+                             "-> var at %p (value=%p)\n",
+                             p, candidate, (PVOID)target);
+                    return (PKDEBUG_ROUTINE *)candidate;
+                }
+            }
+        }
+    }
+    return NULL;
+}
+
+static PKDEBUG_ROUTINE * KfFindKiDebugRoutine(PUCHAR ntBase, PVOID kdpStubAddr)
+{
+    PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)ntBase;
+    PIMAGE_NT_HEADERS64 nt;
+    ULONG_PTR target = (ULONG_PTR)kdpStubAddr;
+    PKDEBUG_ROUTINE *result;
+
+    if (!MmIsAddressValid(dos) || dos->e_magic != IMAGE_DOS_SIGNATURE)
+        return NULL;
+    nt = (PIMAGE_NT_HEADERS64)(ntBase + dos->e_lfanew);
+    if (!MmIsAddressValid(nt) || nt->Signature != IMAGE_NT_SIGNATURE)
+        return NULL;
+
+    /* Strategy 1: scan data sections for raw QWORD == KdpStub */
+    result = KfFindKiDebugRoutineInData(ntBase, nt, target);
+    if (result) return result;
+
+    /* Strategy 2: scan code sections for MOV/CALL [rip+disp32] refs */
+    DbgPrint("[KernelFlirt] Data scan failed, trying code reference scan...\n");
+    result = KfFindKiDebugRoutineInCode(ntBase, nt, target);
+    if (result) return result;
+
+    DbgPrint("[KernelFlirt] KiDebugRoutine not found by any method\n");
     return NULL;
 }
 
@@ -1099,6 +1254,37 @@ NTSTATUS KfInstallDebugHook(void)
         g_UsedInlineHook = TRUE;
     }
 
+    /*
+     * Step 5c: Find and patch KiDebugRoutine function pointer.
+     *
+     * KiDispatchException calls KiDebugRoutine (not KdTrap!) for
+     * user-mode exceptions. On some builds it may skip the call when
+     * KiDebugRoutine still points to KdpStub (optimization: KdpStub
+     * always returns FALSE). By changing the pointer to our handler,
+     * we ensure KiDispatchException actually calls us.
+     */
+    g_pKiDebugRoutine = KfFindKiDebugRoutine((PUCHAR)ntBase, (PVOID)kdpTrap);
+    if (g_pKiDebugRoutine) {
+        g_OrigKiDebugRoutine = *g_pKiDebugRoutine;
+        DbgPrint("[KernelFlirt] KiDebugRoutine at %p, current value=%p (KdpStub=%p)\n",
+                 g_pKiDebugRoutine, (PVOID)g_OrigKiDebugRoutine, kdpTrap);
+
+        /* Patch KiDebugRoutine to point directly to our handler */
+        {
+            ULONG_PTR newVal = (ULONG_PTR)KfDebugHandler;
+            NTSTATUS st2 = KfPatchBytes(g_pKiDebugRoutine, &newVal, sizeof(newVal));
+            if (NT_SUCCESS(st2)) {
+                DbgPrint("[KernelFlirt] KiDebugRoutine patched: %p -> %p\n",
+                         (PVOID)g_OrigKiDebugRoutine, KfDebugHandler);
+            } else {
+                DbgPrint("[KernelFlirt] WARNING: KiDebugRoutine patch failed: 0x%08X\n", st2);
+            }
+        }
+    } else {
+        DbgPrint("[KernelFlirt] WARNING: KiDebugRoutine not found — "
+                 "user-mode INT3 may not be caught\n");
+    }
+
     /* Resolve KdDebuggerEnabled/NotPresent */
     {
         UNICODE_STRING symName;
@@ -1164,6 +1350,23 @@ NTSTATUS KfInstallDebugHook(void)
 
     g_HookInstalled = TRUE;
     DbgPrint("[KernelFlirt] === InstallDebugHook COMPLETE ===\n");
+
+    /*
+     * Re-assert KdDebuggerEnabled=TRUE as the VERY LAST step.
+     * DbgPrint calls above go through the KD transport which may detect
+     * no real debugger connected and reset KdDebuggerEnabled=FALSE.
+     * We must ensure the flag is TRUE when we return so that
+     * KiDispatchException will route INT3 exceptions to our hook.
+     */
+    if (g_pKdDebuggerEnabled && *g_pKdDebuggerEnabled != TRUE) {
+        BOOLEAN val = TRUE;
+        KfPatchBytes(g_pKdDebuggerEnabled, &val, sizeof(BOOLEAN));
+    }
+    if (g_pKdDebuggerNotPresent && *g_pKdDebuggerNotPresent != FALSE) {
+        BOOLEAN val = FALSE;
+        KfPatchBytes(g_pKdDebuggerNotPresent, &val, sizeof(BOOLEAN));
+    }
+
     return STATUS_SUCCESS;
 }
 
@@ -1175,9 +1378,17 @@ void KfRemoveDebugHook(void)
         return;
 
     /*
-     * Restore KdDebuggerEnabled / KdDebuggerNotPresent FIRST,
-     * so KiDispatchException stops calling KdTrap.
+     * Restore KiDebugRoutine FIRST, then KdDebuggerEnabled,
+     * so KiDispatchException stops calling our handler.
      */
+    if (g_pKiDebugRoutine && g_OrigKiDebugRoutine) {
+        ULONG_PTR origVal = (ULONG_PTR)g_OrigKiDebugRoutine;
+        KfPatchBytes(g_pKiDebugRoutine, &origVal, sizeof(origVal));
+        DbgPrint("[KernelFlirt] KiDebugRoutine restored to %p\n", (PVOID)g_OrigKiDebugRoutine);
+        g_pKiDebugRoutine = NULL;
+        g_OrigKiDebugRoutine = NULL;
+    }
+
     if (g_pKdDebuggerEnabled) {
         KfPatchBytes(g_pKdDebuggerEnabled, &g_OrigKdDebuggerEnabled, sizeof(BOOLEAN));
         DbgPrint("[KernelFlirt] KdDebuggerEnabled restored to %u\n", g_OrigKdDebuggerEnabled);
@@ -1259,6 +1470,20 @@ BOOLEAN KfIsDebugHookActive(void)
     return g_HookInstalled;
 }
 
+void KfReassertDebugFlags(void)
+{
+    if (!g_HookInstalled)
+        return;
+    if (g_pKdDebuggerEnabled && *g_pKdDebuggerEnabled != TRUE) {
+        BOOLEAN val = TRUE;
+        KfPatchBytes(g_pKdDebuggerEnabled, &val, sizeof(BOOLEAN));
+    }
+    if (g_pKdDebuggerNotPresent && *g_pKdDebuggerNotPresent != FALSE) {
+        BOOLEAN val = FALSE;
+        KfPatchBytes(g_pKdDebuggerNotPresent, &val, sizeof(BOOLEAN));
+    }
+}
+
 NTSTATUS KfGetHookStats(PIRP Irp, PIO_STACK_LOCATION IoStack)
 {
     PKF_HOOK_STATS_OUT out;
@@ -1283,9 +1508,9 @@ NTSTATUS KfGetHookStats(PIRP Irp, PIO_STACK_LOCATION IoStack)
     out->LastTargetAddr   = g_LastTargetAddr;
     out->LastTargetCode   = g_LastTargetCode;
     out->LastNonTargetPid = g_LastNonTargetPid;
-    out->KiDebugRoutineAddr = 0;
-    out->KiDebugRoutineOrig = 0;
-    out->KiDebugRoutineNow  = 0;
+    out->KiDebugRoutineAddr = (ULONG64)g_pKiDebugRoutine;
+    out->KiDebugRoutineOrig = (ULONG64)g_OrigKiDebugRoutine;
+    out->KiDebugRoutineNow  = g_pKiDebugRoutine ? (ULONG64)*g_pKiDebugRoutine : 0;
     out->HookedFuncAddr = (ULONG64)g_KdpTrap;
     out->KdTrapAddr     = (ULONG64)g_KdTrap;
 
@@ -1315,6 +1540,23 @@ NTSTATUS KfWaitDebugEvent(PIRP Irp, PIO_STACK_LOCATION IoStack)
         Irp->IoStatus.Status = STATUS_DEVICE_NOT_READY;
         IoCompleteRequest(Irp, IO_NO_INCREMENT);
         return STATUS_DEVICE_NOT_READY;
+    }
+
+    /*
+     * Re-assert KdDebuggerEnabled=TRUE before waiting.
+     * Between InstallDebugHook and this point, other IOCTLs (ReadMemory,
+     * SetBreakpoint) may have used DbgPrint which resets the flag.
+     * Without this, KiDispatchException skips KdTrap and INT3 goes
+     * unhandled — especially visible with WoW64 processes whose
+     * loader takes longer to reach the entry point.
+     */
+    if (g_pKdDebuggerEnabled && *g_pKdDebuggerEnabled != TRUE) {
+        BOOLEAN val = TRUE;
+        KfPatchBytes(g_pKdDebuggerEnabled, &val, sizeof(BOOLEAN));
+    }
+    if (g_pKdDebuggerNotPresent && *g_pKdDebuggerNotPresent != FALSE) {
+        BOOLEAN val = FALSE;
+        KfPatchBytes(g_pKdDebuggerNotPresent, &val, sizeof(BOOLEAN));
     }
 
     KeAcquireSpinLock(&g_DbgLock, &oldIrql);

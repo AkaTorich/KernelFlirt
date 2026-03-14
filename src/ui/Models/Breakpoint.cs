@@ -20,7 +20,8 @@ public class Breakpoint
     public string? Condition { get; set; }     // e.g. "RAX==0" or "RCX!=0"
     public string? LogExpression { get; set; }  // log without breaking
     public uint HitCount { get; set; }
-    public string AddressHex => $"{Address:X16}";
+    public bool Is32Bit { get; set; }
+    public string AddressHex => Is32Bit ? $"{Address:X8}" : $"{Address:X16}";
     public string TypeName => Type switch
     {
         BreakpointType.Software => "SW",

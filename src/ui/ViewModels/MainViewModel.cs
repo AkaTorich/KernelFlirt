@@ -39,7 +39,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _isDebugHookActive;
     [ObservableProperty] private bool _isBreakState;
     [ObservableProperty] private bool _isRunning;
+    [ObservableProperty] private bool _is32Bit;  // True when debugging a WoW64 (32-bit) process
     [ObservableProperty] private ulong _selectedDisasmAddress;  // Cursor position in disasm
+
+    // Bitness-aware helpers
+    public string IpRegName => Is32Bit ? "EIP" : "RIP";
+    public string SpRegName => Is32Bit ? "ESP" : "RSP";
+    public int PointerSize => Is32Bit ? 4 : 8;
+    public string FormatAddr(ulong addr) => Is32Bit ? $"{addr:X8}" : $"{addr:X16}";
 
     public RangeObservableCollection<Instruction> Instructions { get; } = [];
     public RangeObservableCollection<Register> Registers { get; } = [];
@@ -340,12 +347,23 @@ public partial class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
-        // 3. Read PE header → AddressOfEntryPoint
+        // 3. Read PE header → detect bitness + AddressOfEntryPoint
         ulong entryPoint = 0;
         var peOffsetData = await Task.Run(() => _driver.ReadMemory(pid, imageBase + 0x3C, 4));
         if (peOffsetData != null && peOffsetData.Length == 4)
         {
             uint peOffset = BitConverter.ToUInt32(peOffsetData, 0);
+
+            // Detect 32-bit from PE Optional Header magic
+            var magicData = await Task.Run(() => _driver.ReadMemory(pid, imageBase + peOffset + 0x18, 2));
+            if (magicData != null && magicData.Length == 2)
+            {
+                ushort magic = BitConverter.ToUInt16(magicData, 0);
+                Is32Bit = magic == 0x10B;
+                _disasm.SetMode(Is32Bit);
+                if (Is32Bit) Log("Detected 32-bit (WoW64) process");
+            }
+
             var epData = await Task.Run(() => _driver.ReadMemory(pid, imageBase + peOffset + 0x28, 4));
             if (epData != null && epData.Length == 4)
             {
@@ -366,7 +384,65 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         Log($"PE entry point: {entryPoint:X16}");
 
-        // 4. Set software breakpoint at entry point
+        if (Is32Bit)
+        {
+            // WoW64 processes: Windows 10 has optimized exception dispatch for
+            // WoW64 that bypasses KiDebugRoutine, so INT3/HW BP are not caught.
+            // Instead, patch entry point with infinite loop (EB FE = JMP $),
+            // let loader run, then suspend thread at entry point and restore.
+            Log("WoW64: patching entry point with spin loop (EB FE)...");
+
+            // Save original 2 bytes
+            var origBytes = await Task.Run(() => _driver.ReadMemory(pid, entryPoint, 2));
+            if (origBytes == null || origBytes.Length < 2)
+            {
+                Log("Failed to read entry point bytes — falling back to poll attach");
+                await Task.Run(() => _driver.ResumeThread(tid));
+                await Task.Delay(1500);
+                await DoAttachAsync();
+                return;
+            }
+
+            // Write EB FE (JMP $) at entry point
+            var spinLoop = new byte[] { 0xEB, 0xFE };
+            var writeOk = await Task.Run(() => _driver.WriteMemory(pid, entryPoint, spinLoop));
+            if (!writeOk)
+            {
+                Log("Failed to write spin loop — falling back to poll attach");
+                await Task.Run(() => _driver.ResumeThread(tid));
+                await Task.Delay(1500);
+                await DoAttachAsync();
+                return;
+            }
+
+            Log("Resuming thread (will spin at entry point)...");
+            StatusText = "Running to entry point...";
+            await Task.Run(() => _driver.ResumeThread(tid));
+
+            // Wait for loader to finish and thread to reach entry point
+            await Task.Delay(2000);
+
+            // Suspend main thread
+            await Task.Run(() => _driver.SuspendThread(tid));
+
+            // Verify EIP is at entry point
+            var regs32 = await Task.Run(() => _driver.ReadRegisters(pid, tid, true));
+            var eip = regs32.FirstOrDefault(r => r.Name == "EIP");
+            if (eip != null)
+                Log($"Thread suspended: EIP = {eip.Value:X8} (expect {entryPoint:X8})");
+
+            // Restore original bytes
+            await Task.Run(() => _driver.WriteMemory(pid, entryPoint, origBytes));
+            Log("Entry point restored");
+
+            SelectedThreadId = tid;
+            _isPausedViaSuspend = true;
+
+            // Now continue with module enumeration (same as 64-bit path below)
+            goto enumModules;
+        }
+
+        // Native 64-bit: set software breakpoint at entry point
         var bpHandle = await Task.Run(() => _driver.SetBreakpoint(pid, 0, entryPoint, BreakpointType.Software));
         if (!bpHandle.HasValue)
         {
@@ -381,16 +457,20 @@ public partial class MainViewModel : ObservableObject, IDisposable
         Log($"BP set at entry point {entryPoint:X16}, resuming thread...");
         StatusText = "Running to entry point...";
 
-        // 5. Resume the suspended thread — loader will run, then hit our BP
-        await Task.Run(() => _driver.ResumeThread(tid));
-
-        // 6. Wait for the debug event (BP hit at entry point)
+        // Start waiting for debug event FIRST (pends IRP in driver,
+        // also re-asserts KdDebuggerEnabled=TRUE via IOCTL dispatch).
         IsRunning = true;
         IsBreakState = false;
 
-        var evt = await Task.Run(() => _driver.WaitDebugEvent());
+        var waitTask = Task.Run(() => _driver.WaitDebugEvent());
+        await Task.Delay(50);
 
-        // 7. Remove the temp BP and fix RIP (INT3 advanced RIP by 1)
+        // Resume the suspended thread — loader will run, then hit our BP
+        await Task.Run(() => _driver.ResumeThread(tid));
+
+        var evt = await waitTask;
+
+        // Remove the temp BP
         await Task.Run(() => _driver.RemoveBreakpoint(_tempBpHandle.Value));
         _tempBpHandle = null;
 
@@ -404,11 +484,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         Log($"Hit entry point at {evt.Address:X16} (PID={evt.ProcessId} TID={evt.ThreadId})");
         SelectedThreadId = evt.ThreadId;
-        // Driver already adjusted RIP back to BP address in its INT3 handler.
 
         // 8. Now the process is stopped at entry point with loader done.
         //    Enumerate modules, read registers, etc. — same as DoAttachAsync but
         //    we're already hooked and stopped on a debug event (not suspend).
+    enumModules:
         HexAddress = 0;
         DisasmAddress = 0;
 
@@ -442,21 +522,23 @@ public partial class MainViewModel : ObservableObject, IDisposable
         Log($"Found {threads.Count} threads");
 
         Threads.ReplaceAll(threads);
+        if (Is32Bit)
+            foreach (var m in modules) m.Is32Bit = true;
         Modules.ReplaceAll(modules);
 
         // Read registers
-        var regs = await Task.Run(() => _driver.ReadRegisters(pid, SelectedThreadId));
+        var regs = await Task.Run(() => _driver.ReadRegisters(pid, SelectedThreadId, Is32Bit));
         Registers.ReplaceAll(regs);
 
-        var rip = Registers.FirstOrDefault(r => r.Name == "RIP");
+        var rip = Registers.FirstOrDefault(r => r.Name == IpRegName);
         if (rip != null && rip.Value != 0)
         {
             DisasmAddress = rip.Value;
-            Log($"RIP = {rip.Value:X16}");
+            Log($"{IpRegName} = {FormatAddr(rip.Value)}");
         }
 
         // Fetch disasm, stack, hex dump
-        var rspReg = Registers.FirstOrDefault(r => r.Name == "RSP");
+        var rspReg = Registers.FirstOrDefault(r => r.Name == SpRegName);
         var disasmAddr = DisasmAddress;
         var hexAddr = HexAddress != 0 ? HexAddress : disasmAddr;
         HexAddress = hexAddr;
@@ -480,11 +562,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (stackData != null && rspReg != null)
         {
             var stackItems = new List<string>();
-            for (int i = 0; i < stackData.Length; i += 8)
+            int sp = PointerSize;
+            string spName = SpRegName;
+            for (int i = 0; i < stackData.Length; i += sp)
             {
-                if (i + 8 > stackData.Length) break;
-                ulong val = BitConverter.ToUInt64(stackData, i);
-                stackItems.Add($"RSP+{i:X2}  {val:X16}");
+                if (i + sp > stackData.Length) break;
+                ulong val = Is32Bit ? BitConverter.ToUInt32(stackData, i) : BitConverter.ToUInt64(stackData, i);
+                stackItems.Add($"{spName}+{i:X2}  {FormatAddr(val)}");
             }
             StackEntries.ReplaceAll(stackItems);
         }
@@ -498,8 +582,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
         RefreshCallStack();
         _ = RefreshFunctionsAsync();
 
-        // We're stopped on a debug event — NOT via SuspendThread
-        _isPausedViaSuspend = false;
+        // For 64-bit: stopped on debug event (not via SuspendThread).
+        // For WoW64: stopped via SuspendThread (_isPausedViaSuspend already set at line 439).
+        if (!Is32Bit) _isPausedViaSuspend = false;
         _hitSwBp = null;
         IsBreakState = true;
         IsRunning = false;
@@ -723,11 +808,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (evtRip != 0)
         {
             DisasmAddress = evtRip;
-            Log($"RIP = {evtRip:X16}");
+            Log($"{IpRegName} = {FormatAddr(evtRip)}");
         }
 
         // Fetch disasm, stack, hex dump
-        var rspReg = regs.FirstOrDefault(r => r.Name == "RSP");
+        var rspReg = regs.FirstOrDefault(r => r.Name == SpRegName);
         var disasmAddr = DisasmAddress;
         var hexAddr = HexAddress != 0 ? HexAddress : disasmAddr;
         HexAddress = hexAddr;
@@ -758,16 +843,18 @@ public partial class MainViewModel : ObservableObject, IDisposable
             var sysModList = Modules.ToList();
             var sysKmodList = KernelModules.ToList();
             var stackItems = new List<string>();
-            for (int i = 0; i < stackData.Length; i += 8)
+            int sp = PointerSize;
+            string spName = SpRegName;
+            for (int i = 0; i < stackData.Length; i += sp)
             {
-                if (i + 8 > stackData.Length) break;
-                ulong val = BitConverter.ToUInt64(stackData, i);
+                if (i + sp > stackData.Length) break;
+                ulong val = Is32Bit ? BitConverter.ToUInt32(stackData, i) : BitConverter.ToUInt64(stackData, i);
                 var annotation = ResolveStackValue(TargetPid, val, sysModList, sysKmodList);
                 if (annotation == null && val != 0)
                     annotation = await TryReadStringAtAsync(TargetPid, val);
                 stackItems.Add(annotation != null
-                    ? $"RSP+{i:X2}  {val:X16}  {annotation}"
-                    : $"RSP+{i:X2}  {val:X16}");
+                    ? $"{spName}+{i:X2}  {FormatAddr(val)}  {annotation}"
+                    : $"{spName}+{i:X2}  {FormatAddr(val)}");
             }
             StackEntries.ReplaceAll(stackItems);
         }
@@ -850,6 +937,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
         catch (Exception ex) { Log($"EnumModules error: {ex.Message}"); StatusText = "Attach failed"; return; }
         Log($"Found {modules.Count} modules");
 
+        // Detect 32-bit process by reading PE magic of first module
+        if (modules.Count > 0 && pid != 4)
+        {
+            Is32Bit = await DetectIs32BitAsync(pid, modules[0].BaseAddress);
+            _disasm.SetMode(Is32Bit);
+            if (Is32Bit) Log("Detected 32-bit (WoW64) process");
+        }
+
         // Load module symbols
         Log($"Loading symbols for {modules.Count} user modules...");
         StatusText = $"Loading symbols (0%)...";
@@ -871,6 +966,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         Log($"Symbols: {symLoaded}/{modules.Count} user modules loaded");
 
         Threads.ReplaceAll(threads);
+        if (Is32Bit)
+            foreach (var m in modules) m.Is32Bit = true;
         Modules.ReplaceAll(modules);
 
         if (Threads.Count > 0)
@@ -879,19 +976,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
         // Read registers
         Log("Reading registers...");
         var tid = SelectedThreadId;
-        var regs = await Task.Run(() => _driver.ReadRegisters(pid, tid));
+        var regs = await Task.Run(() => _driver.ReadRegisters(pid, tid, Is32Bit));
         Registers.ReplaceAll(regs);
         Log($"Got {regs.Count} registers");
 
-        var rip = Registers.FirstOrDefault(r => r.Name == "RIP");
+        var rip = Registers.FirstOrDefault(r => r.Name == IpRegName);
         if (rip != null && rip.Value != 0)
-            Log($"RIP = {rip.Value:X16}");
+            Log($"{IpRegName} = {FormatAddr(rip.Value)}");
 
         // Navigate disassembly to RIP
         if (rip != null && rip.Value != 0)
         {
             DisasmAddress = rip.Value;
-            Log($"Disasm → RIP {rip.Value:X16}");
+            Log($"Disasm → {IpRegName} {FormatAddr(rip.Value)}");
         }
         else if (Modules.Count > 0)
         {
@@ -901,7 +998,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
 
         // Fetch disasm, stack, hex dump in parallel
-        var rspReg = Registers.FirstOrDefault(r => r.Name == "RSP");
+        var rspReg = Registers.FirstOrDefault(r => r.Name == SpRegName);
         var disasmAddr = DisasmAddress;
         var hexAddr = HexAddress != 0 ? HexAddress : disasmAddr;
         HexAddress = hexAddr;
@@ -943,16 +1040,18 @@ public partial class MainViewModel : ObservableObject, IDisposable
             var moduleList = Modules.ToList();
             var kmodList = KernelModules.ToList();
             var stackItems = new List<string>();
-            for (int i = 0; i < stackData.Length; i += 8)
+            int sp = PointerSize;
+            string spName = SpRegName;
+            for (int i = 0; i < stackData.Length; i += sp)
             {
-                if (i + 8 > stackData.Length) break;
-                ulong val = BitConverter.ToUInt64(stackData, i);
+                if (i + sp > stackData.Length) break;
+                ulong val = Is32Bit ? BitConverter.ToUInt32(stackData, i) : BitConverter.ToUInt64(stackData, i);
                 var annotation = ResolveStackValue(pid, val, moduleList, kmodList);
                 if (annotation == null && val != 0)
                     annotation = await TryReadStringAtAsync(pid, val);
                 stackItems.Add(annotation != null
-                    ? $"RSP+{i:X2}  {val:X16}  {annotation}"
-                    : $"RSP+{i:X2}  {val:X16}");
+                    ? $"{spName}+{i:X2}  {FormatAddr(val)}  {annotation}"
+                    : $"{spName}+{i:X2}  {FormatAddr(val)}");
             }
             StackEntries.ReplaceAll(stackItems);
         }
@@ -1035,7 +1134,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         // Only auto-break if RIP is inside the main module (CRT startup).
         // If RIP is in ntdll/kernel32/etc., the process already passed main — skip.
-        var rip = Registers.FirstOrDefault(r => r.Name == "RIP");
+        var rip = Registers.FirstOrDefault(r => r.Name == IpRegName);
         if (rip != null && rip.Value != 0 && modules.Count > 0)
         {
             var mainMod = modules[0];
@@ -1160,6 +1259,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _allImports = [];
         TargetPid = 0;
         SelectedThreadId = 0;
+        Is32Bit = false;
+        _disasm.SetMode(false);
         Instructions.Clear();
         Registers.Clear();
         Modules.Clear();
@@ -1196,12 +1297,60 @@ public partial class MainViewModel : ObservableObject, IDisposable
         IsRunning = true;
         StatusText = "Stepping...";
 
-        // Start listener before continuing
-        StartDebugListener();
+        // WoW64: use EB FE spin loop (KdTrap hook doesn't catch WoW64 exceptions)
+        if (_isPausedViaSuspend && Is32Bit)
+        {
+            var instr = GetInstructionAtRip();
+            if (instr == null) { IsBreakState = true; IsRunning = false; return; }
 
-        // Driver handles step-past internally for SW BPs:
-        //   STEP_INTO on a BP → restore byte, step, re-arm, report SingleStep
-        //   STEP_INTO on non-BP → just single step
+            var targets = new List<ulong>();
+            var mn = instr.Mnemonic.ToLowerInvariant();
+
+            if (IsRetInstruction(mn))
+            {
+                // RET: target is [ESP]
+                var espReg = Registers.FirstOrDefault(r => r.Name == "ESP");
+                if (espReg != null)
+                {
+                    var retData = await Task.Run(() => _driver.ReadMemory(TargetPid, espReg.Value, 4));
+                    if (retData != null && retData.Length >= 4)
+                        targets.Add(BitConverter.ToUInt32(retData, 0));
+                }
+            }
+            else if (IsCallInstruction(mn) || IsUnconditionalJmp(mn))
+            {
+                // CALL/JMP: step into target
+                if (instr.BranchTargetAddress != 0)
+                    targets.Add(instr.BranchTargetAddress);
+                else
+                    targets.Add(instr.Address + (ulong)instr.Size); // indirect — fallback to next
+            }
+            else if (IsConditionalJump(mn))
+            {
+                // Jcc: two possible targets
+                targets.Add(instr.Address + (ulong)instr.Size); // fallthrough
+                if (instr.BranchTargetAddress != 0)
+                    targets.Add(instr.BranchTargetAddress);
+            }
+            else
+            {
+                // Normal instruction: next = IP + size
+                targets.Add(instr.Address + (ulong)instr.Size);
+            }
+
+            if (targets.Count == 0) { IsBreakState = true; IsRunning = false; return; }
+
+            var ok = await Wow64SpinStep(TargetPid, SelectedThreadId, targets.ToArray());
+            await Wow64RefreshAfterStep();
+            IsBreakState = true;
+            IsRunning = false;
+            StatusText = ok ? $"Step - PID {TargetPid} TID {SelectedThreadId}" : "Step failed";
+            _hitSwBp = null;
+            return;
+        }
+
+        // Native 64-bit: use debug hook mechanism
+        StartDebugListener();
         await Task.Run(() => _driver.ContinueDebugEvent(DriverComm.CONTINUE_STEP_INTO));
         _hitSwBp = null;
     }
@@ -1220,22 +1369,73 @@ public partial class MainViewModel : ObservableObject, IDisposable
         IsRunning = true;
         StatusText = "Stepping over...";
 
-        // Check if current instruction is a CALL — if so, set temp BP after it and run
-        var instr = GetInstructionAtRip();
-        if (instr != null && IsCallInstruction(instr.Mnemonic))
+        // WoW64: use EB FE spin loop
+        if (_isPausedViaSuspend && Is32Bit)
         {
-            ulong nextAddr = instr.Address + (ulong)instr.Size;
+            var instr = GetInstructionAtRip();
+            if (instr == null) { IsBreakState = true; IsRunning = false; return; }
+
+            var targets = new List<ulong>();
+            var mn = instr.Mnemonic.ToLowerInvariant();
+
+            if (IsRetInstruction(mn))
+            {
+                var espReg = Registers.FirstOrDefault(r => r.Name == "ESP");
+                if (espReg != null)
+                {
+                    var retData = await Task.Run(() => _driver.ReadMemory(TargetPid, espReg.Value, 4));
+                    if (retData != null && retData.Length >= 4)
+                        targets.Add(BitConverter.ToUInt32(retData, 0));
+                }
+            }
+            else if (IsCallInstruction(mn))
+            {
+                // Step OVER call: go to next instruction (skip call)
+                targets.Add(instr.Address + (ulong)instr.Size);
+            }
+            else if (IsUnconditionalJmp(mn))
+            {
+                if (instr.BranchTargetAddress != 0)
+                    targets.Add(instr.BranchTargetAddress);
+                else
+                    targets.Add(instr.Address + (ulong)instr.Size);
+            }
+            else if (IsConditionalJump(mn))
+            {
+                targets.Add(instr.Address + (ulong)instr.Size);
+                if (instr.BranchTargetAddress != 0)
+                    targets.Add(instr.BranchTargetAddress);
+            }
+            else
+            {
+                targets.Add(instr.Address + (ulong)instr.Size);
+            }
+
+            if (targets.Count == 0) { IsBreakState = true; IsRunning = false; return; }
+
+            var ok = await Wow64SpinStep(TargetPid, SelectedThreadId, targets.ToArray());
+            await Wow64RefreshAfterStep();
+            IsBreakState = true;
+            IsRunning = false;
+            StatusText = ok ? $"Step over - PID {TargetPid} TID {SelectedThreadId}" : "Step over failed";
+            _hitSwBp = null;
+            return;
+        }
+
+        // Native 64-bit path
+        var instr64 = GetInstructionAtRip();
+        if (instr64 != null && IsCallInstruction(instr64.Mnemonic))
+        {
+            ulong nextAddr = instr64.Address + (ulong)instr64.Size;
             var tmpHandle = await Task.Run(() => _driver.SetBreakpoint(TargetPid, 0, nextAddr, BreakpointType.Software));
             if (tmpHandle.HasValue)
                 _tempBpHandle = tmpHandle.Value;
-            // Start listener before continuing
             StartDebugListener();
             await Task.Run(() => _driver.ContinueDebugEvent(
                 _hitSwBp != null ? DriverComm.CONTINUE_STEP_PAST : DriverComm.CONTINUE_RUN));
         }
         else
         {
-            // Start listener before continuing
             StartDebugListener();
             await Task.Run(() => _driver.ContinueDebugEvent(DriverComm.CONTINUE_STEP_INTO));
         }
@@ -1252,21 +1452,37 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (!IsConnected || TargetPid == 0 || SelectedThreadId == 0) return;
         if (!IsBreakState) return;
 
-        // Set temp breakpoint at return address (top of stack)
-        var rsp = Registers.FirstOrDefault(r => r.Name == "RSP");
+        // Read return address from top of stack
+        var rsp = Registers.FirstOrDefault(r => r.Name == SpRegName);
         if (rsp == null) return;
 
-        var retData = await Task.Run(() => _driver.ReadMemory(TargetPid, rsp.Value, 8));
-        if (retData == null || retData.Length < 8) return;
-        ulong retAddr = BitConverter.ToUInt64(retData, 0);
-
-        var tmpHandle = await Task.Run(() => _driver.SetBreakpoint(TargetPid, 0, retAddr, BreakpointType.Software));
-        if (tmpHandle.HasValue)
-            _tempBpHandle = tmpHandle.Value;
+        int ptrSize = Is32Bit ? 4 : 8;
+        var retData = await Task.Run(() => _driver.ReadMemory(TargetPid, rsp.Value, (uint)ptrSize));
+        if (retData == null || retData.Length < ptrSize) return;
+        ulong retAddr = Is32Bit ? BitConverter.ToUInt32(retData, 0) : BitConverter.ToUInt64(retData, 0);
 
         IsBreakState = false;
         IsRunning = true;
         StatusText = "Stepping out...";
+
+        // WoW64: use EB FE spin loop at return address
+        if (_isPausedViaSuspend && Is32Bit)
+        {
+            Log($"WoW64 step out: target = {retAddr:X8}");
+            var ok = await Wow64SpinStep(TargetPid, SelectedThreadId, retAddr);
+            await Wow64RefreshAfterStep();
+            IsBreakState = true;
+            IsRunning = false;
+            StatusText = ok ? $"Step out - PID {TargetPid} TID {SelectedThreadId}" : "Step out failed";
+            _hitSwBp = null;
+            return;
+        }
+
+        // Native 64-bit path
+        var tmpHandle = await Task.Run(() => _driver.SetBreakpoint(TargetPid, 0, retAddr, BreakpointType.Software));
+        if (tmpHandle.HasValue)
+            _tempBpHandle = tmpHandle.Value;
+
         StartDebugListener();
         await Task.Run(() => _driver.ContinueDebugEvent(
             _hitSwBp != null ? DriverComm.CONTINUE_STEP_PAST : DriverComm.CONTINUE_RUN));
@@ -1287,6 +1503,24 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var tid = SelectedThreadId;
         var addr = SelectedDisasmAddress;
 
+        // WoW64: use EB FE spin loop at cursor address
+        if (_isPausedViaSuspend && Is32Bit)
+        {
+            Log($"WoW64 run to cursor: {addr:X8}");
+            IsBreakState = false;
+            IsRunning = true;
+            StatusText = $"Running to {FormatAddr(addr)}...";
+
+            var ok = await Wow64SpinStep(pid, tid, addr);
+            await Wow64RefreshAfterStep();
+            IsBreakState = true;
+            IsRunning = false;
+            StatusText = ok ? $"Cursor - PID {pid} TID {tid}" : "Run to cursor failed";
+            _hitSwBp = null;
+            return;
+        }
+
+        // Native 64-bit path
         var handle = await Task.Run(() => _driver.SetBreakpoint(pid, tid, addr, BreakpointType.Software));
         if (handle.HasValue)
         {
@@ -1317,7 +1551,121 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (!IsConnected || TargetPid == 0) return;
         if (IsRunning) return;
 
-        // If paused via thread suspend, resume all threads
+        // WoW64: use EB FE spin traps instead of 0xCC (INT3 bypasses KdTrap hook)
+        if (_isPausedViaSuspend && Is32Bit)
+        {
+            var pid = TargetPid;
+            var swBps = Breakpoints.Where(b => b.Type == BreakpointType.Software && b.Enabled).ToList();
+
+            if (swBps.Count == 0)
+            {
+                // No breakpoints — just resume
+                var threads = Threads.ToList();
+                await Task.Run(() =>
+                {
+                    foreach (var t in threads)
+                        _driver.ResumeThread(t.ThreadId);
+                });
+                _isPausedViaSuspend = false;
+                IsBreakState = false;
+                IsRunning = true;
+                StatusText = "Running...";
+                Log("WoW64 Run: no BPs, threads resumed");
+                return;
+            }
+
+            // Convert 0xCC breakpoints to EB FE spin traps
+            var spinLoop = new byte[] { 0xEB, 0xFE };
+            var savedBytes = new Dictionary<ulong, byte[]>();
+
+            foreach (var bp in swBps)
+            {
+                // Read current 2 bytes (first is 0xCC from driver BP)
+                var cur = await Task.Run(() => _driver.ReadMemory(pid, bp.Address, 2));
+                if (cur != null && cur.Length >= 2)
+                {
+                    savedBytes[bp.Address] = cur;
+                    await Task.Run(() => _driver.WriteMemory(pid, bp.Address, spinLoop));
+                }
+            }
+
+            Log($"WoW64 Run: {savedBytes.Count} BPs converted to EB FE spin traps");
+
+            // Resume all threads
+            var threadList = Threads.ToList();
+            await Task.Run(() =>
+            {
+                foreach (var t in threadList)
+                    _driver.ResumeThread(t.ThreadId);
+            });
+
+            IsBreakState = false;
+            IsRunning = true;
+            StatusText = "Running...";
+            _hitSwBp = null;
+
+            // Background poll for EIP hitting any BP address
+            var bpAddrs = new HashSet<ulong>(savedBytes.Keys);
+            _ = Task.Run(async () =>
+            {
+                ulong hitAddr = 0;
+                for (int i = 0; i < 6000; i++) // 5 minutes max
+                {
+                    await Task.Delay(50);
+                    if (!IsRunning || !IsConnected || TargetPid == 0) break;
+
+                    var regs = _driver.ReadRegisters(pid, SelectedThreadId, true);
+                    var eip = regs.FirstOrDefault(r => r.Name == "EIP");
+                    if (eip != null && bpAddrs.Contains(eip.Value))
+                    {
+                        hitAddr = eip.Value;
+                        break;
+                    }
+                }
+
+                // Back on UI thread
+                await Application.Current.Dispatcher.InvokeAsync(async () =>
+                {
+                    if (!IsConnected || TargetPid == 0) return;
+
+                    // Suspend all threads
+                    var ths = Threads.ToList();
+                    await Task.Run(() =>
+                    {
+                        foreach (var t in ths)
+                            _driver.SuspendThread(t.ThreadId);
+                    });
+
+                    // Restore saved bytes at all BP addresses (puts back 0xCC + next byte)
+                    foreach (var kv in savedBytes)
+                        await Task.Run(() => _driver.WriteMemory(pid, kv.Key, kv.Value));
+
+                    if (hitAddr != 0)
+                    {
+                        Log($"WoW64 Run: hit BP at {hitAddr:X8}");
+                        _isPausedViaSuspend = true;
+                        _hitSwBp = swBps.FirstOrDefault(b => b.Address == hitAddr);
+                        if (_hitSwBp != null) _hitSwBp.HitCount++;
+
+                        DisasmAddress = hitAddr;
+                        await Wow64RefreshAfterStep();
+                        IsBreakState = true;
+                        IsRunning = false;
+                        StatusText = $"Breakpoint - PID {pid} TID {SelectedThreadId}";
+                    }
+                    else
+                    {
+                        // Timeout or stopped by user
+                        _isPausedViaSuspend = true;
+                        IsBreakState = true;
+                        IsRunning = false;
+                    }
+                });
+            });
+            return;
+        }
+
+        // If paused via thread suspend (non-WoW64), resume all threads
         if (_isPausedViaSuspend)
         {
             var pid = TargetPid;
@@ -1336,8 +1684,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
-        // Start listener BEFORE continuing so WaitDebugEvent IRP is pending
-        // when the thread resumes and hits the next breakpoint
+        // Native 64-bit: start listener BEFORE continuing
         IsBreakState = false;
         IsRunning = true;
         StatusText = "Running...";
@@ -1425,14 +1772,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
             SelectedThreadId = Threads[0].ThreadId;
 
         var tid = SelectedThreadId;
-        var regs = await Task.Run(() => _driver.ReadRegisters(pid, tid));
+        var regs = await Task.Run(() => _driver.ReadRegisters(pid, tid, Is32Bit));
         Registers.ReplaceAll(regs);
 
-        var rip = Registers.FirstOrDefault(r => r.Name == "RIP");
+        var rip = Registers.FirstOrDefault(r => r.Name == IpRegName);
         if (rip != null && rip.Value != 0)
         {
             DisasmAddress = rip.Value;
-            Log($"Paused at RIP = {rip.Value:X16}");
+            Log($"Paused at {IpRegName} = {FormatAddr(rip.Value)}");
         }
 
         // Refresh disasm + hex dump + stack
@@ -1547,7 +1894,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     Address = address,
                     Type = type,
                     OriginalByte = origByte,
-                    ModuleName = _symbols.ResolveAddress(TargetPid, address, Modules.ToList())
+                    ModuleName = _symbols.ResolveAddress(TargetPid, address, Modules.ToList()),
+                    Is32Bit = Is32Bit
                 };
                 Breakpoints.Add(bp);
                 Log($"Set {bp.TypeName} breakpoint at {address:X16}");
@@ -1773,7 +2121,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     private void NavigateToRip()
     {
-        var rip = Registers.FirstOrDefault(r => r.Name == "RIP");
+        var rip = Registers.FirstOrDefault(r => r.Name == IpRegName);
         if (rip != null && rip.Value != 0)
             DisasmAddress = rip.Value;
     }
@@ -1985,7 +2333,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                         {
                             Address = module.BaseAddress + (ulong)i,
                             ModuleName = module.Name,
-                            Preview = BitConverter.ToString(data, i, Math.Min(16, data.Length - i)).Replace("-", " ")
+                            Preview = BitConverter.ToString(data, i, Math.Min(16, data.Length - i)).Replace("-", " "),
+                            Is32Bit = Is32Bit
                         });
                         if (found.Count >= 1000) break;
                     }
@@ -2013,6 +2362,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         var pid = TargetPid;
         var mods = Modules.ToList();
+        var is32 = Is32Bit;
 
         var results = await Task.Run(() =>
         {
@@ -2023,8 +2373,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                                                Math.Min(module.Size, 1048576u));
                 if (data == null) continue;
 
-                SearchInDataBg(found, data, asciiPattern, module.BaseAddress, module.Name, "ASCII");
-                SearchInDataBg(found, data, unicodePattern, module.BaseAddress, module.Name, "Unicode");
+                SearchInDataBg(found, data, asciiPattern, module.BaseAddress, module.Name, "ASCII", is32);
+                SearchInDataBg(found, data, unicodePattern, module.BaseAddress, module.Name, "Unicode", is32);
                 if (found.Count >= 1000) break;
             }
             return found;
@@ -2035,7 +2385,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     }
 
     private static void SearchInDataBg(List<SearchResult> results, byte[] data, byte[] pattern,
-        ulong baseAddr, string moduleName, string encoding)
+        ulong baseAddr, string moduleName, string encoding, bool is32Bit = false)
     {
         for (int i = 0; i <= data.Length - pattern.Length; i++)
         {
@@ -2050,6 +2400,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 {
                     Address = baseAddr + (ulong)i,
                     ModuleName = moduleName,
+                    Is32Bit = is32Bit,
                     Preview = $"[{encoding}] \"{TruncateString(Encoding.ASCII.GetString(data, i, Math.Min(64, data.Length - i)), 60)}\""
                 });
                 if (results.Count >= 1000) return;
@@ -2093,7 +2444,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                                 {
                                     Address = instr.Address,
                                     ModuleName = module.Name,
-                                    Preview = $"call {targetMod.Name}+{target - targetMod.BaseAddress:X}"
+                                    Preview = $"call {targetMod.Name}+{target - targetMod.BaseAddress:X}",
+                                    Is32Bit = Is32Bit
                                 });
                             }
                         }
@@ -2186,6 +2538,16 @@ public partial class MainViewModel : ObservableObject, IDisposable
                         instr.Comment = imp.sym;
                     }
                 }
+                // Resolve 32-bit absolute indirect: call/jmp dword ptr [0xADDRESS]
+                else if (iatLookup != null && TryParseAbsoluteIndirect(instr.Operands, out ulong absIatAddr))
+                {
+                    if (iatLookup.TryGetValue(absIatAddr, out var imp))
+                    {
+                        instr.BranchTargetAddress = imp.resolved;
+                        instr.BranchTargetSymbol = imp.sym;
+                        instr.Comment = imp.sym;
+                    }
+                }
             }
         }
     }
@@ -2226,6 +2588,30 @@ public partial class MainViewModel : ObservableObject, IDisposable
             effectiveAddr = instr.Address + (ulong)instr.Size - offset;
 
         return true;
+    }
+
+    /// <summary>
+    /// Parse 32-bit absolute indirect operand: "dword ptr [0xADDRESS]"
+    /// Used for IAT calls in 32-bit code: call dword ptr [0xd71440]
+    /// </summary>
+    private static bool TryParseAbsoluteIndirect(string operands, out ulong address)
+    {
+        address = 0;
+        int bracketStart = operands.IndexOf('[');
+        int bracketEnd = operands.IndexOf(']');
+        if (bracketStart < 0 || bracketEnd <= bracketStart) return false;
+
+        var inner = operands[(bracketStart + 1)..bracketEnd].Trim();
+
+        // Must be a plain hex address (no register involved)
+        // e.g. "0xd71440" — reject "ebx + 0x10", "rip + 0x..."
+        if (inner.Any(c => char.IsLetter(c) && c != 'x' && c != 'X'
+                        && !((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))))
+            return false;
+
+        if (inner.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            return ulong.TryParse(inner[2..], System.Globalization.NumberStyles.HexNumber, null, out address);
+        return ulong.TryParse(inner, System.Globalization.NumberStyles.HexNumber, null, out address);
     }
 
     private static bool IsBranchMnemonic(string mnemonic) => mnemonic switch
@@ -2463,32 +2849,51 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (evt.Registers != null)
         {
             var r = evt.Registers;
-            regs = new List<Register>
+            if (Is32Bit)
             {
-                new() { Name = "RAX", Value = r.Rax },
-                new() { Name = "RBX", Value = r.Rbx },
-                new() { Name = "RCX", Value = r.Rcx },
-                new() { Name = "RDX", Value = r.Rdx },
-                new() { Name = "RSI", Value = r.Rsi },
-                new() { Name = "RDI", Value = r.Rdi },
-                new() { Name = "RBP", Value = r.Rbp },
-                new() { Name = "RSP", Value = r.Rsp },
-                new() { Name = "R8",  Value = r.R8 },
-                new() { Name = "R9",  Value = r.R9 },
-                new() { Name = "R10", Value = r.R10 },
-                new() { Name = "R11", Value = r.R11 },
-                new() { Name = "R12", Value = r.R12 },
-                new() { Name = "R13", Value = r.R13 },
-                new() { Name = "R14", Value = r.R14 },
-                new() { Name = "R15", Value = r.R15 },
-                new() { Name = "RIP", Value = r.Rip },
-                new() { Name = "RFLAGS", Value = r.Rflags },
-            };
+                regs = new List<Register>
+                {
+                    new() { Name = "EAX", Value = (uint)r.Rax, Is32Bit = true },
+                    new() { Name = "EBX", Value = (uint)r.Rbx, Is32Bit = true },
+                    new() { Name = "ECX", Value = (uint)r.Rcx, Is32Bit = true },
+                    new() { Name = "EDX", Value = (uint)r.Rdx, Is32Bit = true },
+                    new() { Name = "ESI", Value = (uint)r.Rsi, Is32Bit = true },
+                    new() { Name = "EDI", Value = (uint)r.Rdi, Is32Bit = true },
+                    new() { Name = "EBP", Value = (uint)r.Rbp, Is32Bit = true },
+                    new() { Name = "ESP", Value = (uint)r.Rsp, Is32Bit = true },
+                    new() { Name = "EIP", Value = (uint)r.Rip, Is32Bit = true },
+                    new() { Name = "EFLAGS", Value = (uint)r.Rflags, Is32Bit = true },
+                };
+            }
+            else
+            {
+                regs = new List<Register>
+                {
+                    new() { Name = "RAX", Value = r.Rax },
+                    new() { Name = "RBX", Value = r.Rbx },
+                    new() { Name = "RCX", Value = r.Rcx },
+                    new() { Name = "RDX", Value = r.Rdx },
+                    new() { Name = "RSI", Value = r.Rsi },
+                    new() { Name = "RDI", Value = r.Rdi },
+                    new() { Name = "RBP", Value = r.Rbp },
+                    new() { Name = "RSP", Value = r.Rsp },
+                    new() { Name = "R8",  Value = r.R8 },
+                    new() { Name = "R9",  Value = r.R9 },
+                    new() { Name = "R10", Value = r.R10 },
+                    new() { Name = "R11", Value = r.R11 },
+                    new() { Name = "R12", Value = r.R12 },
+                    new() { Name = "R13", Value = r.R13 },
+                    new() { Name = "R14", Value = r.R14 },
+                    new() { Name = "R15", Value = r.R15 },
+                    new() { Name = "RIP", Value = r.Rip },
+                    new() { Name = "RFLAGS", Value = r.Rflags },
+                };
+            }
             regs.AddRange(Register.ExpandFlags(r.Rflags));
         }
         else
         {
-            regs = await Task.Run(() => _driver.ReadRegisters(pid, tid));
+            regs = await Task.Run(() => _driver.ReadRegisters(pid, tid, Is32Bit));
         }
         var oldRegs = Registers.ToDictionary(r => r.Name, r => r.Value);
         foreach (var reg in regs)
@@ -2596,7 +3001,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         var pid = TargetPid;
         var tid = SelectedThreadId;
-        var regs = await Task.Run(() => _driver.ReadRegisters(pid, tid));
+        var regs = await Task.Run(() => _driver.ReadRegisters(pid, tid, Is32Bit));
 
         var oldRegs = Registers.ToDictionary(r => r.Name, r => r.Value);
         foreach (var reg in regs)
@@ -2612,6 +3017,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (!IsConnected || TargetPid == 0) return;
         var pid = TargetPid;
         var mods = await Task.Run(() => _driver.EnumModules(pid));
+        if (Is32Bit)
+            foreach (var m in mods) m.Is32Bit = true;
         Modules.ReplaceAll(mods);
         Log($"Found {mods.Count} modules");
     }
@@ -2816,7 +3223,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     VirtualSize = virtualSize,
                     RawDataOffset = rawOffset,
                     RawDataSize = rawSize,
-                    Characteristics = characteristics
+                    Characteristics = characteristics,
+                    Is32Bit = Is32Bit
                 });
             }
         }
@@ -2936,7 +3344,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     {
                         Address = sec.VirtualAddress + (ulong)i,
                         ModuleName = secName,
-                        Preview = BitConverter.ToString(data, i, Math.Min(16, data.Length - i)).Replace("-", " ")
+                        Preview = BitConverter.ToString(data, i, Math.Min(16, data.Length - i)).Replace("-", " "),
+                        Is32Bit = Is32Bit
                     });
                     if (found.Count >= 1000) break;
                 }
@@ -2966,6 +3375,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var secName = $"{sec.ModuleName}:{sec.Name}";
         byte[] asciiPattern = Encoding.ASCII.GetBytes(text);
         byte[] unicodePattern = Encoding.Unicode.GetBytes(text);
+        var is32 = Is32Bit;
 
         var results = await Task.Run(() =>
         {
@@ -2973,8 +3383,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
             var data = _driver.ReadMemory(pid, sec.VirtualAddress, Math.Min(size, 16777216u));
             if (data == null) return found;
 
-            SearchInDataBg(found, data, asciiPattern, sec.VirtualAddress, secName, "ASCII");
-            SearchInDataBg(found, data, unicodePattern, sec.VirtualAddress, secName, "Unicode");
+            SearchInDataBg(found, data, asciiPattern, sec.VirtualAddress, secName, "ASCII", is32);
+            SearchInDataBg(found, data, unicodePattern, sec.VirtualAddress, secName, "Unicode", is32);
             return found;
         });
 
@@ -3316,7 +3726,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public async void RefreshStack()
     {
         if (!IsConnected || TargetPid == 0) return;
-        var rsp = Registers.FirstOrDefault(r => r.Name == "RSP");
+        var rsp = Registers.FirstOrDefault(r => r.Name == SpRegName);
         if (rsp == null) return;
 
         var pid = TargetPid;
@@ -3327,16 +3737,18 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var moduleList = Modules.ToList();
         var kmodList = KernelModules.ToList();
         var items = new List<string>();
-        for (int i = 0; i < data.Length; i += 8)
+        int sp = PointerSize;
+        string spName = SpRegName;
+        for (int i = 0; i < data.Length; i += sp)
         {
-            if (i + 8 > data.Length) break;
-            ulong val = BitConverter.ToUInt64(data, i);
+            if (i + sp > data.Length) break;
+            ulong val = Is32Bit ? BitConverter.ToUInt32(data, i) : BitConverter.ToUInt64(data, i);
             var annotation = ResolveStackValue(pid, val, moduleList, kmodList);
             if (annotation == null && val != 0)
                 annotation = await TryReadStringAtAsync(pid, val);
             items.Add(annotation != null
-                ? $"RSP+{i:X2}  {val:X16}  {annotation}"
-                : $"RSP+{i:X2}  {val:X16}");
+                ? $"{spName}+{i:X2}  {FormatAddr(val)}  {annotation}"
+                : $"{spName}+{i:X2}  {FormatAddr(val)}");
         }
         StackEntries.ReplaceAll(items);
     }
@@ -3402,8 +3814,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public async void RefreshCallStack()
     {
         if (!IsConnected || TargetPid == 0) return;
-        var rsp = Registers.FirstOrDefault(r => r.Name == "RSP");
-        var rip = Registers.FirstOrDefault(r => r.Name == "RIP");
+        var rsp = Registers.FirstOrDefault(r => r.Name == SpRegName);
+        var rip = Registers.FirstOrDefault(r => r.Name == IpRegName);
         if (rsp == null) return;
 
         var pid = TargetPid;
@@ -3418,7 +3830,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 Index = 0,
                 ReturnAddress = rip.Value,
                 StackAddress = rspVal,
-                ModuleName = _symbols.ResolveAddress(pid, rip.Value, Modules.ToList())
+                ModuleName = _symbols.ResolveAddress(pid, rip.Value, Modules.ToList()),
+                Is32Bit = Is32Bit
             });
         }
 
@@ -3427,10 +3840,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         var moduleList = Modules.ToList();
         int frameIdx = 1;
-        for (int i = 0; i < stackData.Length && frameIdx < 50; i += 8)
+        int ptrSize = PointerSize;
+        for (int i = 0; i < stackData.Length && frameIdx < 50; i += ptrSize)
         {
-            if (i + 8 > stackData.Length) break;
-            ulong val = BitConverter.ToUInt64(stackData, i);
+            if (i + ptrSize > stackData.Length) break;
+            ulong val = Is32Bit
+                ? BitConverter.ToUInt32(stackData, i)
+                : BitConverter.ToUInt64(stackData, i);
             if (val == 0) continue;
 
             // Check user-mode modules first, then kernel modules
@@ -3445,7 +3861,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     Index = frameIdx++,
                     ReturnAddress = val,
                     StackAddress = rspVal + (ulong)i,
-                    ModuleName = _symbols.ResolveAddress(pid, val, moduleList) ?? $"0x{val:X}"
+                    ModuleName = _symbols.ResolveAddress(pid, val, moduleList) ?? $"0x{val:X}",
+                    Is32Bit = Is32Bit
                 });
             }
         }
@@ -3456,7 +3873,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         if (!IsConnected || TargetPid == 0) return;
 
-        var rsp = Registers.FirstOrDefault(r => r.Name == "RSP");
+        var rsp = Registers.FirstOrDefault(r => r.Name == SpRegName);
         if (rsp == null) return;
 
         var pid = TargetPid;
@@ -3515,7 +3932,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var disasmAddr = DisasmAddress;
         var hexAddr = HexAddress != 0 ? HexAddress : disasmAddr;
         HexAddress = hexAddr;
-        var rspReg = Registers.FirstOrDefault(r => r.Name == "RSP");
+        var rspReg = Registers.FirstOrDefault(r => r.Name == SpRegName);
 
         var disasmTask = Task.Run(() => _driver.ReadMemory(pid, disasmAddr, 4096));
         var stackTask = rspReg != null ? Task.Run(() => _driver.ReadMemory(pid, rspReg.Value, 256)) : Task.FromResult<byte[]?>(null);
@@ -3537,11 +3954,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (stackData != null && rspReg != null)
         {
             var stackItems = new List<string>();
-            for (int i = 0; i < stackData.Length; i += 8)
+            int sp = PointerSize;
+            string spName = SpRegName;
+            for (int i = 0; i < stackData.Length; i += sp)
             {
-                if (i + 8 > stackData.Length) break;
-                ulong val = BitConverter.ToUInt64(stackData, i);
-                stackItems.Add($"RSP+{i:X2}  {val:X16}");
+                if (i + sp > stackData.Length) break;
+                ulong val = Is32Bit ? BitConverter.ToUInt32(stackData, i) : BitConverter.ToUInt64(stackData, i);
+                stackItems.Add($"{spName}+{i:X2}  {FormatAddr(val)}");
             }
             StackEntries.ReplaceAll(stackItems);
         }
@@ -3556,7 +3975,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     private Instruction? GetInstructionAtRip()
     {
-        var rip = Registers.FirstOrDefault(r => r.Name == "RIP");
+        var rip = Registers.FirstOrDefault(r => r.Name == IpRegName);
         if (rip == null) return null;
         return Instructions.FirstOrDefault(i => i.Address == rip.Value);
     }
@@ -3564,6 +3983,113 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private static bool IsCallInstruction(string mnemonic)
     {
         return mnemonic.Equals("call", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsRetInstruction(string mnemonic)
+    {
+        var m = mnemonic.ToLowerInvariant();
+        return m == "ret" || m == "retn" || m == "retf";
+    }
+
+    private static bool IsUnconditionalJmp(string mnemonic)
+    {
+        return mnemonic.Equals("jmp", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsConditionalJump(string mnemonic)
+    {
+        var m = mnemonic.ToLowerInvariant();
+        return m.StartsWith("j") && m != "jmp" && m != "jmpe";
+    }
+
+    /// <summary>
+    /// WoW64 step helper: patches target address(es) with EB FE (JMP $),
+    /// resumes thread, polls EIP until it reaches a target, suspends, restores.
+    /// Returns true if step succeeded.
+    /// </summary>
+    private async Task<bool> Wow64SpinStep(uint pid, uint tid, params ulong[] targetAddrs)
+    {
+        if (targetAddrs.Length == 0) return false;
+
+        // Save original bytes and write EB FE at each target
+        var spinLoop = new byte[] { 0xEB, 0xFE };
+        var saved = new Dictionary<ulong, byte[]>();
+
+        foreach (var addr in targetAddrs)
+        {
+            var orig = await Task.Run(() => _driver.ReadMemory(pid, addr, 2));
+            if (orig == null || orig.Length < 2)
+            {
+                Log($"WoW64 step: failed to read bytes at {addr:X8}");
+                // Restore already-written targets
+                foreach (var kv in saved)
+                    await Task.Run(() => _driver.WriteMemory(pid, kv.Key, kv.Value));
+                return false;
+            }
+            saved[addr] = orig;
+
+            var ok = await Task.Run(() => _driver.WriteMemory(pid, addr, spinLoop));
+            if (!ok)
+            {
+                Log($"WoW64 step: failed to write EB FE at {addr:X8}");
+                foreach (var kv in saved)
+                    await Task.Run(() => _driver.WriteMemory(pid, kv.Key, kv.Value));
+                return false;
+            }
+        }
+
+        // Resume thread
+        await Task.Run(() => _driver.ResumeThread(tid));
+
+        // Poll EIP until it hits one of our targets (timeout 5s)
+        var targetSet = new HashSet<ulong>(targetAddrs);
+        bool hit = false;
+        for (int i = 0; i < 100; i++)
+        {
+            await Task.Delay(50);
+            var regs = await Task.Run(() => _driver.ReadRegisters(pid, tid, true));
+            var eip = regs.FirstOrDefault(r => r.Name == "EIP");
+            if (eip != null && targetSet.Contains(eip.Value))
+            {
+                hit = true;
+                break;
+            }
+        }
+
+        // Suspend thread
+        await Task.Run(() => _driver.SuspendThread(tid));
+
+        // Restore original bytes at all targets
+        foreach (var kv in saved)
+            await Task.Run(() => _driver.WriteMemory(pid, kv.Key, kv.Value));
+
+        if (!hit)
+            Log("WoW64 step: timeout waiting for EIP (5s)");
+
+        return hit;
+    }
+
+    /// <summary>
+    /// Refreshes registers, disassembly, stack after a WoW64 step.
+    /// </summary>
+    private async Task Wow64RefreshAfterStep()
+    {
+        var pid = TargetPid;
+        var tid = SelectedThreadId;
+
+        var regs = await Task.Run(() => _driver.ReadRegisters(pid, tid, true));
+        var oldRegs = Registers.ToDictionary(r => r.Name, r => r.Value);
+        foreach (var reg in regs)
+        {
+            if (oldRegs.TryGetValue(reg.Name, out var prev))
+                reg.PreviousValue = prev;
+        }
+        Registers.ReplaceAll(regs);
+
+        NavigateToRip();
+        RefreshDisassembly();
+        RefreshStack();
+        RefreshCallStack();
     }
 
     private static string PromptInput(string title, string prompt)
@@ -3621,6 +4147,27 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         dialog.ShowDialog();
         return result;
+    }
+
+    /// <summary>Detect if process is 32-bit by reading PE Optional Header magic from first module.</summary>
+    private async Task<bool> DetectIs32BitAsync(uint pid, ulong baseAddress)
+    {
+        try
+        {
+            // Read e_lfanew from DOS header
+            var dosData = await Task.Run(() => _driver.ReadMemory(pid, baseAddress + 0x3C, 4));
+            if (dosData == null || dosData.Length < 4) return false;
+            uint peOffset = BitConverter.ToUInt32(dosData, 0);
+
+            // Read PE Optional Header magic (offset PE+0x18)
+            var magicData = await Task.Run(() => _driver.ReadMemory(pid, baseAddress + peOffset + 0x18, 2));
+            if (magicData == null || magicData.Length < 2) return false;
+            ushort magic = BitConverter.ToUInt16(magicData, 0);
+
+            // 0x10B = PE32 (32-bit), 0x20B = PE32+ (64-bit)
+            return magic == 0x10B;
+        }
+        catch { return false; }
     }
 
     public ulong ResolveEntryPoint(ulong baseAddress)

@@ -5,15 +5,28 @@ using KernelFlirt.UI.Models;
 namespace KernelFlirt.UI.Services;
 
 /// <summary>
-/// Disassembler service wrapping Capstone for x86-64.
+/// Disassembler service wrapping Capstone for x86/x86-64.
 /// </summary>
 public class Disassembler : IDisposable
 {
-    private readonly CapstoneX86Disassembler _disasm;
+    private CapstoneX86Disassembler _disasm;
+    private bool _is32Bit;
+
+    public bool Is32Bit => _is32Bit;
 
     public Disassembler()
     {
         _disasm = CapstoneDisassembler.CreateX86Disassembler(X86DisassembleMode.Bit64);
+        _disasm.EnableInstructionDetails = false;
+    }
+
+    public void SetMode(bool is32Bit)
+    {
+        if (_is32Bit == is32Bit) return;
+        _is32Bit = is32Bit;
+        _disasm.Dispose();
+        _disasm = CapstoneDisassembler.CreateX86Disassembler(
+            is32Bit ? X86DisassembleMode.Bit32 : X86DisassembleMode.Bit64);
         _disasm.EnableInstructionDetails = false;
     }
 
@@ -34,7 +47,8 @@ public class Disassembler : IDisposable
                 Bytes = instr.Bytes,
                 Mnemonic = instr.Mnemonic,
                 Operands = instr.Operand,
-                Size = instr.Bytes.Length
+                Size = instr.Bytes.Length,
+                Is32Bit = _is32Bit
             });
             count++;
         }

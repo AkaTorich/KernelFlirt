@@ -49,7 +49,7 @@ public partial class MainWindow : Window
 
     private void RefreshDisasmView()
     {
-        var rip = VM.Registers.FirstOrDefault(r => r.Name == "RIP")?.Value;
+        var rip = VM.Registers.FirstOrDefault(r => r.Name == VM.IpRegName)?.Value;
         DisasmControl.SetInstructions(VM.Instructions, rip);
     }
 

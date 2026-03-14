@@ -6,5 +6,6 @@ public class SearchResult
     public string? ModuleName { get; set; }
     public string Preview { get; set; } = "";
     public bool HasBreakpoint { get; set; }
-    public string AddressHex => $"{Address:X16}";
+    public bool Is32Bit { get; set; }
+    public string AddressHex => Is32Bit ? $"{Address:X8}" : $"{Address:X16}";
 }
