@@ -303,6 +303,7 @@
                             <MenuItem Header="Copy Base Address" Click="OnModuleCopyBase" />
                             <Separator />
                             <MenuItem Header="Show Imports" Click="OnModuleShowImports" />
+                            <MenuItem Header="Show Functions" Click="OnModuleShowFunctions" />
                         </ContextMenu>
                     </DataGrid.ContextMenu>
                     <DataGrid.Columns>
@@ -332,6 +333,9 @@
                             <Separator />
                             <MenuItem Header="Copy Base Address" Click="OnKernelModuleCopyBase" />
                             <MenuItem Header="Copy Name" Click="OnKernelModuleCopyName" />
+                            <Separator />
+                            <MenuItem Header="Show Imports" Click="OnKernelModuleShowImports" />
+                            <MenuItem Header="Show Functions" Click="OnKernelModuleShowFunctions" />
                         </ContextMenu>
                     </DataGrid.ContextMenu>
                     <DataGrid.Columns>
