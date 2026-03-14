@@ -3066,6 +3066,21 @@ public partial class MainViewModel : ObservableObject, IDisposable
         ApplyFunctionFilter();
     }
 
+    public async void RefreshFunctionsForModule(ulong moduleBase, string moduleName)
+    {
+        if (!_symbols.IsInitialized) return;
+        if (moduleBase == 0) return;
+
+        Log($"Enumerating functions from {moduleName}...");
+        var funcs = await Task.Run(() => _symbols.EnumFunctions(moduleBase));
+        _allFunctions = funcs
+            .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(f => new FunctionEntry { Name = f.Name, Address = f.Address, Size = f.Size })
+            .ToList();
+        Log($"Found {_allFunctions.Count} functions in {moduleName}");
+        ApplyFunctionFilter();
+    }
+
     partial void OnImportFilterChanged(string value) => ApplyImportFilter();
 
     private void ApplyImportFilter()
@@ -3535,11 +3550,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
         return result;
     }
 
-    public async void RefreshImports(ulong moduleBase = 0)
+    public async void RefreshImports(ulong moduleBase = 0, uint overridePid = 0)
     {
-        if (!IsConnected || TargetPid == 0) return;
+        if (!IsConnected) return;
 
         uint moduleSize = 0;
+        uint effectivePid = overridePid != 0 ? overridePid : TargetPid;
+        if (effectivePid == 0) return;
+
         if (moduleBase == 0)
         {
             // Try user-mode modules first, then kernel modules
@@ -3558,6 +3576,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 if (kernMod == null) return;
                 moduleBase = kernMod.BaseAddress;
                 moduleSize = kernMod.Size;
+                effectivePid = 4;
             }
         }
         else
@@ -3568,7 +3587,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
             else
             {
                 var kernMod = KernelModules.FirstOrDefault(m => m.BaseAddress == moduleBase);
-                if (kernMod != null) moduleSize = kernMod.Size;
+                if (kernMod != null)
+                {
+                    moduleSize = kernMod.Size;
+                    if (effectivePid != 4) effectivePid = 4;
+                }
             }
         }
 
@@ -3576,7 +3599,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         // Cap at 4MB to avoid huge reads
         uint readSize = Math.Min(moduleSize, 4 * 1024 * 1024);
 
-        var pid = TargetPid;
+        var pid = effectivePid;
         var modBase = moduleBase;
 
         // Single large read — all PE parsing from local buffer, zero extra network calls

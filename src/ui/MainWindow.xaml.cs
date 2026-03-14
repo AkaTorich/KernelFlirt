@@ -151,6 +151,12 @@ public partial class MainWindow : Window
             VM.RefreshImports(mod.BaseAddress);
     }
 
+    private void OnModuleShowFunctions(object sender, RoutedEventArgs e)
+    {
+        if (ModulesGrid.SelectedItem is ModuleInfo mod)
+            VM.RefreshFunctionsForModule(mod.BaseAddress, mod.Name);
+    }
+
     /* ================================================================== */
     /*  Kernel module context menu                                         */
     /* ================================================================== */
@@ -198,6 +204,18 @@ public partial class MainWindow : Window
     {
         if (KernelModulesGrid.SelectedItem is KernelModuleInfo mod)
             Clipboard.SetText(mod.Name);
+    }
+
+    private void OnKernelModuleShowImports(object sender, RoutedEventArgs e)
+    {
+        if (KernelModulesGrid.SelectedItem is KernelModuleInfo mod)
+            VM.RefreshImports(mod.BaseAddress, 4);
+    }
+
+    private void OnKernelModuleShowFunctions(object sender, RoutedEventArgs e)
+    {
+        if (KernelModulesGrid.SelectedItem is KernelModuleInfo mod)
+            VM.RefreshFunctionsForModule(mod.BaseAddress, mod.Name);
     }
 
     private void NavigateToKernelModule(KernelModuleInfo mod)
