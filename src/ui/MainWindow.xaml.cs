@@ -15,6 +15,12 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         VM.Instructions.CollectionChanged += (_, _) => RefreshDisasmView();
+        VM.BreakpointMarkersChanged += () =>
+        {
+            ImportsGrid.Items.Refresh();
+            FunctionsGrid.Items.Refresh();
+            SearchGrid.Items.Refresh();
+        };
         VM.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(MainViewModel.HexData))

@@ -55,6 +55,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public RangeObservableCollection<SehEntry> SehChain { get; } = [];
     public RangeObservableCollection<SearchResult> SearchResults { get; } = [];
     public RangeObservableCollection<ImportEntry> Imports { get; } = [];
+    public RangeObservableCollection<ImportEntry> FilteredImports { get; } = [];
+    private List<ImportEntry> _allImports = [];
+    [ObservableProperty] private string _importFilter = "";
     public RangeObservableCollection<FunctionEntry> Functions { get; } = [];
     public RangeObservableCollection<FunctionEntry> FilteredFunctions { get; } = [];
     private List<FunctionEntry> _allFunctions = [];
@@ -1100,6 +1103,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _hitSwBp = null;
         _tempBpHandle = null;
         _allFunctions = [];
+        _allImports = [];
         TargetPid = 0;
         SelectedThreadId = 0;
         Instructions.Clear();
@@ -1110,6 +1114,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         CallStack.Clear();
         SehChain.Clear();
         Imports.Clear();
+        FilteredImports.Clear();
         Functions.Clear();
         FilteredFunctions.Clear();
         HexData = [];
@@ -2343,7 +2348,31 @@ public partial class MainViewModel : ObservableObject, IDisposable
         foreach (var instr in instrs)
             instr.HasBreakpoint = Breakpoints.Any(b => b.Address == instr.Address);
         Instructions.ReplaceAll(instrs);
+        SyncBreakpointMarkers();
     }
+
+    /// <summary>
+    /// Syncs HasBreakpoint flag on Imports, Functions, and FilteredFunctions
+    /// so that DataGrid rows with breakpoints are highlighted.
+    /// </summary>
+    public void SyncBreakpointMarkers()
+    {
+        var bpAddrs = new HashSet<ulong>(Breakpoints.Select(b => b.Address));
+        foreach (var imp in _allImports)
+            imp.HasBreakpoint = bpAddrs.Contains(imp.ResolvedAddress);
+        foreach (var imp in FilteredImports)
+            imp.HasBreakpoint = bpAddrs.Contains(imp.ResolvedAddress);
+        foreach (var fn in _allFunctions)
+            fn.HasBreakpoint = bpAddrs.Contains(fn.Address);
+        foreach (var fn in FilteredFunctions)
+            fn.HasBreakpoint = bpAddrs.Contains(fn.Address);
+        foreach (var sr in SearchResults)
+            sr.HasBreakpoint = bpAddrs.Contains(sr.Address);
+        BreakpointMarkersChanged?.Invoke();
+    }
+
+    /// <summary>Raised when BP markers are synced — UI should refresh DataGrids.</summary>
+    public event Action? BreakpointMarkersChanged;
 
     public async void RefreshRegisters()
     {
@@ -2412,6 +2441,25 @@ public partial class MainViewModel : ObservableObject, IDisposable
             .ToList();
         Log($"Found {_allFunctions.Count} functions in {targetName}");
         ApplyFunctionFilter();
+    }
+
+    partial void OnImportFilterChanged(string value) => ApplyImportFilter();
+
+    private void ApplyImportFilter()
+    {
+        if (string.IsNullOrWhiteSpace(ImportFilter))
+        {
+            FilteredImports.ReplaceAll(_allImports);
+        }
+        else
+        {
+            var filter = ImportFilter;
+            var filtered = _allImports
+                .Where(i => i.Function.Contains(filter, StringComparison.OrdinalIgnoreCase)
+                         || i.Module.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            FilteredImports.ReplaceAll(filtered);
+        }
     }
 
     partial void OnFunctionFilterChanged(string value) => ApplyFunctionFilter();
@@ -2486,7 +2534,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         var entries = await Task.Run(() => ParseImportsFromBuffer(image, modBase));
 
+        _allImports = entries;
         Imports.ReplaceAll(entries);
+        ApplyImportFilter();
         Log($"Found {entries.Count} imports");
         Log("Process loaded");
         StatusText = $"Process loaded - PID {TargetPid}";
