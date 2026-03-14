@@ -62,6 +62,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public RangeObservableCollection<FunctionEntry> FilteredFunctions { get; } = [];
     private List<FunctionEntry> _allFunctions = [];
     [ObservableProperty] private string _functionFilter = "";
+    public RangeObservableCollection<ExceptionEntry> FilteredExceptions { get; } = [];
+    private List<ExceptionEntry> _allExceptions = [];
+    [ObservableProperty] private string _exceptionFilter = "";
+    public RangeObservableCollection<SectionEntry> FilteredSections { get; } = [];
+    private List<SectionEntry> _allSections = [];
+    [ObservableProperty] private string _sectionFilter = "";
     [ObservableProperty] private byte[] _hexData = [];
 
     private static readonly string SettingsFile =
@@ -479,6 +485,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (hexData != null) HexData = hexData;
 
         RefreshImports();
+        RefreshExceptions();
+        RefreshSections();
         RefreshCallStack();
         _ = RefreshFunctionsAsync();
 
@@ -744,6 +752,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         RefreshCallStack();
         RefreshImports();
+        RefreshExceptions();
         _ = RefreshFunctionsAsync();
 
         _isPausedViaSuspend = false;
@@ -974,6 +983,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         // Parse imports from main exe
         RefreshImports();
+        RefreshExceptions();
+        RefreshSections();
         _ = RefreshFunctionsAsync();
 
         // Auto-set breakpoint at real entry point and run
@@ -1131,6 +1142,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         StackEntries.Clear();
         CallStack.Clear();
         SehChain.Clear();
+        _allExceptions.Clear();
+        FilteredExceptions.Clear();
+        _allSections.Clear();
+        FilteredSections.Clear();
         Imports.Clear();
         FilteredImports.Clear();
         Functions.Clear();
@@ -1750,6 +1765,110 @@ public partial class MainViewModel : ObservableObject, IDisposable
         RefreshHexDump();
         Log($"Follow in dump: {address:X16}");
     }
+
+    /// <summary>
+    /// Reads and displays UNWIND_INFO for an exception entry.
+    /// </summary>
+    public async void ShowUnwindInfo(ExceptionEntry entry)
+    {
+        if (!IsConnected || entry.UnwindInfoAddr == 0) return;
+
+        // Determine pid: kernel module or user module
+        uint pid = KernelModules.Any(m => m.Name == entry.ModuleName) ? 4u : TargetPid;
+        var data = await Task.Run(() => _driver.ReadMemory(pid, entry.UnwindInfoAddr, 64));
+        if (data == null || data.Length < 4)
+        {
+            Log($"Unwind info: failed to read at {entry.UnwindInfoAddr:X16}");
+            return;
+        }
+
+        // UNWIND_INFO structure:
+        // Byte 0: Version (3 bits) | Flags (5 bits)
+        // Byte 1: Size of prolog
+        // Byte 2: Count of unwind codes
+        // Byte 3: Frame register (4 bits) | Frame register offset (4 bits)
+        byte versionFlags = data[0];
+        int version = versionFlags & 0x7;
+        int flags = (versionFlags >> 3) & 0x1F;
+        byte prologSize = data[1];
+        byte codeCount = data[2];
+        byte frameInfo = data[3];
+        int frameReg = frameInfo & 0xF;
+        int frameOff = (frameInfo >> 4) & 0xF;
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"=== Unwind Info for {entry.Display} ===");
+        sb.AppendLine($"Address:      {entry.UnwindInfoAddr:X16}");
+        sb.AppendLine($"Version:      {version}");
+        sb.AppendLine($"Flags:        0x{flags:X} ({FormatUnwindFlags(flags)})");
+        sb.AppendLine($"Prolog Size:  {prologSize} bytes");
+        sb.AppendLine($"Code Count:   {codeCount}");
+        if (frameReg != 0)
+            sb.AppendLine($"Frame Reg:    {GetRegName(frameReg)} (offset 0x{frameOff * 16:X})");
+
+        // Parse unwind codes
+        int codesOffset = 4;
+        for (int i = 0; i < codeCount && codesOffset + 1 < data.Length; i++)
+        {
+            byte offsetInProlog = data[codesOffset];
+            byte opInfo = data[codesOffset + 1];
+            int opCode = opInfo & 0xF;
+            int info = (opInfo >> 4) & 0xF;
+            sb.AppendLine($"  [{i}] Prolog+{offsetInProlog:X2}: {FormatUnwindOp(opCode, info)}");
+            codesOffset += 2;
+            // Some ops use extra slots
+            if (opCode == 0 || opCode == 1 || opCode == 2 || opCode == 4 || opCode == 6 || opCode == 8)
+            { /* 1 slot */ }
+            else if (opCode == 3 || opCode == 7 || opCode == 9)
+            { codesOffset += 2; i++; /* 2 slots */ }
+            else if (opCode == 5 || opCode == 10)
+            { codesOffset += 4; i += 2; /* 3 slots */ }
+        }
+
+        // Chained handler
+        if ((flags & 0x04) != 0) // UNW_FLAG_CHAININFO
+            sb.AppendLine("  [Chained to another RUNTIME_FUNCTION]");
+        if ((flags & 0x01) != 0) // UNW_FLAG_EHANDLER
+            sb.AppendLine("  [Has exception handler (__C_specific_handler)]");
+        if ((flags & 0x02) != 0) // UNW_FLAG_UHANDLER
+            sb.AppendLine("  [Has unwind handler]");
+
+        Log(sb.ToString());
+    }
+
+    private static string FormatUnwindFlags(int flags)
+    {
+        var parts = new List<string>();
+        if ((flags & 1) != 0) parts.Add("EHANDLER");
+        if ((flags & 2) != 0) parts.Add("UHANDLER");
+        if ((flags & 4) != 0) parts.Add("CHAININFO");
+        return parts.Count > 0 ? string.Join(" | ", parts) : "none";
+    }
+
+    private static string GetRegName(int reg) => reg switch
+    {
+        0 => "RAX", 1 => "RCX", 2 => "RDX", 3 => "RBX",
+        4 => "RSP", 5 => "RBP", 6 => "RSI", 7 => "RDI",
+        8 => "R8", 9 => "R9", 10 => "R10", 11 => "R11",
+        12 => "R12", 13 => "R13", 14 => "R14", 15 => "R15",
+        _ => $"Reg{reg}"
+    };
+
+    private static string FormatUnwindOp(int opCode, int info) => opCode switch
+    {
+        0 => $"PUSH_NONVOL {GetRegName(info)}",
+        1 => $"ALLOC_LARGE (info={info})",
+        2 => $"ALLOC_SMALL {(info + 1) * 8} bytes",
+        3 => $"SET_FPREG {GetRegName(info)}",
+        4 => $"SAVE_NONVOL {GetRegName(info)}",
+        5 => $"SAVE_NONVOL_FAR {GetRegName(info)}",
+        6 => "EPILOG",
+        7 => "SPARE",
+        8 => $"SAVE_XMM128 XMM{info}",
+        9 => $"SAVE_XMM128_FAR XMM{info}",
+        10 => $"PUSH_MACHFRAME (info={info})",
+        _ => $"UNKNOWN_OP({opCode}, info={info})"
+    };
 
     [RelayCommand]
     private void FollowInDisasm(ulong address)
@@ -2432,6 +2551,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
             fn.HasBreakpoint = bpAddrs.Contains(fn.Address);
         foreach (var sr in SearchResults)
             sr.HasBreakpoint = bpAddrs.Contains(sr.Address);
+        foreach (var ex in _allExceptions)
+            ex.HasBreakpoint = bpAddrs.Contains(ex.FunctionStart);
+        foreach (var ex in FilteredExceptions)
+            ex.HasBreakpoint = bpAddrs.Contains(ex.FunctionStart);
+        foreach (var sec in _allSections)
+            sec.HasBreakpoint = bpAddrs.Contains(sec.VirtualAddress);
+        foreach (var sec in FilteredSections)
+            sec.HasBreakpoint = bpAddrs.Contains(sec.VirtualAddress);
         BreakpointMarkersChanged?.Invoke();
     }
 
@@ -2542,6 +2669,277 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 .ToList();
             FilteredFunctions.ReplaceAll(filtered);
         }
+    }
+
+    partial void OnExceptionFilterChanged(string value) => ApplyExceptionFilter();
+
+    private void ApplyExceptionFilter()
+    {
+        if (string.IsNullOrWhiteSpace(ExceptionFilter))
+        {
+            FilteredExceptions.ReplaceAll(_allExceptions);
+        }
+        else
+        {
+            var filter = ExceptionFilter;
+            var filtered = _allExceptions
+                .Where(e => (e.Symbol ?? "").Contains(filter, StringComparison.OrdinalIgnoreCase)
+                         || e.ModuleName.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            FilteredExceptions.ReplaceAll(filtered);
+        }
+    }
+
+    partial void OnSectionFilterChanged(string value) => ApplySectionFilter();
+
+    private void ApplySectionFilter()
+    {
+        if (string.IsNullOrWhiteSpace(SectionFilter))
+        {
+            FilteredSections.ReplaceAll(_allSections);
+        }
+        else
+        {
+            var filter = SectionFilter;
+            var filtered = _allSections
+                .Where(s => s.Name.Contains(filter, StringComparison.OrdinalIgnoreCase)
+                         || s.ModuleName.Contains(filter, StringComparison.OrdinalIgnoreCase)
+                         || s.Flags.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            FilteredSections.ReplaceAll(filtered);
+        }
+    }
+
+    /// <summary>
+    /// Parses IMAGE_SECTION_HEADER entries from all loaded modules.
+    /// </summary>
+    public async void RefreshSections()
+    {
+        if (!IsConnected || TargetPid == 0) return;
+
+        var pid = TargetPid;
+        var mods = Modules.ToList();
+        var kmods = KernelModules.ToList();
+
+        var entries = new List<SectionEntry>();
+        int idx = 0;
+
+        foreach (var mod in mods)
+        {
+            // Only need headers — read first 4KB
+            var header = await Task.Run(() => _driver.ReadMemory(pid, mod.BaseAddress,
+                Math.Min(mod.Size, 4096u)));
+            if (header == null || header.Length < 0x40) continue;
+
+            var parsed = ParseSectionsFromBuffer(header, mod.BaseAddress, mod.Name, ref idx);
+            entries.AddRange(parsed);
+        }
+
+        foreach (var kmod in kmods)
+        {
+            var header = await Task.Run(() => _driver.ReadMemory(4, kmod.BaseAddress,
+                Math.Min(kmod.Size, 4096u)));
+            if (header == null || header.Length < 0x40) continue;
+
+            var parsed = ParseSectionsFromBuffer(header, kmod.BaseAddress, kmod.Name, ref idx);
+            entries.AddRange(parsed);
+        }
+
+        _allSections = entries;
+        ApplySectionFilter();
+        Log($"Sections: {entries.Count} sections from {mods.Count + kmods.Count} modules");
+    }
+
+    private List<SectionEntry> ParseSectionsFromBuffer(byte[] image, ulong modBase, string modName, ref int idx)
+    {
+        var result = new List<SectionEntry>();
+        try
+        {
+            if (image[0] != 'M' || image[1] != 'Z') return result;
+            uint peOffset = BitConverter.ToUInt32(image, 0x3C);
+            if (peOffset + 0x18 > image.Length) return result;
+            if (image[peOffset] != 'P' || image[peOffset + 1] != 'E') return result;
+
+            ushort magic = BitConverter.ToUInt16(image, (int)peOffset + 0x18);
+            // Size of optional header
+            ushort sizeOfOptional = BitConverter.ToUInt16(image, (int)peOffset + 0x14);
+            ushort numberOfSections = BitConverter.ToUInt16(image, (int)peOffset + 0x06);
+
+            // Section headers start right after optional header
+            // PE signature (4) + COFF header (20) + optional header
+            int sectionStart = (int)peOffset + 4 + 20 + sizeOfOptional;
+
+            for (int i = 0; i < numberOfSections; i++)
+            {
+                int off = sectionStart + i * 40; // IMAGE_SECTION_HEADER is 40 bytes
+                if (off + 40 > image.Length) break;
+
+                // Name: 8 bytes, null-terminated ASCII
+                string name = System.Text.Encoding.ASCII.GetString(image, off, 8).TrimEnd('\0');
+                uint virtualSize = BitConverter.ToUInt32(image, off + 8);
+                uint virtualRva = BitConverter.ToUInt32(image, off + 12);
+                uint rawSize = BitConverter.ToUInt32(image, off + 16);
+                uint rawOffset = BitConverter.ToUInt32(image, off + 20);
+                uint characteristics = BitConverter.ToUInt32(image, off + 36);
+
+                result.Add(new SectionEntry
+                {
+                    Index = idx++,
+                    ModuleName = modName,
+                    Name = name,
+                    VirtualAddress = modBase + virtualRva,
+                    VirtualSize = virtualSize,
+                    RawDataOffset = rawOffset,
+                    RawDataSize = rawSize,
+                    Characteristics = characteristics
+                });
+            }
+        }
+        catch { }
+        return result;
+    }
+
+    /// <summary>
+    /// Parses .pdata (RUNTIME_FUNCTION) from all loaded modules.
+    /// Works for both user-mode PE and kernel-mode SYS.
+    /// </summary>
+    public async void RefreshExceptions()
+    {
+        if (!IsConnected || TargetPid == 0) return;
+
+        var pid = TargetPid;
+        var mods = Modules.ToList();
+        var kmods = KernelModules.ToList();
+
+        var entries = new List<ExceptionEntry>();
+        int idx = 0;
+
+        // Parse user-mode modules
+        foreach (var mod in mods)
+        {
+            var image = await Task.Run(() => _driver.ReadMemory(pid, mod.BaseAddress,
+                Math.Min(mod.Size, 4194304u)));
+            if (image == null || image.Length < 0x40) continue;
+
+            var parsed = ParsePdataFromBuffer(image, mod.BaseAddress, mod.Name, ref idx, pid, mods);
+            entries.AddRange(parsed);
+        }
+
+        // Parse kernel modules
+        foreach (var kmod in kmods)
+        {
+            var image = await Task.Run(() => _driver.ReadMemory(4, kmod.BaseAddress,
+                Math.Min(kmod.Size, 4194304u)));
+            if (image == null || image.Length < 0x40) continue;
+
+            var parsed = ParsePdataFromKernelBuffer(image, kmod.BaseAddress, kmod.Name, ref idx);
+            entries.AddRange(parsed);
+        }
+
+        _allExceptions = entries;
+        ApplyExceptionFilter();
+        Log($"Exception handlers: {entries.Count} RUNTIME_FUNCTION entries from {mods.Count + kmods.Count} modules");
+    }
+
+    private List<ExceptionEntry> ParsePdataFromBuffer(byte[] image, ulong modBase, string modName,
+        ref int idx, uint pid, List<ModuleInfo> mods)
+    {
+        var result = new List<ExceptionEntry>();
+        try
+        {
+            if (image[0] != 'M' || image[1] != 'Z') return result;
+            uint peOffset = BitConverter.ToUInt32(image, 0x3C);
+            if (peOffset + 0x18 > image.Length) return result;
+            if (image[peOffset] != 'P' || image[peOffset + 1] != 'E') return result;
+
+            ushort magic = BitConverter.ToUInt16(image, (int)peOffset + 0x18);
+            bool is64 = magic == 0x20B;
+            if (!is64) return result; // .pdata only for x64
+
+            // Exception directory is entry #3 in Data Directory
+            // x64 optional header starts at PE+0x18, data dirs at PE+0x18+0x70 = PE+0x88
+            // Entry #3 offset: PE+0x88 + 3*8 = PE+0xA0
+            int exceptDirOffset = (int)peOffset + 0x88 + 3 * 8;
+            if (exceptDirOffset + 8 > image.Length) return result;
+
+            uint exceptRva = BitConverter.ToUInt32(image, exceptDirOffset);
+            uint exceptSize = BitConverter.ToUInt32(image, exceptDirOffset + 4);
+            if (exceptRva == 0 || exceptSize == 0) return result;
+            if (exceptRva + exceptSize > image.Length) return result;
+
+            int entryCount = (int)(exceptSize / 12); // RUNTIME_FUNCTION is 12 bytes
+            for (int i = 0; i < entryCount; i++)
+            {
+                int off = (int)exceptRva + i * 12;
+                if (off + 12 > image.Length) break;
+
+                uint beginRva = BitConverter.ToUInt32(image, off);
+                uint endRva = BitConverter.ToUInt32(image, off + 4);
+                uint unwindRva = BitConverter.ToUInt32(image, off + 8);
+
+                ulong funcStart = modBase + beginRva;
+                ulong funcEnd = modBase + endRva;
+
+                var entry = new ExceptionEntry
+                {
+                    Index = idx++,
+                    ModuleName = modName,
+                    FunctionStart = funcStart,
+                    FunctionEnd = funcEnd,
+                    UnwindInfoAddr = modBase + unwindRva,
+                    Symbol = _symbols.ResolveAddress(pid, funcStart, mods)
+                };
+                result.Add(entry);
+            }
+        }
+        catch { }
+        return result;
+    }
+
+    private List<ExceptionEntry> ParsePdataFromKernelBuffer(byte[] image, ulong modBase, string modName, ref int idx)
+    {
+        var result = new List<ExceptionEntry>();
+        try
+        {
+            if (image[0] != 'M' || image[1] != 'Z') return result;
+            uint peOffset = BitConverter.ToUInt32(image, 0x3C);
+            if (peOffset + 0x18 > image.Length) return result;
+            if (image[peOffset] != 'P' || image[peOffset + 1] != 'E') return result;
+
+            ushort magic = BitConverter.ToUInt16(image, (int)peOffset + 0x18);
+            if (magic != 0x20B) return result;
+
+            int exceptDirOffset = (int)peOffset + 0x88 + 3 * 8;
+            if (exceptDirOffset + 8 > image.Length) return result;
+
+            uint exceptRva = BitConverter.ToUInt32(image, exceptDirOffset);
+            uint exceptSize = BitConverter.ToUInt32(image, exceptDirOffset + 4);
+            if (exceptRva == 0 || exceptSize == 0) return result;
+            if (exceptRva + exceptSize > image.Length) return result;
+
+            int entryCount = (int)(exceptSize / 12);
+            for (int i = 0; i < entryCount; i++)
+            {
+                int off = (int)exceptRva + i * 12;
+                if (off + 12 > image.Length) break;
+
+                uint beginRva = BitConverter.ToUInt32(image, off);
+                uint endRva = BitConverter.ToUInt32(image, off + 4);
+                uint unwindRva = BitConverter.ToUInt32(image, off + 8);
+
+                result.Add(new ExceptionEntry
+                {
+                    Index = idx++,
+                    ModuleName = modName,
+                    FunctionStart = modBase + beginRva,
+                    FunctionEnd = modBase + endRva,
+                    UnwindInfoAddr = modBase + unwindRva,
+                    Symbol = $"{modName}+0x{beginRva:X}"
+                });
+            }
+        }
+        catch { }
+        return result;
     }
 
     public async void RefreshImports(ulong moduleBase = 0)

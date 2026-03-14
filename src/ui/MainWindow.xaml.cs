@@ -20,6 +20,8 @@ public partial class MainWindow : Window
             ImportsGrid.Items.Refresh();
             FunctionsGrid.Items.Refresh();
             SearchGrid.Items.Refresh();
+            ExceptionsGrid.Items.Refresh();
+            SectionsGrid.Items.Refresh();
         };
         VM.PropertyChanged += (_, e) =>
         {
@@ -526,6 +528,7 @@ public partial class MainWindow : Window
             "Imports" => (ImportsGrid.SelectedItem as ImportEntry)?.ResolvedAddress ?? 0,
             "Functions" => (FunctionsGrid.SelectedItem as FunctionEntry)?.Address ?? 0,
             "Search" => (SearchGrid.SelectedItem as SearchResult)?.Address ?? 0,
+            "Exceptions" => (ExceptionsGrid.SelectedItem as ExceptionEntry)?.FunctionStart ?? 0,
             _ => 0
         };
     }
@@ -574,6 +577,126 @@ public partial class MainWindow : Window
     {
         if (FunctionsGrid.SelectedItem is FunctionEntry fn)
             Clipboard.SetText($"{fn.Name} {fn.AddressHex}");
+    }
+
+    /* ================================================================== */
+    /*  Exceptions tab                                                     */
+    /* ================================================================== */
+
+    private void OnExceptionDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (ExceptionsGrid.SelectedItem is ExceptionEntry ex)
+        {
+            VM.FollowInDisasmCommand.Execute(ex.FunctionStart);
+            MainTabControl.SelectedIndex = 0;
+        }
+    }
+
+    private void OnExceptionFollowDisasm(object sender, RoutedEventArgs e)
+    {
+        if (ExceptionsGrid.SelectedItem is ExceptionEntry ex)
+        {
+            VM.FollowInDisasmCommand.Execute(ex.FunctionStart);
+            MainTabControl.SelectedIndex = 0;
+        }
+    }
+
+    private void OnExceptionFollowEnd(object sender, RoutedEventArgs e)
+    {
+        if (ExceptionsGrid.SelectedItem is ExceptionEntry ex)
+        {
+            // Go to last instruction (end - 1 byte, typically ret)
+            VM.FollowInDisasmCommand.Execute(ex.FunctionEnd > 0 ? ex.FunctionEnd - 1 : ex.FunctionEnd);
+            MainTabControl.SelectedIndex = 0;
+        }
+    }
+
+    private void OnExceptionFollowDump(object sender, RoutedEventArgs e)
+    {
+        if (ExceptionsGrid.SelectedItem is ExceptionEntry ex)
+            VM.FollowInDumpCommand.Execute(ex.FunctionStart);
+    }
+
+    private void OnExceptionSetBp(object sender, RoutedEventArgs e)
+    {
+        if (ExceptionsGrid.SelectedItem is ExceptionEntry ex)
+            VM.SetBreakpointAtAddress(ex.FunctionStart);
+    }
+
+    private void OnExceptionSetBpEnd(object sender, RoutedEventArgs e)
+    {
+        if (ExceptionsGrid.SelectedItem is ExceptionEntry ex && ex.FunctionEnd > 0)
+            VM.SetBreakpointAtAddress(ex.FunctionEnd - 1);
+    }
+
+    private void OnExceptionCopy(object sender, RoutedEventArgs e)
+    {
+        if (ExceptionsGrid.SelectedItem is ExceptionEntry ex)
+            Clipboard.SetText(ex.StartHex);
+    }
+
+    private void OnExceptionCopyName(object sender, RoutedEventArgs e)
+    {
+        if (ExceptionsGrid.SelectedItem is ExceptionEntry ex)
+            Clipboard.SetText(ex.Display);
+    }
+
+    private void OnExceptionCopyLine(object sender, RoutedEventArgs e)
+    {
+        if (ExceptionsGrid.SelectedItem is ExceptionEntry ex)
+            Clipboard.SetText($"{ex.ModuleName}\t{ex.Display}\t{ex.StartHex}\t{ex.EndHex}\t{ex.SizeHex}");
+    }
+
+    private void OnExceptionShowUnwind(object sender, RoutedEventArgs e)
+    {
+        if (ExceptionsGrid.SelectedItem is ExceptionEntry ex)
+            VM.ShowUnwindInfo(ex);
+    }
+
+    /* ================================================================== */
+    /*  Sections tab handlers                                              */
+    /* ================================================================== */
+
+    private void OnSectionDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (SectionsGrid.SelectedItem is SectionEntry sec)
+        {
+            VM.FollowInDisasmCommand.Execute(sec.VirtualAddress);
+            MainTabControl.SelectedIndex = 0;
+        }
+    }
+
+    private void OnSectionFollowDisasm(object sender, RoutedEventArgs e)
+    {
+        if (SectionsGrid.SelectedItem is SectionEntry sec)
+        {
+            VM.FollowInDisasmCommand.Execute(sec.VirtualAddress);
+            MainTabControl.SelectedIndex = 0;
+        }
+    }
+
+    private void OnSectionFollowDump(object sender, RoutedEventArgs e)
+    {
+        if (SectionsGrid.SelectedItem is SectionEntry sec)
+            VM.FollowInDumpCommand.Execute(sec.VirtualAddress);
+    }
+
+    private void OnSectionCopyAddress(object sender, RoutedEventArgs e)
+    {
+        if (SectionsGrid.SelectedItem is SectionEntry sec)
+            Clipboard.SetText(sec.VaHex);
+    }
+
+    private void OnSectionCopyName(object sender, RoutedEventArgs e)
+    {
+        if (SectionsGrid.SelectedItem is SectionEntry sec)
+            Clipboard.SetText($"{sec.ModuleName}:{sec.Name}");
+    }
+
+    private void OnSectionCopyLine(object sender, RoutedEventArgs e)
+    {
+        if (SectionsGrid.SelectedItem is SectionEntry sec)
+            Clipboard.SetText($"{sec.ModuleName}\t{sec.Name}\t{sec.VaHex}\t{sec.VirtualSizeHex}\t{sec.RawSizeHex}\t{sec.CharacteristicsHex}\t{sec.Flags}");
     }
 
     /* ================================================================== */

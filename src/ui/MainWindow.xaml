@@ -463,29 +463,146 @@
                 </DataGrid>
             </TabItem>
 
-            <!-- Tab: SEH Chain -->
-            <TabItem Header="SEH Chain">
-                <DataGrid ItemsSource="{Binding SehChain}" IsReadOnly="True"
-                          AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}">
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="#" Width="40" Binding="{Binding Index}" />
-                        <DataGridTextColumn Header="Handler" Width="160" Binding="{Binding HandlerHex}">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
-                        <DataGridTextColumn Header="Next" Width="200" Binding="{Binding NextHex}" />
-                        <DataGridTextColumn Header="Symbol" Width="*" Binding="{Binding Symbol}">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Foreground" Value="{StaticResource CommentBrush}" />
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
-                    </DataGrid.Columns>
-                </DataGrid>
+            <!-- Tab: Exception Handlers (.pdata + SEH) -->
+            <TabItem Header="Exceptions">
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top" Margin="2">
+                        <TextBlock Text="Filter: " VerticalAlignment="Center" Foreground="{StaticResource CommentBrush}" />
+                        <TextBox Text="{Binding ExceptionFilter, UpdateSourceTrigger=PropertyChanged}"
+                                 Background="{StaticResource BgLightBrush}" Foreground="{StaticResource FgBrush}"
+                                 BorderBrush="{StaticResource BorderBrush}" Padding="3,1" />
+                    </DockPanel>
+                    <DataGrid x:Name="ExceptionsGrid" ItemsSource="{Binding FilteredExceptions}" IsReadOnly="True"
+                              AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
+                              RowStyle="{StaticResource BpRowStyle}"
+                              CellStyle="{StaticResource BpCellStyle}"
+                              RowBackground="{x:Null}" AlternatingRowBackground="{x:Null}"
+                              MouseDoubleClick="OnExceptionDoubleClick"
+                              PreviewMouseRightButtonDown="DataGrid_PreviewMouseRightButtonDown">
+                        <DataGrid.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Follow Start in Disassembler" Click="OnExceptionFollowDisasm" />
+                                <MenuItem Header="Follow End in Disassembler" Click="OnExceptionFollowEnd" />
+                                <MenuItem Header="Follow in Dump" Click="OnExceptionFollowDump" />
+                                <Separator />
+                                <MenuItem Header="Set Breakpoint at Start" Click="OnExceptionSetBp" />
+                                <MenuItem Header="Set Breakpoint at End" Click="OnExceptionSetBpEnd" />
+                                <Separator />
+                                <MenuItem Header="Copy Address" Click="OnExceptionCopy" />
+                                <MenuItem Header="Copy Function Name" Click="OnExceptionCopyName" />
+                                <MenuItem Header="Copy Line" Click="OnExceptionCopyLine" />
+                                <Separator />
+                                <MenuItem Header="Show Unwind Info" Click="OnExceptionShowUnwind" />
+                            </ContextMenu>
+                        </DataGrid.ContextMenu>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Module" Width="140" Binding="{Binding ModuleName}" />
+                            <DataGridTextColumn Header="Function" Width="220" Binding="{Binding Display}">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource CommentBrush}" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Start" Width="160" Binding="{Binding StartHex}">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="End" Width="160" Binding="{Binding EndHex}">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Size" Width="80" Binding="{Binding SizeHex}">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource HexBrush}" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
+            <!-- Tab: Sections -->
+            <TabItem Header="Sections">
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top" Margin="2">
+                        <TextBlock Text="Filter: " VerticalAlignment="Center" Foreground="{StaticResource CommentBrush}" />
+                        <TextBox Text="{Binding SectionFilter, UpdateSourceTrigger=PropertyChanged}"
+                                 Background="{StaticResource BgLightBrush}" Foreground="{StaticResource FgBrush}"
+                                 BorderBrush="{StaticResource BorderBrush}" Padding="3,1" />
+                    </DockPanel>
+                    <DataGrid x:Name="SectionsGrid" ItemsSource="{Binding FilteredSections}" IsReadOnly="True"
+                              AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
+                              RowStyle="{StaticResource BpRowStyle}"
+                              CellStyle="{StaticResource BpCellStyle}"
+                              RowBackground="{x:Null}" AlternatingRowBackground="{x:Null}"
+                              MouseDoubleClick="OnSectionDoubleClick"
+                              PreviewMouseRightButtonDown="DataGrid_PreviewMouseRightButtonDown">
+                        <DataGrid.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Follow in Disassembler" Click="OnSectionFollowDisasm" />
+                                <MenuItem Header="Follow in Dump" Click="OnSectionFollowDump" />
+                                <Separator />
+                                <MenuItem Header="Copy Address" Click="OnSectionCopyAddress" />
+                                <MenuItem Header="Copy Section Name" Click="OnSectionCopyName" />
+                                <MenuItem Header="Copy Line" Click="OnSectionCopyLine" />
+                            </ContextMenu>
+                        </DataGrid.ContextMenu>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Module" Width="140" Binding="{Binding ModuleName}" />
+                            <DataGridTextColumn Header="Section" Width="100" Binding="{Binding Name}">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource CommentBrush}" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Virtual Address" Width="160" Binding="{Binding VaHex}">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Virtual Size" Width="100" Binding="{Binding VirtualSizeHex}">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource HexBrush}" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Raw Size" Width="100" Binding="{Binding RawSizeHex}">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource HexBrush}" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Characteristics" Width="90" Binding="{Binding CharacteristicsHex}">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource HexBrush}" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Flags" Width="*" Binding="{Binding Flags}">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource CommentBrush}" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
             </TabItem>
 
             <!-- Tab: Search -->
