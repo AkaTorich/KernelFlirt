@@ -260,6 +260,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         dialog.Owner = Application.Current.MainWindow;
         if (dialog.ShowDialog() == true && dialog.SelectedPid != 0)
         {
+            // Detach previous process first (clean up hooks, BPs, listener)
+            if (TargetPid != 0)
+                await DetachProcess();
+
             TargetPid = dialog.SelectedPid;
             await DoAttachAsync();
         }
@@ -284,6 +288,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
             await OpenAndDebugDriverAsync(dialog.SelectedExePath);
             return;
         }
+
+        // Detach previous process first
+        if (TargetPid != 0)
+            await DetachProcess();
 
         var exePath = dialog.SelectedExePath;
         Log($"Creating process: {exePath}");
@@ -501,7 +509,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     private async Task OpenAndDebugDriverAsync(string sysPath)
     {
-        // 0. Unload previous driver if still loaded
+        // 0a. Detach previous process first
+        if (TargetPid != 0)
+            await DetachProcess();
+
+        // 0b. Unload previous driver if still loaded
         if (!string.IsNullOrEmpty(_loadedDriverServiceName))
         {
             Log($"Unloading previous driver: {_loadedDriverServiceName}");
@@ -514,11 +526,30 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
 
         Log($"Loading driver: {sysPath}");
-        StatusText = "Installing debug hook for kernel...";
 
-        // 1. Install debug hook with PID=4 (System) BEFORE loading the driver
-        //    so the hook is ready when DriverEntry hits INT3
-        TargetPid = 4; // System process
+        // 1. Prepare driver on relay — stops old service, copies, patches INT3,
+        //    signs, creates service. Does NOT start it yet.
+        //    Hook is NOT active during this to avoid catching spurious kernel
+        //    exceptions (e.g. DriverUnload of old service).
+        StatusText = "Preparing driver on VM...";
+        var loadResult = await Task.Run(() => _driver.LoadRemoteDriver(sysPath));
+        if (loadResult == null)
+        {
+            Log("Failed to prepare driver on VM");
+            StatusText = "Driver load failed";
+            return;
+        }
+
+        var (serviceName, entryRva, originalByte) = loadResult.Value;
+        _loadedDriverServiceName = serviceName;
+        _driverOriginalByte = originalByte;
+        _driverEntryRva = entryRva;
+        Log($"Driver prepared: service={serviceName} EntryRVA=0x{entryRva:X} OrigByte=0x{originalByte:X2}");
+
+        // 2. Install debug hook BEFORE starting the driver —
+        //    hook must be active when DriverEntry hits INT3.
+        TargetPid = 4;
+        StatusText = "Installing debug hook...";
         var hookOk = await Task.Run(() => _driver.InstallDebugHook(4));
         if (hookOk)
         {
@@ -532,27 +563,21 @@ public partial class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
-        // 2. Send LOAD_DRIVER — relay installs service, patches entry to INT3,
-        //    starts driver in background. Returns immediately with info.
-        StatusText = "Loading driver (waiting for DriverEntry)...";
-        var loadResult = await Task.Run(() => _driver.LoadRemoteDriver(sysPath));
-        if (loadResult == null)
+        // 3. Start the driver — relay calls StartService in background thread.
+        //    DriverEntry will hit INT3, hook will catch it.
+        StatusText = "Starting driver (waiting for DriverEntry)...";
+        var startOk = await Task.Run(() => _driver.StartRemoteDriver(serviceName));
+        if (!startOk)
         {
-            Log("Failed to load driver on VM");
-            StatusText = "Driver load failed";
-            // Cancel the wait by removing hook
+            Log("Failed to start driver service");
+            StatusText = "Driver start failed";
             await Task.Run(() => _driver.RemoveDebugHook());
             IsDebugHookActive = false;
             return;
         }
+        Log("StartService dispatched — waiting for DriverEntry INT3...");
 
-        var (serviceName, entryRva, originalByte) = loadResult.Value;
-        _loadedDriverServiceName = serviceName;
-        _driverOriginalByte = originalByte;
-        _driverEntryRva = entryRva;
-        Log($"Driver installed: service={serviceName} EntryRVA=0x{entryRva:X} OrigByte=0x{originalByte:X2}");
-
-        // 3. Wait for DriverEntry INT3 — skip spurious kernel INT3s
+        // 4. Wait for DriverEntry INT3 — skip spurious kernel INT3s
         //    The hook catches ALL kernel-space INT3s (PID=4), but we only want
         //    the one at our driver's DriverEntry. Loop until we find it.
         IsRunning = true;
@@ -753,6 +778,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         RefreshCallStack();
         RefreshImports();
         RefreshExceptions();
+        RefreshSections();
         _ = RefreshFunctionsAsync();
 
         _isPausedViaSuspend = false;
@@ -1100,7 +1126,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 Log($"Removed {bp.TypeName} BP at {bp.AddressHex}");
             Breakpoints.Clear();
 
-            // Resume all threads if suspended
+            // Resume all threads if suspended via SuspendThread (attach path)
             if (_isPausedViaSuspend)
             {
                 var threads = Threads.ToList();
@@ -1109,16 +1135,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     foreach (var t in threads)
                         _driver.ResumeThread(t.ThreadId);
                 });
-                _isPausedViaSuspend = false;
                 Log("Resumed all threads");
             }
-
-            // If blocked on debug event, continue so thread unblocks
-            if (IsBreakState && !_isPausedViaSuspend)
+            // If blocked on debug event (not suspended), continue so thread unblocks
+            else if (IsBreakState)
             {
                 await Task.Run(() => _driver.ContinueDebugEvent(DriverComm.CONTINUE_RUN));
                 Log("Continued blocked thread");
             }
+            _isPausedViaSuspend = false;
         }
 
         // Send RESET — removes hook, all BPs, AND cancels pending WAIT IRP in driver.

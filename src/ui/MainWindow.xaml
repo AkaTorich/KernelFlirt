@@ -596,13 +596,6 @@
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Header="Characteristics" Width="90" Binding="{Binding CharacteristicsHex}">
-                                <DataGridTextColumn.ElementStyle>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Foreground" Value="{StaticResource HexBrush}" />
-                                    </Style>
-                                </DataGridTextColumn.ElementStyle>
-                            </DataGridTextColumn>
                             <DataGridTextColumn Header="Flags" Width="*" Binding="{Binding Flags}">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
