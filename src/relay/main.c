@@ -39,6 +39,7 @@
 #define KF_PSEUDO_CREATE_PROCESS  CTL_CODE(0x00008000, 0x902, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define KF_PSEUDO_LOAD_DRIVER     CTL_CODE(0x00008000, 0x903, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define KF_PSEUDO_UNLOAD_DRIVER   CTL_CODE(0x00008000, 0x904, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define KF_PSEUDO_START_DRIVER    CTL_CODE(0x00008000, 0x905, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 static HANDLE g_hDeviceCmd = INVALID_HANDLE_VALUE;  /* CMD channel handle */
 static HANDLE g_hDeviceDbg = INVALID_HANDLE_VALUE;  /* DBG channel handle */
@@ -573,19 +574,8 @@ static BOOL HandleLoadDriver(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, DWOR
     CloseServiceHandle(svc);
     CloseServiceHandle(scm);
 
-    /* Start the driver in a background thread (StartService blocks until
-       DriverEntry returns — and DriverEntry will hit our INT3 and block) */
-    START_DRIVER_CTX *ctx = (START_DRIVER_CTX *)calloc(1, sizeof(START_DRIVER_CTX));
-    if (ctx) {
-        strncpy(ctx->serviceName, serviceName, sizeof(ctx->serviceName) - 1);
-        HANDLE hThread = CreateThread(NULL, 0, StartDriverThread, ctx, 0, NULL);
-        if (hThread) {
-            CloseHandle(hThread);
-            printf("[relay] StartService dispatched in background\n");
-        } else {
-            free(ctx);
-        }
-    }
+    /* NOTE: Service is NOT started here. UI must call START_DRIVER after
+       installing the debug hook, so INT3 at DriverEntry is caught. */
 
     /* Build output */
     KF_LOAD_DRIVER_OUT *out = (KF_LOAD_DRIVER_OUT *)calloc(1, sizeof(KF_LOAD_DRIVER_OUT));
@@ -656,6 +646,37 @@ static BOOL HandleUnloadDriver(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, DW
     return TRUE;
 }
 
+static BOOL HandleStartDriver(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, DWORD *pOutSize)
+{
+    if (!inputBuf || inputSize < 2) return FALSE;
+
+    /* Input: ASCII service name */
+    char serviceName[64] = {0};
+    int len = inputSize < 63 ? inputSize : 63;
+    memcpy(serviceName, inputBuf, len);
+    serviceName[len] = '\0';
+
+    printf("[relay] StartDriver: %s\n", serviceName);
+
+    /* Start in background thread (StartService blocks until DriverEntry returns) */
+    START_DRIVER_CTX *ctx = (START_DRIVER_CTX *)calloc(1, sizeof(START_DRIVER_CTX));
+    if (!ctx) return FALSE;
+
+    strncpy(ctx->serviceName, serviceName, sizeof(ctx->serviceName) - 1);
+    HANDLE hThread = CreateThread(NULL, 0, StartDriverThread, ctx, 0, NULL);
+    if (hThread) {
+        CloseHandle(hThread);
+        printf("[relay] StartService dispatched in background\n");
+    } else {
+        free(ctx);
+        return FALSE;
+    }
+
+    *ppOut = NULL;
+    *pOutSize = 0;
+    return TRUE;
+}
+
 /*
  * Check if this IOCTL is a relay pseudo-IOCTL.
  * If so, handle it locally and return TRUE; caller should send response.
@@ -679,6 +700,9 @@ static BOOL TryHandlePseudoIoctl(DWORD ioctlCode, BYTE *inputBuf, DWORD inputSiz
         return TRUE;
     case KF_PSEUDO_UNLOAD_DRIVER:
         *pSuccess = HandleUnloadDriver(inputBuf, inputSize, ppOut, pOutSize);
+        return TRUE;
+    case KF_PSEUDO_START_DRIVER:
+        *pSuccess = HandleStartDriver(inputBuf, inputSize, ppOut, pOutSize);
         return TRUE;
     default:
         break;

@@ -61,6 +61,7 @@ public class DriverComm : IDisposable
     private static readonly uint IOCTL_KF_CREATE_PROCESS   = CTL_CODE(DeviceType, 0x902, 0, 0);
     private static readonly uint IOCTL_KF_LOAD_DRIVER      = CTL_CODE(DeviceType, 0x903, 0, 0);
     private static readonly uint IOCTL_KF_UNLOAD_DRIVER    = CTL_CODE(DeviceType, 0x904, 0, 0);
+    private static readonly uint IOCTL_KF_START_DRIVER     = CTL_CODE(DeviceType, 0x905, 0, 0);
 
     #endregion
 
@@ -979,6 +980,13 @@ public class DriverComm : IDisposable
 
         var result = BytesToStruct<KF_LOAD_DRIVER_OUT>(data);
         return (name, result.EntryPointRva, result.OriginalByte);
+    }
+
+    public bool StartRemoteDriver(string serviceName)
+    {
+        byte[] input = System.Text.Encoding.ASCII.GetBytes(serviceName + "\0");
+        var (ok, _) = SendIoctl(IOCTL_KF_START_DRIVER, input, 0);
+        return ok;
     }
 
     public bool UnloadRemoteDriver(string serviceName)
