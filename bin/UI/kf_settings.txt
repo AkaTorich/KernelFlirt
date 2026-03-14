@@ -1,1 +1,1 @@
-SymbolPath=C:\Users\psysh\OneDrive\Desktop\KernelFlirt\bin\TestDriver;srv*C:\Symbols*https://msdl.microsoft.com/download/symbols
+SymbolPath=C:\Users\psysh\OneDrive\Desktop\KernelFlirt\bin;srv*C:\Symbols*https://msdl.microsoft.com/download/symbols
