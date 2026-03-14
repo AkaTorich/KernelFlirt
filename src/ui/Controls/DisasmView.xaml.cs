@@ -59,7 +59,7 @@ public partial class DisasmView : UserControl
     private static SolidColorBrush SymbolColor => new(Color.FromRgb(0x4E, 0xC9, 0xB0));         // teal/cyan symbols
     private static SolidColorBrush BpMarkerColor => (SolidColorBrush)Application.Current.Resources["BreakpointBrush"];
     private static SolidColorBrush CurrentLineColor => new(Color.FromRgb(0x26, 0x4F, 0x78));
-    private static SolidColorBrush BpLineColor => new(Color.FromRgb(0x64, 0x1E, 0x1E));
+    private static SolidColorBrush BpLineColor => new(Color.FromRgb(0x8B, 0x20, 0x20));
 
     private int _selectedIndex = -1;
     private ObservableCollection<Instruction>? _instructions;
@@ -347,11 +347,15 @@ public partial class DisasmView : UserControl
     {
         if (sender is Border border && border.Tag is int index)
         {
-            // Deselect previous
+            // Deselect previous — restore BP color if needed
             if (_selectedIndex >= 0 && _selectedIndex < InstructionList.Items.Count)
             {
                 if (InstructionList.Items[_selectedIndex] is Border prev)
-                    prev.Background = Brushes.Transparent;
+                {
+                    bool prevHasBp = _instructions != null && _selectedIndex < _instructions.Count
+                        && _instructions[_selectedIndex].HasBreakpoint;
+                    prev.Background = prevHasBp ? BpLineColor : Brushes.Transparent;
+                }
             }
 
             border.Background = new SolidColorBrush(Color.FromRgb(0x26, 0x4F, 0x78));

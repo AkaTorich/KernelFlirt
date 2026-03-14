@@ -7,6 +7,7 @@ public class ImportEntry
     public ushort Ordinal { get; set; }
     public ulong IatAddress { get; set; }
     public ulong ResolvedAddress { get; set; }
+    public bool HasBreakpoint { get; set; }
     public string IatHex => $"{IatAddress:X16}";
     public string ResolvedHex => $"{ResolvedAddress:X16}";
     public string Display => Ordinal != 0 && string.IsNullOrEmpty(Function)

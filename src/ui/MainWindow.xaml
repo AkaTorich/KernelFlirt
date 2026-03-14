@@ -19,6 +19,16 @@
         <conv:HexValueConverter x:Key="HexConv" />
         <conv:BoolToVisibilityConverter x:Key="BoolVisConv" />
         <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolVisConv" />
+
+        <!-- Row style for grids with HasBreakpoint property -->
+        <Style x:Key="BpRowStyle" TargetType="DataGridRow">
+            <Setter Property="Background" Value="Transparent" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasBreakpoint}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource BpRowBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
     </Window.Resources>
 
     <Window.InputBindings>
@@ -458,6 +468,7 @@
             <TabItem Header="Search">
                 <DataGrid x:Name="SearchGrid" ItemsSource="{Binding SearchResults}" IsReadOnly="True"
                           AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
+                          RowStyle="{StaticResource BpRowStyle}"
                           MouseDoubleClick="OnSearchResultDoubleClick">
                     <DataGrid.ContextMenu>
                         <ContextMenu>
@@ -482,37 +493,46 @@
 
             <!-- Tab: Imports -->
             <TabItem Header="Imports">
-                <DataGrid x:Name="ImportsGrid" ItemsSource="{Binding Imports}" IsReadOnly="True"
-                          AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
-                          MouseDoubleClick="OnImportDoubleClick"
-                          PreviewMouseRightButtonDown="DataGrid_PreviewMouseRightButtonDown">
-                    <DataGrid.ContextMenu>
-                        <ContextMenu>
-                            <MenuItem Header="Follow in Disassembler" Click="OnImportFollowDisasm" />
-                            <MenuItem Header="Follow in Dump" Click="OnImportFollowDump" />
-                            <MenuItem Header="Set Breakpoint on Function" Click="OnImportSetBp" />
-                            <MenuItem Header="Copy Address" Click="OnImportCopy" />
-                        </ContextMenu>
-                    </DataGrid.ContextMenu>
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="Module" Width="140" Binding="{Binding Module}" />
-                        <DataGridTextColumn Header="Function" Width="220" Binding="{Binding Display}" />
-                        <DataGridTextColumn Header="IAT Address" Width="160" Binding="{Binding IatHex}">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
-                        <DataGridTextColumn Header="Resolved" Width="*" Binding="{Binding ResolvedHex}">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Foreground" Value="{StaticResource HexBrush}" />
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
-                    </DataGrid.Columns>
-                </DataGrid>
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top" Margin="2">
+                        <TextBlock Text="Filter: " VerticalAlignment="Center" Foreground="{StaticResource CommentBrush}" />
+                        <TextBox Text="{Binding ImportFilter, UpdateSourceTrigger=PropertyChanged}"
+                                 Background="{StaticResource BgLightBrush}" Foreground="{StaticResource FgBrush}"
+                                 BorderBrush="{StaticResource BorderBrush}" Padding="3,1" />
+                    </DockPanel>
+                    <DataGrid x:Name="ImportsGrid" ItemsSource="{Binding FilteredImports}" IsReadOnly="True"
+                              AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
+                              RowStyle="{StaticResource BpRowStyle}"
+                              MouseDoubleClick="OnImportDoubleClick"
+                              PreviewMouseRightButtonDown="DataGrid_PreviewMouseRightButtonDown">
+                        <DataGrid.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Follow in Disassembler" Click="OnImportFollowDisasm" />
+                                <MenuItem Header="Follow in Dump" Click="OnImportFollowDump" />
+                                <MenuItem Header="Set Breakpoint on Function" Click="OnImportSetBp" />
+                                <MenuItem Header="Copy Address" Click="OnImportCopy" />
+                            </ContextMenu>
+                        </DataGrid.ContextMenu>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Module" Width="140" Binding="{Binding Module}" />
+                            <DataGridTextColumn Header="Function" Width="220" Binding="{Binding Display}" />
+                            <DataGridTextColumn Header="IAT Address" Width="160" Binding="{Binding IatHex}">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Resolved" Width="*" Binding="{Binding ResolvedHex}">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource HexBrush}" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
             </TabItem>
 
             <!-- Tab: Functions -->
@@ -526,6 +546,7 @@
                     </DockPanel>
                     <DataGrid x:Name="FunctionsGrid" ItemsSource="{Binding FilteredFunctions}" IsReadOnly="True"
                               AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
+                              RowStyle="{StaticResource BpRowStyle}"
                               MouseDoubleClick="OnFunctionDoubleClick"
                               PreviewMouseRightButtonDown="DataGrid_PreviewMouseRightButtonDown">
                         <DataGrid.ContextMenu>

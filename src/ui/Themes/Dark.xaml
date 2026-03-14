@@ -35,6 +35,7 @@
     <SolidColorBrush x:Key="HexBrush" Color="{StaticResource HexColor}" />
     <SolidColorBrush x:Key="CommentBrush" Color="{StaticResource CommentColor}" />
     <SolidColorBrush x:Key="ToolbarBgBrush" Color="{StaticResource ToolbarBgColor}" />
+    <SolidColorBrush x:Key="BpRowBrush" Color="#8B2020" />
 
     <!-- Global Window style -->
     <Style TargetType="Window">
