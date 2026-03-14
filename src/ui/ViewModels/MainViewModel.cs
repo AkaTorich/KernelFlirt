@@ -2800,6 +2800,164 @@ public partial class MainViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
+    /// Dump section contents to a file.
+    /// </summary>
+    public async void DumpSectionToFile(SectionEntry sec)
+    {
+        if (!IsConnected || TargetPid == 0) return;
+
+        uint size = sec.VirtualSize > 0 ? sec.VirtualSize : sec.RawDataSize;
+        if (size == 0) { Log("Section size is 0"); return; }
+
+        var dlg = new Microsoft.Win32.SaveFileDialog
+        {
+            FileName = $"{sec.ModuleName}_{sec.Name}.bin",
+            Filter = "Binary files (*.bin)|*.bin|All files (*.*)|*.*",
+            Title = $"Dump {sec.ModuleName}:{sec.Name}"
+        };
+
+        if (dlg.ShowDialog() != true) return;
+
+        var pid = TargetPid;
+        Log($"Dumping {sec.ModuleName}:{sec.Name} ({size} bytes) to {dlg.FileName}...");
+
+        var data = await Task.Run(() => _driver.ReadMemory(pid, sec.VirtualAddress,
+            Math.Min(size, 16777216u))); // cap at 16MB
+
+        if (data == null || data.Length == 0)
+        {
+            Log("Failed to read section memory");
+            return;
+        }
+
+        await System.IO.File.WriteAllBytesAsync(dlg.FileName, data);
+        Log($"Dumped {data.Length} bytes to {dlg.FileName}");
+    }
+
+    /// <summary>
+    /// Fill entire section with a specific byte value.
+    /// </summary>
+    public async void FillSection(SectionEntry sec, byte fillByte)
+    {
+        if (!IsConnected || TargetPid == 0) return;
+
+        uint size = sec.VirtualSize > 0 ? sec.VirtualSize : sec.RawDataSize;
+        if (size == 0) { Log("Section size is 0"); return; }
+
+        var pid = TargetPid;
+        Log($"Filling {sec.ModuleName}:{sec.Name} with 0x{fillByte:X2} ({size} bytes)...");
+
+        // Write in 64KB chunks
+        const uint chunkSize = 65536;
+        uint written = 0;
+        bool ok = true;
+
+        await Task.Run(() =>
+        {
+            while (written < size && ok)
+            {
+                uint len = Math.Min(chunkSize, size - written);
+                var chunk = new byte[len];
+                if (fillByte != 0) Array.Fill(chunk, fillByte);
+
+                ok = _driver.WriteMemory(pid, sec.VirtualAddress + written, chunk);
+                written += len;
+            }
+        });
+
+        if (ok)
+            Log($"Filled {sec.ModuleName}:{sec.Name} with 0x{fillByte:X2} ({written} bytes)");
+        else
+            Log($"Fill failed after {written} bytes");
+    }
+
+    /// <summary>
+    /// Search for binary pattern within a specific section.
+    /// </summary>
+    public async void SearchBinaryInSection(SectionEntry sec)
+    {
+        if (!IsConnected || TargetPid == 0) return;
+
+        string pattern = PromptInput("Binary Search in Section",
+            $"Search in {sec.ModuleName}:{sec.Name}\nEnter hex bytes (e.g. 48 89 5C 24 or 488B??):");
+        if (string.IsNullOrWhiteSpace(pattern)) return;
+
+        var patternBytes = ParseSearchPattern(pattern);
+        if (patternBytes.Count == 0) return;
+
+        uint size = sec.VirtualSize > 0 ? sec.VirtualSize : sec.RawDataSize;
+        if (size == 0) { Log("Section size is 0"); return; }
+
+        var pid = TargetPid;
+        var secName = $"{sec.ModuleName}:{sec.Name}";
+
+        var results = await Task.Run(() =>
+        {
+            var found = new List<SearchResult>();
+            var data = _driver.ReadMemory(pid, sec.VirtualAddress, Math.Min(size, 16777216u));
+            if (data == null) return found;
+
+            for (int i = 0; i <= data.Length - patternBytes.Count; i++)
+            {
+                bool match = true;
+                for (int j = 0; j < patternBytes.Count; j++)
+                {
+                    if (patternBytes[j] is { } expected && data[i + j] != expected)
+                    { match = false; break; }
+                }
+                if (match)
+                {
+                    found.Add(new SearchResult
+                    {
+                        Address = sec.VirtualAddress + (ulong)i,
+                        ModuleName = secName,
+                        Preview = BitConverter.ToString(data, i, Math.Min(16, data.Length - i)).Replace("-", " ")
+                    });
+                    if (found.Count >= 1000) break;
+                }
+            }
+            return found;
+        });
+
+        SearchResults.ReplaceAll(results);
+        Log($"Binary search in {secName}: found {results.Count} results for [{pattern}]");
+    }
+
+    /// <summary>
+    /// Search for ASCII/Unicode string within a specific section.
+    /// </summary>
+    public async void SearchStringInSection(SectionEntry sec)
+    {
+        if (!IsConnected || TargetPid == 0) return;
+
+        string text = PromptInput("String Search in Section",
+            $"Search in {sec.ModuleName}:{sec.Name}\nEnter string to find:");
+        if (string.IsNullOrWhiteSpace(text)) return;
+
+        uint size = sec.VirtualSize > 0 ? sec.VirtualSize : sec.RawDataSize;
+        if (size == 0) { Log("Section size is 0"); return; }
+
+        var pid = TargetPid;
+        var secName = $"{sec.ModuleName}:{sec.Name}";
+        byte[] asciiPattern = Encoding.ASCII.GetBytes(text);
+        byte[] unicodePattern = Encoding.Unicode.GetBytes(text);
+
+        var results = await Task.Run(() =>
+        {
+            var found = new List<SearchResult>();
+            var data = _driver.ReadMemory(pid, sec.VirtualAddress, Math.Min(size, 16777216u));
+            if (data == null) return found;
+
+            SearchInDataBg(found, data, asciiPattern, sec.VirtualAddress, secName, "ASCII");
+            SearchInDataBg(found, data, unicodePattern, sec.VirtualAddress, secName, "Unicode");
+            return found;
+        });
+
+        SearchResults.ReplaceAll(results);
+        Log($"String search in {secName}: found {results.Count} results for \"{text}\"");
+    }
+
+    /// <summary>
     /// Parses .pdata (RUNTIME_FUNCTION) from all loaded modules.
     /// Works for both user-mode PE and kernel-mode SYS.
     /// </summary>

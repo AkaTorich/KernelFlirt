@@ -553,6 +553,14 @@
                                 <Separator />
                                 <MenuItem Header="Memory BP on Section (PAGE_GUARD, all pages)" Click="OnSectionMemoryBpAll" />
                                 <Separator />
+                                <MenuItem Header="Dump Section to File..." Click="OnSectionDumpToFile" />
+                                <Separator />
+                                <MenuItem Header="Fill Section with NOPs (0x90)" Click="OnSectionFillNops" />
+                                <MenuItem Header="Fill Section with Zeros (0x00)" Click="OnSectionFillZeros" />
+                                <Separator />
+                                <MenuItem Header="Search Binary in Section..." Click="OnSectionSearchBinary" />
+                                <MenuItem Header="Search String in Section..." Click="OnSectionSearchString" />
+                                <Separator />
                                 <MenuItem Header="Copy Address" Click="OnSectionCopyAddress" />
                                 <MenuItem Header="Copy Section Name" Click="OnSectionCopyName" />
                                 <MenuItem Header="Copy Line" Click="OnSectionCopyLine" />
