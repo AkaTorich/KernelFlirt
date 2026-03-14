@@ -606,6 +606,7 @@ public class DriverComm : IDisposable
             new() { Name = "R15", Value = r.R15 },
             new() { Name = "RIP", Value = r.Rip },
             new() { Name = "RFLAGS", Value = r.Rflags },
+            ..Register.ExpandFlags(r.Rflags),
             new() { Name = "DR0", Value = r.Dr0 },
             new() { Name = "DR1", Value = r.Dr1 },
             new() { Name = "DR2", Value = r.Dr2 },
