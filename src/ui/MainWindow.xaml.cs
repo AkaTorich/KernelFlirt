@@ -459,35 +459,8 @@ public partial class MainWindow : Window
     }
 
     /* ================================================================== */
-    /*  Hex dump context menu                                              */
+    /*  Hex dump — now handled by HexDumpView control                       */
     /* ================================================================== */
-
-    private void OnHexCopySelection(object sender, RoutedEventArgs e)
-    {
-        if (!string.IsNullOrEmpty(HexDumpText.SelectedText))
-            Clipboard.SetText(HexDumpText.SelectedText);
-    }
-
-    private void OnHexCopy(object sender, RoutedEventArgs e)
-    {
-        if (!string.IsNullOrEmpty(HexDumpText.Text))
-            Clipboard.SetText(HexDumpText.Text);
-    }
-
-    private void OnHexSelectAll(object sender, RoutedEventArgs e)
-    {
-        HexDumpText.SelectAll();
-    }
-
-    private void OnHexFollowInDisasm(object sender, RoutedEventArgs e)
-    {
-        // Try to parse selected text as hex address, fallback to base address
-        ulong addr = VM.HexAddress;
-        var sel = HexDumpText.SelectedText?.Trim().Replace(" ", "");
-        if (!string.IsNullOrEmpty(sel) && ulong.TryParse(sel, System.Globalization.NumberStyles.HexNumber, null, out var parsed))
-            addr = parsed;
-        VM.FollowInDisasmCommand.Execute(addr);
-    }
 
     /* ================================================================== */
     /*  Shared: right-click selects DataGrid row under cursor              */
@@ -629,38 +602,18 @@ public partial class MainWindow : Window
         var data = VM.HexData;
         if (data == null || data.Length == 0)
         {
-            HexDumpText.Text = "";
+            HexDumpControl.Clear();
             return;
         }
 
-        var sb = new StringBuilder();
-        ulong baseAddr = VM.HexAddress;
-
-        for (int i = 0; i < data.Length; i += 16)
-        {
-            sb.Append($"{baseAddr + (ulong)i:X16}  ");
-
-            for (int j = 0; j < 16; j++)
-            {
-                if (i + j < data.Length)
-                    sb.Append($"{data[i + j]:X2} ");
-                else
-                    sb.Append("   ");
-                if (j == 7) sb.Append(' ');
-            }
-
-            sb.Append(' ');
-
-            for (int j = 0; j < 16 && i + j < data.Length; j++)
-            {
-                byte b = data[i + j];
-                sb.Append(b >= 0x20 && b < 0x7F ? (char)b : '.');
-            }
-
-            sb.AppendLine();
-        }
-
-        HexDumpText.Text = sb.ToString();
+        // Collect memory/HW breakpoint addresses for highlighting
+        var bpAddrs = new HashSet<ulong>(
+            VM.Breakpoints
+                .Where(b => b.Type is Models.BreakpointType.Memory
+                         or Models.BreakpointType.HwWrite
+                         or Models.BreakpointType.HwReadWrite)
+                .Select(b => b.Address));
+        HexDumpControl.SetData(data, VM.HexAddress, bpAddrs);
     }
 
     protected override void OnClosed(EventArgs e)
