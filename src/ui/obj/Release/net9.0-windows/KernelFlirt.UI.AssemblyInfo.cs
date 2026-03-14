@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("KernelFlirt")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+29c447a6f18d9d82452dc877707b80e168ec4f51")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+4c8c61fb4aaf66d187866ab48f3ce96181bdb9c9")]
 [assembly: System.Reflection.AssemblyProductAttribute("KernelFlirt")]
 [assembly: System.Reflection.AssemblyTitleAttribute("KernelFlirt")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

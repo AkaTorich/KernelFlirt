@@ -9,7 +9,8 @@
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource BgBrush}"
         Foreground="{StaticResource FgBrush}"
-        FontFamily="Consolas" FontSize="13">
+        FontFamily="Consolas" FontSize="13"
+        PreviewKeyDown="Window_PreviewKeyDown">
 
     <Window.DataContext>
         <vm:MainViewModel />
@@ -20,9 +21,32 @@
         <conv:BoolToVisibilityConverter x:Key="BoolVisConv" />
         <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolVisConv" />
 
-        <!-- Row style for grids with HasBreakpoint property -->
+        <!-- Cell style that overrides selection colors and shows BP red -->
+        <Style x:Key="BpCellStyle" TargetType="DataGridCell">
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+            <Style.Triggers>
+                <!-- Normal selection: dark blue -->
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="{StaticResource SelectionBrush}" />
+                    <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+                </Trigger>
+                <!-- Breakpoint row: red -->
+                <DataTrigger Binding="{Binding HasBreakpoint}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource BpRowBrush}" />
+                </DataTrigger>
+                <!-- Selected + breakpoint: brighter red -->
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding HasBreakpoint}" Value="True" />
+                        <Condition Binding="{Binding IsSelected, RelativeSource={RelativeSource Self}}" Value="True" />
+                    </MultiDataTrigger.Conditions>
+                    <Setter Property="Background" Value="#B03030" />
+                </MultiDataTrigger>
+            </Style.Triggers>
+        </Style>
         <Style x:Key="BpRowStyle" TargetType="DataGridRow">
-            <Setter Property="Background" Value="Transparent" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding HasBreakpoint}" Value="True">
                     <Setter Property="Background" Value="{StaticResource BpRowBrush}" />
@@ -32,7 +56,7 @@
     </Window.Resources>
 
     <Window.InputBindings>
-        <KeyBinding Key="F2" Command="{Binding ToggleBreakpointCommand}" />
+        <!-- F2 handled in PreviewKeyDown for tab-aware BP toggling -->
         <KeyBinding Key="F4" Command="{Binding RunToCursorCommand}" />
         <KeyBinding Key="F5" Command="{Binding ContinueExecutionCommand}" />
         <KeyBinding Key="F7" Command="{Binding StepInCommand}" />
@@ -139,7 +163,7 @@
 
                 <Rectangle Width="1" Fill="{StaticResource BorderBrush}" Margin="8,2" />
 
-                <Button Content="BP" Command="{Binding ToggleBreakpointCommand}" ToolTip="Toggle breakpoint (F2)" />
+                <Button Content="BP" Click="OnBpButtonClick" ToolTip="Toggle breakpoint (F2)" />
                 <Button Content="HW" Command="{Binding ToggleHwBreakpointCommand}" ToolTip="Toggle hardware breakpoint" />
                 <Button Content="WW" Command="{Binding ToggleHwWriteBreakpointCommand}" ToolTip="Toggle HW write watchpoint" />
                 <Button Content="RW" Command="{Binding ToggleHwRwBreakpointCommand}" ToolTip="Toggle HW read/write watchpoint" />
@@ -469,6 +493,8 @@
                 <DataGrid x:Name="SearchGrid" ItemsSource="{Binding SearchResults}" IsReadOnly="True"
                           AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
                           RowStyle="{StaticResource BpRowStyle}"
+                          CellStyle="{StaticResource BpCellStyle}"
+                          RowBackground="{x:Null}" AlternatingRowBackground="{x:Null}"
                           MouseDoubleClick="OnSearchResultDoubleClick">
                     <DataGrid.ContextMenu>
                         <ContextMenu>
@@ -503,6 +529,8 @@
                     <DataGrid x:Name="ImportsGrid" ItemsSource="{Binding FilteredImports}" IsReadOnly="True"
                               AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
                               RowStyle="{StaticResource BpRowStyle}"
+                              CellStyle="{StaticResource BpCellStyle}"
+                              RowBackground="{x:Null}" AlternatingRowBackground="{x:Null}"
                               MouseDoubleClick="OnImportDoubleClick"
                               PreviewMouseRightButtonDown="DataGrid_PreviewMouseRightButtonDown">
                         <DataGrid.ContextMenu>
@@ -547,6 +575,8 @@
                     <DataGrid x:Name="FunctionsGrid" ItemsSource="{Binding FilteredFunctions}" IsReadOnly="True"
                               AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
                               RowStyle="{StaticResource BpRowStyle}"
+                              CellStyle="{StaticResource BpCellStyle}"
+                              RowBackground="{x:Null}" AlternatingRowBackground="{x:Null}"
                               MouseDoubleClick="OnFunctionDoubleClick"
                               PreviewMouseRightButtonDown="DataGrid_PreviewMouseRightButtonDown">
                         <DataGrid.ContextMenu>
@@ -620,20 +650,30 @@
                         </StackPanel>
                     </Border>
                     <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
-                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                            <TextBlock x:Name="HexDumpText" FontFamily="Consolas" Padding="4"
-                                       Foreground="{StaticResource HexBrush}">
-                                <TextBlock.ContextMenu>
-                                    <ContextMenu>
-                                        <MenuItem Header="Copy Hex" Click="OnHexCopy" />
-                                        <MenuItem Header="Follow in Disassembler" Click="OnHexFollowInDisasm" />
-                                        <Separator />
-                                        <MenuItem Header="Search Binary..." Command="{Binding SearchBinaryCommand}" />
-                                        <MenuItem Header="Search String..." Command="{Binding SearchStringsCommand}" />
-                                    </ContextMenu>
-                                </TextBlock.ContextMenu>
-                            </TextBlock>
-                        </ScrollViewer>
+                        <TextBox x:Name="HexDumpText" FontFamily="Consolas" Padding="4"
+                                 Foreground="{StaticResource HexBrush}"
+                                 Background="{StaticResource BgBrush}"
+                                 BorderThickness="0"
+                                 IsReadOnly="True"
+                                 IsReadOnlyCaretVisible="True"
+                                 AcceptsReturn="True"
+                                 TextWrapping="NoWrap"
+                                 HorizontalScrollBarVisibility="Auto"
+                                 VerticalScrollBarVisibility="Auto"
+                                 SelectionBrush="{StaticResource AccentBrush}">
+                            <TextBox.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Copy Selection" Click="OnHexCopySelection" InputGestureText="Ctrl+C" />
+                                    <MenuItem Header="Copy All" Click="OnHexCopy" />
+                                    <MenuItem Header="Select All" Click="OnHexSelectAll" InputGestureText="Ctrl+A" />
+                                    <Separator />
+                                    <MenuItem Header="Follow in Disassembler" Click="OnHexFollowInDisasm" />
+                                    <Separator />
+                                    <MenuItem Header="Search Binary..." Command="{Binding SearchBinaryCommand}" />
+                                    <MenuItem Header="Search String..." Command="{Binding SearchStringsCommand}" />
+                                </ContextMenu>
+                            </TextBox.ContextMenu>
+                        </TextBox>
                     </Border>
                 </DockPanel>
 

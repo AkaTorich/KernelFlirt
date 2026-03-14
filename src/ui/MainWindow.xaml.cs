@@ -28,6 +28,23 @@ public partial class MainWindow : Window
         };
     }
 
+    private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.F2 || e.SystemKey == Key.F2)
+        {
+            ulong addr = GetSelectedAddressFromActiveTab();
+            if (addr != 0)
+            {
+                VM.SetBreakpointAtAddress(addr);
+                e.Handled = true;
+                return;
+            }
+            // Disassembly tab: use the standard command
+            VM.ToggleBreakpointCommand.Execute(null);
+            e.Handled = true;
+        }
+    }
+
     private void RefreshDisasmView()
     {
         var rip = VM.Registers.FirstOrDefault(r => r.Name == "RIP")?.Value;
@@ -445,15 +462,31 @@ public partial class MainWindow : Window
     /*  Hex dump context menu                                              */
     /* ================================================================== */
 
+    private void OnHexCopySelection(object sender, RoutedEventArgs e)
+    {
+        if (!string.IsNullOrEmpty(HexDumpText.SelectedText))
+            Clipboard.SetText(HexDumpText.SelectedText);
+    }
+
     private void OnHexCopy(object sender, RoutedEventArgs e)
     {
         if (!string.IsNullOrEmpty(HexDumpText.Text))
             Clipboard.SetText(HexDumpText.Text);
     }
 
+    private void OnHexSelectAll(object sender, RoutedEventArgs e)
+    {
+        HexDumpText.SelectAll();
+    }
+
     private void OnHexFollowInDisasm(object sender, RoutedEventArgs e)
     {
-        VM.FollowInDisasmCommand.Execute(VM.HexAddress);
+        // Try to parse selected text as hex address, fallback to base address
+        ulong addr = VM.HexAddress;
+        var sel = HexDumpText.SelectedText?.Trim().Replace(" ", "");
+        if (!string.IsNullOrEmpty(sel) && ulong.TryParse(sel, System.Globalization.NumberStyles.HexNumber, null, out var parsed))
+            addr = parsed;
+        VM.FollowInDisasmCommand.Execute(addr);
     }
 
     /* ================================================================== */
@@ -501,13 +534,33 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnBpButtonClick(object sender, RoutedEventArgs e)
+    {
+        ulong addr = GetSelectedAddressFromActiveTab();
+        if (addr != 0)
+            VM.SetBreakpointAtAddress(addr);
+        else
+            VM.ToggleBreakpointCommand.Execute(null);
+    }
+
+    private ulong GetSelectedAddressFromActiveTab()
+    {
+        var tab = MainTabControl.SelectedItem as TabItem;
+        if (tab == null) return 0;
+        var header = tab.Header?.ToString();
+        return header switch
+        {
+            "Imports" => (ImportsGrid.SelectedItem as ImportEntry)?.ResolvedAddress ?? 0,
+            "Functions" => (FunctionsGrid.SelectedItem as FunctionEntry)?.Address ?? 0,
+            "Search" => (SearchGrid.SelectedItem as SearchResult)?.Address ?? 0,
+            _ => 0
+        };
+    }
+
     private void OnImportSetBp(object sender, RoutedEventArgs e)
     {
         if (ImportsGrid.SelectedItem is ImportEntry imp)
-        {
-            VM.SelectedDisasmAddress = imp.ResolvedAddress;
-            VM.ToggleBreakpointCommand.Execute(null);
-        }
+            VM.SetBreakpointAtAddress(imp.ResolvedAddress);
     }
 
     private void OnImportCopy(object sender, RoutedEventArgs e)
@@ -541,10 +594,7 @@ public partial class MainWindow : Window
     private void OnFunctionSetBp(object sender, RoutedEventArgs e)
     {
         if (FunctionsGrid.SelectedItem is FunctionEntry fn)
-        {
-            VM.SelectedDisasmAddress = fn.Address;
-            VM.ToggleBreakpointCommand.Execute(null);
-        }
+            VM.SetBreakpointAtAddress(fn.Address);
     }
 
     private void OnFunctionCopy(object sender, RoutedEventArgs e)

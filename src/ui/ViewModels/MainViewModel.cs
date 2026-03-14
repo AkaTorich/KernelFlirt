@@ -722,12 +722,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
         Log($"Stack data: {(stackData != null ? $"{stackData.Length}b" : "null")}");
         if (stackData != null && rspReg != null)
         {
+            var sysModList = Modules.ToList();
+            var sysKmodList = KernelModules.ToList();
             var stackItems = new List<string>();
             for (int i = 0; i < stackData.Length; i += 8)
             {
                 if (i + 8 > stackData.Length) break;
                 ulong val = BitConverter.ToUInt64(stackData, i);
-                stackItems.Add($"RSP+{i:X2}  {val:X16}");
+                var annotation = ResolveStackValue(TargetPid, val, sysModList, sysKmodList);
+                if (annotation == null && val != 0)
+                    annotation = await TryReadStringAtAsync(TargetPid, val);
+                stackItems.Add(annotation != null
+                    ? $"RSP+{i:X2}  {val:X16}  {annotation}"
+                    : $"RSP+{i:X2}  {val:X16}");
             }
             StackEntries.ReplaceAll(stackItems);
         }
@@ -898,12 +905,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var stackData = stackTask.Result;
         if (stackData != null && rspReg != null)
         {
+            var moduleList = Modules.ToList();
+            var kmodList = KernelModules.ToList();
             var stackItems = new List<string>();
             for (int i = 0; i < stackData.Length; i += 8)
             {
                 if (i + 8 > stackData.Length) break;
                 ulong val = BitConverter.ToUInt64(stackData, i);
-                stackItems.Add($"RSP+{i:X2}  {val:X16}");
+                var annotation = ResolveStackValue(pid, val, moduleList, kmodList);
+                if (annotation == null && val != 0)
+                    annotation = await TryReadStringAtAsync(pid, val);
+                stackItems.Add(annotation != null
+                    ? $"RSP+{i:X2}  {val:X16}  {annotation}"
+                    : $"RSP+{i:X2}  {val:X16}");
             }
             StackEntries.ReplaceAll(stackItems);
         }
@@ -1509,6 +1523,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 Log($"Failed to set {type} BP at {address:X16}");
             }
         }
+        SyncBreakpointMarkers();
         RefreshDisassembly();
     }
 
@@ -2724,14 +2739,79 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var data = await Task.Run(() => _driver.ReadMemory(pid, rspVal, 256));
         if (data == null) return;
 
+        var moduleList = Modules.ToList();
+        var kmodList = KernelModules.ToList();
         var items = new List<string>();
         for (int i = 0; i < data.Length; i += 8)
         {
             if (i + 8 > data.Length) break;
             ulong val = BitConverter.ToUInt64(data, i);
-            items.Add($"RSP+{i:X2}  {val:X16}");
+            var annotation = ResolveStackValue(pid, val, moduleList, kmodList);
+            if (annotation == null && val != 0)
+                annotation = await TryReadStringAtAsync(pid, val);
+            items.Add(annotation != null
+                ? $"RSP+{i:X2}  {val:X16}  {annotation}"
+                : $"RSP+{i:X2}  {val:X16}");
         }
         StackEntries.ReplaceAll(items);
+    }
+
+    private string? ResolveStackValue(uint pid, ulong val, List<ModuleInfo> modules, List<KernelModuleInfo> kmodules)
+    {
+        if (val == 0) return null;
+        // Check user-mode modules
+        var mod = modules.FirstOrDefault(m => val >= m.BaseAddress && val < m.BaseAddress + m.Size);
+        if (mod != null)
+            return _symbols.ResolveAddress(pid, val, modules) ?? $"{mod.Name}+0x{val - mod.BaseAddress:X}";
+        // Check kernel modules
+        var kmod = kmodules.FirstOrDefault(m => val >= m.BaseAddress && val < m.BaseAddress + m.Size);
+        if (kmod != null)
+            return $"{kmod.Name}+0x{val - kmod.BaseAddress:X}";
+        return null;
+    }
+
+    private async Task<string?> TryReadStringAtAsync(uint pid, ulong addr)
+    {
+        var buf = await Task.Run(() => _driver.ReadMemory(pid, addr, 128));
+        if (buf == null || buf.Length < 2) return null;
+
+        // Try Unicode (UTF-16LE) first
+        var uniStr = TryExtractString(buf, unicode: true);
+        if (uniStr != null && uniStr.Length >= 3)
+            return $"\"{uniStr}\"";
+
+        // Try ASCII
+        var ascStr = TryExtractString(buf, unicode: false);
+        if (ascStr != null && ascStr.Length >= 3)
+            return $"\"{ascStr}\"";
+
+        return null;
+    }
+
+    private static string? TryExtractString(byte[] buf, bool unicode)
+    {
+        var sb = new System.Text.StringBuilder();
+        if (unicode)
+        {
+            for (int i = 0; i + 1 < buf.Length && sb.Length < 60; i += 2)
+            {
+                char c = (char)(buf[i] | (buf[i + 1] << 8));
+                if (c == '\0') break;
+                if (c < 0x20 || c > 0x7E) return null; // not printable ASCII range
+                sb.Append(c);
+            }
+        }
+        else
+        {
+            for (int i = 0; i < buf.Length && sb.Length < 60; i++)
+            {
+                byte b = buf[i];
+                if (b == 0) break;
+                if (b < 0x20 || b > 0x7E) return null;
+                sb.Append((char)b);
+            }
+        }
+        return sb.Length > 0 ? sb.ToString() : null;
     }
 
     public async void RefreshCallStack()
