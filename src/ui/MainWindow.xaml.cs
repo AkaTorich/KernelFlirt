@@ -681,6 +681,22 @@ public partial class MainWindow : Window
             VM.FollowInDumpCommand.Execute(sec.VirtualAddress);
     }
 
+    private void OnSectionMemoryBpAll(object sender, RoutedEventArgs e)
+    {
+        if (SectionsGrid.SelectedItem is SectionEntry sec)
+        {
+            // Set PAGE_GUARD on every page in the section
+            uint size = sec.VirtualSize > 0 ? sec.VirtualSize : sec.RawDataSize;
+            if (size == 0) size = 0x1000;
+            uint pageCount = (size + 0xFFF) / 0x1000;
+            for (uint i = 0; i < pageCount; i++)
+            {
+                ulong pageAddr = sec.VirtualAddress + i * 0x1000;
+                VM.SetBreakpointAtAddressWithType(pageAddr, Models.BreakpointType.Memory);
+            }
+        }
+    }
+
     private void OnSectionCopyAddress(object sender, RoutedEventArgs e)
     {
         if (SectionsGrid.SelectedItem is SectionEntry sec)

@@ -551,6 +551,8 @@
                                 <MenuItem Header="Follow in Disassembler" Click="OnSectionFollowDisasm" />
                                 <MenuItem Header="Follow in Dump" Click="OnSectionFollowDump" />
                                 <Separator />
+                                <MenuItem Header="Memory BP on Section (PAGE_GUARD, all pages)" Click="OnSectionMemoryBpAll" />
+                                <Separator />
                                 <MenuItem Header="Copy Address" Click="OnSectionCopyAddress" />
                                 <MenuItem Header="Copy Section Name" Click="OnSectionCopyName" />
                                 <MenuItem Header="Copy Line" Click="OnSectionCopyLine" />
