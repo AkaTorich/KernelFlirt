@@ -456,6 +456,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var disasmData = disasmTask.Result;
         if (disasmData != null)
         {
+            PatchBpBytesForDisasm(disasmData, disasmAddr);
             var instrs = _disasm.Disassemble(disasmData, disasmAddr);
             AnnotateInstructionsWithSymbols(instrs);
             Instructions.ReplaceAll(instrs);
@@ -682,6 +683,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 new Register { Name = "RIP", Value = evtRip },
                 new Register { Name = "RFLAGS", Value = evtRegs.Rflags },
             });
+            regs.AddRange(Register.ExpandFlags(evtRegs.Rflags));
         }
         Registers.ReplaceAll(regs);
 
@@ -709,6 +711,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         Log($"Disasm data: {(disasmData != null ? $"{disasmData.Length}b" : "null")}");
         if (disasmData != null)
         {
+            PatchBpBytesForDisasm(disasmData, disasmAddr);
             var instrs = _disasm.Disassemble(disasmData, disasmAddr);
             Log($"Disassembled {instrs.Count} instructions");
             AnnotateInstructionsWithSymbols(instrs);
@@ -877,6 +880,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             try
             {
+                PatchBpBytesForDisasm(disasmData, disasmAddr);
                 var instrs = _disasm.Disassemble(disasmData, disasmAddr);
                 Log($"Disassembled {instrs.Count} instructions");
                 AnnotateInstructionsWithSymbols(instrs);
@@ -1465,6 +1469,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
             uint tid = type is BreakpointType.Hardware or BreakpointType.HwWrite or BreakpointType.HwReadWrite
                         ? SelectedThreadId : 0;
 
+            // Read original byte before 0xCC is written (for SW BP display)
+            byte origByte = 0;
+            if (type == BreakpointType.Software)
+            {
+                var orig = await Task.Run(() => _driver.ReadMemory(TargetPid, address, 1));
+                if (orig != null && orig.Length >= 1)
+                    origByte = orig[0];
+            }
+
             Log($"Setting {type} BP at {address:X16} PID={TargetPid} TID={tid}...");
             var handle = await Task.Run(() => _driver.SetBreakpoint(TargetPid, tid, address, type, length));
             Log($"SetBreakpoint result: {(handle.HasValue ? $"handle={handle.Value}" : "null")}");
@@ -1475,6 +1488,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     Handle = handle.Value,
                     Address = address,
                     Type = type,
+                    OriginalByte = origByte,
                     ModuleName = _symbols.ResolveAddress(TargetPid, address, Modules.ToList())
                 };
                 Breakpoints.Add(bp);
@@ -1512,6 +1526,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var pid = TargetPid;
         var tid = SelectedThreadId;
 
+        byte origByte = 0;
+        var orig = await Task.Run(() => _driver.ReadMemory(pid, addr, 1));
+        if (orig != null && orig.Length >= 1) origByte = orig[0];
+
         var handle = await Task.Run(() => _driver.SetBreakpoint(pid, tid, addr, BreakpointType.Software));
         if (handle.HasValue)
         {
@@ -1520,6 +1538,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 Handle = handle.Value,
                 Address = addr,
                 Type = BreakpointType.Software,
+                OriginalByte = origByte,
                 Condition = condition,
                 ModuleName = _symbols.ResolveAddress(pid, addr, Modules.ToList())
             });
@@ -1542,11 +1561,16 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var pid = TargetPid;
         var tid = SelectedThreadId;
 
+        byte origByte = 0;
+        var origData = await Task.Run(() => _driver.ReadMemory(pid, addr, 1));
+        if (origData != null && origData.Length >= 1) origByte = origData[0];
+
         var handle = await Task.Run(() => _driver.SetBreakpoint(pid, tid, addr, BreakpointType.Software));
         if (handle.HasValue)
         {
             Breakpoints.Add(new Breakpoint
             {
+                OriginalByte = origByte,
                 Handle = handle.Value,
                 Address = addr,
                 Type = BreakpointType.Software,
@@ -1889,6 +1913,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                                                Math.Min(module.Size, 1048576u));
                 if (data == null) continue;
 
+                PatchBpBytesForDisasm(data, module.BaseAddress);
                 var instrs = _disasm.Disassemble(data, module.BaseAddress, 10000);
                 foreach (var instr in instrs)
                 {
@@ -2296,6 +2321,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 new() { Name = "RIP", Value = r.Rip },
                 new() { Name = "RFLAGS", Value = r.Rflags },
             };
+            regs.AddRange(Register.ExpandFlags(r.Rflags));
         }
         else
         {
@@ -2335,6 +2361,24 @@ public partial class MainViewModel : ObservableObject, IDisposable
     /*  Refresh methods                                                    */
     /* ================================================================== */
 
+    /// <summary>
+    /// Replace 0xCC bytes at SW breakpoint addresses with the original byte
+    /// so the disassembly shows the real instruction instead of INT3.
+    /// </summary>
+    private void PatchBpBytesForDisasm(byte[] data, ulong baseAddr)
+    {
+        foreach (var bp in Breakpoints)
+        {
+            if (bp.Type == BreakpointType.Software && bp.OriginalByte != 0
+                && bp.Address >= baseAddr && bp.Address < baseAddr + (ulong)data.Length)
+            {
+                var offset = (int)(bp.Address - baseAddr);
+                if (data[offset] == 0xCC)
+                    data[offset] = bp.OriginalByte;
+            }
+        }
+    }
+
     public async void RefreshDisassembly()
     {
         if (!IsConnected || TargetPid == 0) return;
@@ -2343,6 +2387,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var data = await Task.Run(() => _driver.ReadMemory(pid, addr, 4096));
         if (data == null) return;
 
+        PatchBpBytesForDisasm(data, addr);
         var instrs = _disasm.Disassemble(data, addr);
         AnnotateInstructionsWithSymbols(instrs);
         foreach (var instr in instrs)
@@ -2815,6 +2860,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var disasmData = disasmTask.Result;
         if (disasmData != null)
         {
+            PatchBpBytesForDisasm(disasmData, disasmAddr);
             var instrs = _disasm.Disassemble(disasmData, disasmAddr);
             AnnotateInstructionsWithSymbols(instrs);
             foreach (var instr in instrs)
