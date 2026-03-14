@@ -697,6 +697,48 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnSectionDumpToFile(object sender, RoutedEventArgs e)
+    {
+        if (SectionsGrid.SelectedItem is SectionEntry sec)
+            VM.DumpSectionToFile(sec);
+    }
+
+    private void OnSectionFillNops(object sender, RoutedEventArgs e)
+    {
+        if (SectionsGrid.SelectedItem is SectionEntry sec)
+        {
+            var result = MessageBox.Show(
+                $"Fill {sec.ModuleName}:{sec.Name} ({sec.VirtualSizeHex}) with NOPs (0x90)?\n\nThis is destructive and cannot be undone!",
+                "Fill Section", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (result == MessageBoxResult.Yes)
+                VM.FillSection(sec, 0x90);
+        }
+    }
+
+    private void OnSectionFillZeros(object sender, RoutedEventArgs e)
+    {
+        if (SectionsGrid.SelectedItem is SectionEntry sec)
+        {
+            var result = MessageBox.Show(
+                $"Fill {sec.ModuleName}:{sec.Name} ({sec.VirtualSizeHex}) with zeros?\n\nThis is destructive and cannot be undone!",
+                "Fill Section", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (result == MessageBoxResult.Yes)
+                VM.FillSection(sec, 0x00);
+        }
+    }
+
+    private void OnSectionSearchBinary(object sender, RoutedEventArgs e)
+    {
+        if (SectionsGrid.SelectedItem is SectionEntry sec)
+            VM.SearchBinaryInSection(sec);
+    }
+
+    private void OnSectionSearchString(object sender, RoutedEventArgs e)
+    {
+        if (SectionsGrid.SelectedItem is SectionEntry sec)
+            VM.SearchStringInSection(sec);
+    }
+
     private void OnSectionCopyAddress(object sender, RoutedEventArgs e)
     {
         if (SectionsGrid.SelectedItem is SectionEntry sec)
