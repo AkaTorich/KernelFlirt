@@ -649,32 +649,7 @@
                             <Button Content="Go" Click="OnHexGoClick" Margin="4,0" />
                         </StackPanel>
                     </Border>
-                    <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
-                        <TextBox x:Name="HexDumpText" FontFamily="Consolas" Padding="4"
-                                 Foreground="{StaticResource HexBrush}"
-                                 Background="{StaticResource BgBrush}"
-                                 BorderThickness="0"
-                                 IsReadOnly="True"
-                                 IsReadOnlyCaretVisible="True"
-                                 AcceptsReturn="True"
-                                 TextWrapping="NoWrap"
-                                 HorizontalScrollBarVisibility="Auto"
-                                 VerticalScrollBarVisibility="Auto"
-                                 SelectionBrush="{StaticResource AccentBrush}">
-                            <TextBox.ContextMenu>
-                                <ContextMenu>
-                                    <MenuItem Header="Copy Selection" Click="OnHexCopySelection" InputGestureText="Ctrl+C" />
-                                    <MenuItem Header="Copy All" Click="OnHexCopy" />
-                                    <MenuItem Header="Select All" Click="OnHexSelectAll" InputGestureText="Ctrl+A" />
-                                    <Separator />
-                                    <MenuItem Header="Follow in Disassembler" Click="OnHexFollowInDisasm" />
-                                    <Separator />
-                                    <MenuItem Header="Search Binary..." Command="{Binding SearchBinaryCommand}" />
-                                    <MenuItem Header="Search String..." Command="{Binding SearchStringsCommand}" />
-                                </ContextMenu>
-                            </TextBox.ContextMenu>
-                        </TextBox>
-                    </Border>
+                    <ctrl:HexDumpView x:Name="HexDumpControl" />
                 </DockPanel>
 
                 <GridSplitter Grid.Column="1" Width="3" Background="{StaticResource BorderBrush}"

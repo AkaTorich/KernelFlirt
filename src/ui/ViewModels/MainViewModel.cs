@@ -1455,6 +1455,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public void SetBreakpointAtAddress(ulong address)
         => ToggleBreakpointAtAddress(address, BreakpointType.Software);
 
+    /// <summary>Toggle a breakpoint of given type at a specific address (used by hex dump context menus).</summary>
+    public void SetBreakpointAtAddressWithType(ulong address, BreakpointType type, uint length = 1)
+        => ToggleBreakpointAtAddress(address, type, length);
+
     /// <summary>Navigate disassembly to a specific address (used by disasm context menus).</summary>
     public void NavigateDisasmTo(ulong address)
     {
