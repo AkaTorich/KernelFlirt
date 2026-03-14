@@ -1,0 +1,5 @@
+Пропущены из предложенных:
+
+Change Protection (RWX) — нет IOCTL в драйвере для VirtualProtect
+Set Section Executable / Writable — то же самое, нужен VirtualProtect
+Без поддержки со стороны драйвера (IOCTL для изменения защиты страниц) эти два пункта невозможно реализовать. Итого 11 пунктов в меню — всё на месте.
