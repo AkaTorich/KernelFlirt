@@ -344,18 +344,72 @@ static ULONG FindCrossThreadFlagsOffset(void)
     PUCHAR func = (PUCHAR)MmGetSystemRoutineAddress(&funcName);
     ULONG i;
 
-    if (!func) return 0;
+    if (!func) {
+        DbgPrint("[KernelFlirt] PsIsThreadTerminating not found\n");
+        return 0;
+    }
+
+    DbgPrint("[KernelFlirt] PsIsThreadTerminating at %p: "
+             "%02X %02X %02X %02X %02X %02X %02X %02X "
+             "%02X %02X %02X %02X %02X %02X %02X %02X\n",
+             func,
+             func[0],func[1],func[2],func[3],func[4],func[5],func[6],func[7],
+             func[8],func[9],func[10],func[11],func[12],func[13],func[14],func[15]);
 
     for (i = 0; i < 32; i++) {
         /* test byte ptr [rcx+disp32], imm8: F6 81 XX XX XX XX 01 */
         if (func[i] == 0xF6 && func[i+1] == 0x81 && func[i+6] == 0x01) {
+            DbgPrint("[KernelFlirt] CrossThreadFlags = 0x%X (test byte disp32)\n", *(ULONG*)(func+i+2));
             return *(ULONG*)(func + i + 2);
         }
         /* test byte ptr [rcx+disp8], imm8: F6 41 XX 01 */
         if (func[i] == 0xF6 && func[i+1] == 0x41 && func[i+3] == 0x01) {
+            DbgPrint("[KernelFlirt] CrossThreadFlags = 0x%X (test byte disp8)\n", (ULONG)func[i+2]);
             return (ULONG)func[i + 2];
         }
+        /* test dword ptr [rcx+disp32], imm32: F7 81 XX XX XX XX 01 00 00 00 */
+        if (func[i] == 0xF7 && func[i+1] == 0x81 && *(ULONG*)(func+i+6) == 1) {
+            DbgPrint("[KernelFlirt] CrossThreadFlags = 0x%X (test dword disp32)\n", *(ULONG*)(func+i+2));
+            return *(ULONG*)(func + i + 2);
+        }
+        /* test dword ptr [rcx+disp8], imm32: F7 41 XX 01 00 00 00 */
+        if (func[i] == 0xF7 && func[i+1] == 0x41 && *(ULONG*)(func+i+3) == 1) {
+            DbgPrint("[KernelFlirt] CrossThreadFlags = 0x%X (test dword disp8)\n", (ULONG)func[i+2]);
+            return (ULONG)func[i + 2];
+        }
+        /* bt dword ptr [rcx+disp8], 0: 0F BA 61 XX 00 */
+        if (func[i] == 0x0F && func[i+1] == 0xBA && func[i+2] == 0x61 && func[i+4] == 0x00) {
+            DbgPrint("[KernelFlirt] CrossThreadFlags = 0x%X (bt disp8)\n", (ULONG)func[i+3]);
+            return (ULONG)func[i + 3];
+        }
+        /* bt dword ptr [rcx+disp32], 0: 0F BA A1 XX XX XX XX 00 */
+        if (func[i] == 0x0F && func[i+1] == 0xBA && func[i+2] == 0xA1 && func[i+7] == 0x00) {
+            DbgPrint("[KernelFlirt] CrossThreadFlags = 0x%X (bt disp32)\n", *(ULONG*)(func+i+3));
+            return *(ULONG*)(func + i + 3);
+        }
+        /* mov eax, [rcx+disp8] + and/test: 8B 41 XX ... */
+        if (func[i] == 0x8B && func[i+1] == 0x41) {
+            ULONG j = i + 3;
+            if ((func[j] == 0x83 && func[j+1] == 0xE0 && func[j+2] == 0x01) ||
+                (func[j] == 0xA8 && func[j+1] == 0x01) ||
+                (func[j] == 0x24 && func[j+1] == 0x01)) {  /* and al, 1 */
+                DbgPrint("[KernelFlirt] CrossThreadFlags = 0x%X (mov+and/test disp8)\n", (ULONG)func[i+2]);
+                return (ULONG)func[i + 2];
+            }
+        }
+        /* mov eax, [rcx+disp32] + and/test: 8B 81 XX XX XX XX ... */
+        if (func[i] == 0x8B && func[i+1] == 0x81) {
+            ULONG j = i + 6;
+            if ((func[j] == 0x83 && func[j+1] == 0xE0 && func[j+2] == 0x01) ||
+                (func[j] == 0xA8 && func[j+1] == 0x01) ||
+                (func[j] == 0x24 && func[j+1] == 0x01)) {  /* and al, 1 */
+                DbgPrint("[KernelFlirt] CrossThreadFlags = 0x%X (mov+and/test disp32)\n", *(ULONG*)(func+i+2));
+                return *(ULONG*)(func + i + 2);
+            }
+        }
     }
+
+    DbgPrint("[KernelFlirt] CrossThreadFlags: no pattern matched in PsIsThreadTerminating\n");
     return 0;
 }
 

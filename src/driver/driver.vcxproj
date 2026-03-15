@@ -99,12 +99,14 @@
     <ClCompile Include="threads.c" />
     <ClCompile Include="process.c" />
     <ClCompile Include="debughook.c" />
+    <ClCompile Include="ntqsi_hook.c" />
     <ClCompile Include="compat.c" />
   </ItemGroup>
 
   <ItemGroup>
     <ClInclude Include="..\..\include\kf_shared.h" />
     <ClInclude Include="debughook.h" />
+    <ClInclude Include="ntqsi_hook.h" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

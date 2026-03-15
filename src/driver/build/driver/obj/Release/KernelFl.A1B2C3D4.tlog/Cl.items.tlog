@@ -9,4 +9,5 @@ C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\driver\kmodules.c;C:\Users\psysh
 C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\driver\threads.c;C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\driver\build\driver\obj\Release\threads.obj
 C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\driver\process.c;C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\driver\build\driver\obj\Release\process.obj
 C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\driver\debughook.c;C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\driver\build\driver\obj\Release\debughook.obj
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\driver\ntqsi_hook.c;C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\driver\build\driver\obj\Release\ntqsi_hook.obj
 C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\driver\compat.c;C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\driver\build\driver\obj\Release\compat.obj

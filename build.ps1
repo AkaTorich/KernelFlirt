@@ -217,7 +217,7 @@ if ((Test-Path $antiDebugSrc) -and $canBuildNative) {
     }
     if ($vcvars -and (Test-Path $vcvars)) {
         $antiDebugDir = Join-Path $Root "samples\AntiDebugTest"
-        cmd /c "call `"$vcvars`" x64 >nul 2>&1 && cd /d `"$antiDebugDir`" && cl /O2 /Zi /W3 /D_CRT_SECURE_NO_WARNINGS antidebug_test.c /Fe:antidebug_test.exe /link /DEBUG user32.lib kernel32.lib >nul 2>&1"
+        cmd /c "call `"$vcvars`" x64 >nul 2>&1 && cd /d `"$antiDebugDir`" && cl /O2 /Zi /W3 /GS- /D_CRT_SECURE_NO_WARNINGS /DNDEBUG antidebug_test.c /Fe:antidebug_test.exe /link /DEBUG /OPT:REF /OPT:ICF /INCREMENTAL:NO user32.lib kernel32.lib >nul 2>&1"
         if ($LASTEXITCODE -eq 0) {
             Copy-Item (Join-Path $antiDebugDir "antidebug_test.exe") $BinSamples -Force
             Copy-Item (Join-Path $antiDebugDir "antidebug_test.pdb") $BinSamples -Force -ErrorAction SilentlyContinue

@@ -204,7 +204,7 @@ static NTSTATUS KfWriteByteInContext(ULONG64 address, UCHAR byte)
 /* stays read-only. No PTE/CR0 manipulation needed.                    */
 /* ------------------------------------------------------------------ */
 
-static NTSTATUS KfPatchBytes(PVOID dest, const void *src, SIZE_T size)
+NTSTATUS KfPatchBytes(PVOID dest, const void *src, SIZE_T size)
 {
     PMDL    mdl = NULL;
     PVOID   mapped = NULL;

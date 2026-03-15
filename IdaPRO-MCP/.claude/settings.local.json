@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:python.docs.hex-rays.com)",
+      "WebFetch(domain:deepwiki.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:docs.hex-rays.com)",
+      "WebFetch(domain:jro.sg)",
+      "WebFetch(domain:gofastmcp.com)"
+    ]
+  }
+}

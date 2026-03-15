@@ -9,4 +9,7 @@ public interface IProcessApi
     (ulong PebAddress, ulong Peb32Address) GetPebAddress(uint pid);
     bool ClearDebugPort(uint pid);
     bool ClearThreadHide(uint pid);
+    bool InstallNtQsiHook();
+    bool RemoveNtQsiHook();
+    string ProbeNtQsiHook();
 }

@@ -125,8 +125,8 @@ public class AntiDebugPanel : ScrollViewer
         root.Children.Add(MakeGroup("NtQueryInformationProcess (via ClearDebugPort)", [ChkDebugPort, ChkDebugObjectHandle, ChkDebugFlags], white));
 
         // ── NtQuerySystemInformation ──
-        ChkSystemKernelDebugger = MakeCheckBox("SystemKernelDebuggerInfo", true, "Auto-handled by KdDebuggerEnabled/KdDebuggerNotPresent patches above", true, white);
-        root.Children.Add(MakeGroup("NtQuerySystemInformation (via KdDebugger* patches)", [ChkSystemKernelDebugger], white));
+        ChkSystemKernelDebugger = MakeCheckBox("SystemKernelDebuggerInfo", true, "Hook NtQuerySystemInformation to spoof class 0x23", true, white);
+        root.Children.Add(MakeGroup("NtQuerySystemInformation (via inline hook)", [ChkSystemKernelDebugger], white));
 
         // ── NtSetInformationThread ──
         ChkThreadHideFromDebugger = MakeCheckBox("ThreadHideFromDebugger", true, "Clear HideFromDebugger bit in all threads' CrossThreadFlags", true, white);
@@ -242,14 +242,50 @@ public class AntiDebugPanel : ScrollViewer
             _api.Log.Warning("Not connected");
             return;
         }
-        if (_api.TargetPid == 0)
-        {
-            _api.Log.Warning("No target process");
-            return;
-        }
 
         int patches = 0;
         uint pid = _api.TargetPid;
+        bool hasProcess = pid != 0;
+
+        // ── Kernel-level patches (no target process needed) ──
+
+        // ── Kernel debugger patches ──
+        if (ChkKdDebuggerEnabled.IsChecked == true)
+            patches += PatchKernelByte("KdDebuggerEnabled", 0); // FALSE
+
+        if (ChkKdDebuggerNotPresent.IsChecked == true)
+            patches += PatchKernelByte("KdDebuggerNotPresent", 1); // TRUE
+
+        // ── SystemKernelDebuggerInfo (NtQuerySystemInformation hook) ──
+        if (ChkSystemKernelDebugger.IsChecked == true)
+        {
+            // Probe first to log diagnostic info
+            var probeResult = _api.Process.ProbeNtQsiHook();
+            _api.Log.Info($"  NtQSI probe: {probeResult}");
+
+            if (_api.Process.InstallNtQsiHook())
+            {
+                patches++;
+                _api.Log.Info("  NtQuerySystemInformation hook installed (spoofing class 0x23)");
+            }
+            else
+            {
+                _api.Log.Warning("  InstallNtQsiHook failed — see probe result above");
+            }
+        }
+
+        // ── Process-level patches (require target process) ──
+        if (!hasProcess)
+        {
+            if (ChkBeingDebugged.IsChecked == true || ChkNtGlobalFlag.IsChecked == true ||
+                ChkHeapFlags.IsChecked == true || ChkDebugPort.IsChecked == true ||
+                ChkThreadHideFromDebugger.IsChecked == true || ChkHideDRx.IsChecked == true)
+            {
+                _api.Log.Warning("No target process — process-level patches skipped (kernel patches applied)");
+            }
+            _api.Log.Info($"Anti-debug: {patches} kernel-level patches applied");
+            return;
+        }
 
         // ── PEB patches ──
         if (ChkBeingDebugged.IsChecked == true || ChkNtGlobalFlag.IsChecked == true || ChkHeapFlags.IsChecked == true)
@@ -267,13 +303,6 @@ public class AntiDebugPanel : ScrollViewer
             }
         }
 
-        // ── Kernel debugger patches ──
-        if (ChkKdDebuggerEnabled.IsChecked == true)
-            patches += PatchKernelByte("KdDebuggerEnabled", 0); // FALSE
-
-        if (ChkKdDebuggerNotPresent.IsChecked == true)
-            patches += PatchKernelByte("KdDebuggerNotPresent", 1); // TRUE
-
         // ── ClearDebugPort (defeats DebugPort, DebugObjectHandle, DebugFlags, NtClose) ──
         if (ChkDebugPort.IsChecked == true || ChkDebugObjectHandle.IsChecked == true ||
             ChkDebugFlags.IsChecked == true || ChkNtClose.IsChecked == true)
@@ -289,23 +318,6 @@ public class AntiDebugPanel : ScrollViewer
             }
         }
 
-        // ── SystemKernelDebuggerInfo ──
-        if (ChkSystemKernelDebugger.IsChecked == true)
-        {
-            // This is automatically handled by KdDebuggerEnabled=FALSE + KdDebuggerNotPresent=TRUE above
-            // Just ensure those patches are also applied
-            if (ChkKdDebuggerEnabled.IsChecked != true)
-            {
-                patches += PatchKernelByte("KdDebuggerEnabled", 0);
-                _api.Log.Info("  KdDebuggerEnabled=FALSE (for SystemKernelDebuggerInfo)");
-            }
-            if (ChkKdDebuggerNotPresent.IsChecked != true)
-            {
-                patches += PatchKernelByte("KdDebuggerNotPresent", 1);
-                _api.Log.Info("  KdDebuggerNotPresent=TRUE (for SystemKernelDebuggerInfo)");
-            }
-        }
-
         // ── ClearThreadHide ──
         if (ChkThreadHideFromDebugger.IsChecked == true)
         {
@@ -316,7 +328,27 @@ public class AntiDebugPanel : ScrollViewer
             }
             else
             {
-                _api.Log.Warning("  ClearThreadHide failed");
+                _api.Log.Warning("  ClearThreadHide failed — dumping PsIsThreadTerminating bytes:");
+                try
+                {
+                    ulong psAddr = _api.Symbols.ResolveNameToAddress("PsIsThreadTerminating");
+                    if (psAddr != 0)
+                    {
+                        var bytes = _api.Memory.ReadMemory(4, psAddr, 32);
+                        if (bytes != null)
+                            _api.Log.Info($"  PsIsThreadTerminating at 0x{psAddr:X}: {BitConverter.ToString(bytes).Replace("-", " ")}");
+                        else
+                            _api.Log.Warning($"  PsIsThreadTerminating at 0x{psAddr:X}: read failed");
+                    }
+                    else
+                    {
+                        _api.Log.Warning("  PsIsThreadTerminating symbol not found");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _api.Log.Warning($"  Diagnostic failed: {ex.Message}");
+                }
             }
         }
 
