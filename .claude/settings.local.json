@@ -9,7 +9,8 @@
       "WebFetch(domain:book.rizin.re)",
       "Read(//c/Program Files \\(x86\\)/Windows Kits/10/Debuggers/x64//**)",
       "Bash(powershell -ExecutionPolicy Bypass -File build.ps1)",
-      "Bash(powershell -File build.ps1)"
+      "Bash(powershell -File build.ps1)",
+      "Bash(grep -E \"\\\\.cpp$|\\\\.h$\")"
     ]
   }
 }
