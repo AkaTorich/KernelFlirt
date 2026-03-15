@@ -31,6 +31,10 @@ public class DebuggerApiAdapter : IDebuggerApi
     public event Action? OnDisconnected;
     public event Action? OnBreakStateEntered;
     public event Action? OnBreakStateExited;
+    public event Action? OnBeforeRun;
+    public event Func<PluginDebugEvent, bool>? OnDebugEventFilter;
+
+    private readonly PluginManager _pluginManager;
 
     public DebuggerApiAdapter(
         DriverComm driver,
@@ -47,8 +51,12 @@ public class DebuggerApiAdapter : IDebuggerApi
         Func<RangeObservableCollection<KernelModuleInfo>> getKernelModules,
         Action<ulong> navigateDisasm,
         Action<string, Action> addMenuItem,
-        Action<string, object> addToolPanel)
+        Action<string, object> addToolPanel,
+        Action<ulong, string> addUnpackedModule,
+        Action refreshModulesAndSections,
+        Action<string, IReadOnlyList<PluginSectionInfo>> addModuleSections)
     {
+        _pluginManager = pluginManager;
         _getIsConnected = getIsConnected;
         _getIsBreakState = getIsBreakState;
         _getTargetPid = getTargetPid;
@@ -60,7 +68,7 @@ public class DebuggerApiAdapter : IDebuggerApi
         Symbols = new SymbolApiAdapter(symbols, getTargetPid, getModules, getKernelModules);
         Process = new ProcessApiAdapter(driver);
         Log = new LogApiAdapter(log);
-        UI = new UiApiAdapter(navigateDisasm, addMenuItem, addToolPanel);
+        UI = new UiApiAdapter(navigateDisasm, addMenuItem, addToolPanel, addUnpackedModule, refreshModulesAndSections, addModuleSections);
 
         // Wire events from PluginManager
         pluginManager.OnDebugEvent += evt => OnDebugEvent?.Invoke(evt);
@@ -68,6 +76,28 @@ public class DebuggerApiAdapter : IDebuggerApi
         pluginManager.OnDisconnected += () => OnDisconnected?.Invoke();
         pluginManager.OnBreakStateEntered += () => OnBreakStateEntered?.Invoke();
         pluginManager.OnBreakStateExited += () => OnBreakStateExited?.Invoke();
+        pluginManager.OnBeforeRun += () => OnBeforeRun?.Invoke();
+        pluginManager.OnDebugEventFilter += evt =>
+        {
+            var filter = OnDebugEventFilter;
+            if (filter == null) return false;
+            foreach (var handler in filter.GetInvocationList().Cast<Func<PluginDebugEvent, bool>>())
+            {
+                try { if (handler(evt)) return true; }
+                catch { /* ignore plugin errors */ }
+            }
+            return false;
+        };
+    }
+
+    public void Continue()
+    {
+        _pluginManager.ContinueAction?.Invoke();
+    }
+
+    public void SingleStep()
+    {
+        _pluginManager.SingleStepAction?.Invoke();
     }
 }
 
@@ -92,6 +122,8 @@ public class MemoryApiAdapter : IMemoryApi
             IsFlag = r.IsFlag
         }).ToList();
     }
+
+    public bool WriteRip(uint pid, uint tid, ulong newRip) => _driver.WriteRip(pid, tid, newRip);
 }
 
 public class BreakpointApiAdapter : IBreakpointApi
@@ -224,13 +256,21 @@ public class UiApiAdapter : IUiApi
     private readonly Action<ulong> _navigateDisasm;
     private readonly Action<string, Action> _addMenuItem;
     private readonly Action<string, object> _addToolPanel;
+    private readonly Action<ulong, string> _addUnpackedModule;
+    private readonly Action _refreshModulesAndSections;
+    private readonly Action<string, IReadOnlyList<PluginSectionInfo>> _addModuleSections;
 
     public UiApiAdapter(Action<ulong> navigateDisasm, Action<string, Action> addMenuItem,
-        Action<string, object> addToolPanel)
+        Action<string, object> addToolPanel, Action<ulong, string> addUnpackedModule,
+        Action refreshModulesAndSections,
+        Action<string, IReadOnlyList<PluginSectionInfo>> addModuleSections)
     {
         _navigateDisasm = navigateDisasm;
         _addMenuItem = addMenuItem;
         _addToolPanel = addToolPanel;
+        _addUnpackedModule = addUnpackedModule;
+        _refreshModulesAndSections = refreshModulesAndSections;
+        _addModuleSections = addModuleSections;
     }
 
     public void NavigateDisassembly(ulong address)
@@ -246,5 +286,20 @@ public class UiApiAdapter : IUiApi
     public void AddToolPanel(string title, object wpfContent)
     {
         Application.Current.Dispatcher.Invoke(() => _addToolPanel(title, wpfContent));
+    }
+
+    public void AddUnpackedModule(ulong peBase, string name)
+    {
+        Application.Current.Dispatcher.Invoke(() => _addUnpackedModule(peBase, name));
+    }
+
+    public void RefreshModulesAndSections()
+    {
+        Application.Current.Dispatcher.Invoke(() => _refreshModulesAndSections());
+    }
+
+    public void AddModuleSections(string moduleName, IReadOnlyList<PluginSectionInfo> sections)
+    {
+        Application.Current.Dispatcher.Invoke(() => _addModuleSections(moduleName, sections));
     }
 }

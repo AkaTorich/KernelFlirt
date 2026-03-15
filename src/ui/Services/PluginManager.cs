@@ -118,12 +118,43 @@ public class PluginManager
     public event Action? OnDisconnected;
     public event Action? OnBreakStateEntered;
     public event Action? OnBreakStateExited;
+    public event Action? OnBeforeRun;
+    public event Func<PluginDebugEvent, bool>? OnDebugEventFilter;
+
+    // Action callbacks - set by MainViewModel for plugin→VM calls
+    public Action? ContinueAction { get; set; }
+    public Action? SingleStepAction { get; set; }
 
     public void NotifyDebugEvent(PluginDebugEvent evt) => SafeInvoke(() => OnDebugEvent?.Invoke(evt));
     public void NotifyConnected() => SafeInvoke(() => OnConnected?.Invoke());
     public void NotifyDisconnected() => SafeInvoke(() => OnDisconnected?.Invoke());
     public void NotifyBreakStateEntered() => SafeInvoke(() => OnBreakStateEntered?.Invoke());
     public void NotifyBreakStateExited() => SafeInvoke(() => OnBreakStateExited?.Invoke());
+    public void NotifyBeforeRun() => SafeInvoke(() => OnBeforeRun?.Invoke());
+
+    /// <summary>
+    /// Run debug event filters. Returns true if any plugin handled the event
+    /// (UI should NOT break).
+    /// </summary>
+    public bool RunDebugEventFilters(PluginDebugEvent evt)
+    {
+        var filter = OnDebugEventFilter;
+        if (filter == null) return false;
+
+        foreach (var handler in filter.GetInvocationList().Cast<Func<PluginDebugEvent, bool>>())
+        {
+            try
+            {
+                if (handler(evt))
+                    return true;
+            }
+            catch (Exception ex)
+            {
+                _log($"[Plugins] Event filter error: {ex.Message}");
+            }
+        }
+        return false;
+    }
 
     private void SafeInvoke(Action action)
     {

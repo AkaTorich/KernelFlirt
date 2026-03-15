@@ -617,6 +617,70 @@
                 </DockPanel>
             </TabItem>
 
+            <!-- Tab: Strings -->
+            <TabItem Header="Strings">
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top" Margin="2">
+                        <TextBlock Text="Filter: " VerticalAlignment="Center" Foreground="{StaticResource CommentBrush}" />
+                        <TextBox Text="{Binding StringFilter, UpdateSourceTrigger=PropertyChanged}"
+                                 Background="{StaticResource BgLightBrush}" Foreground="{StaticResource FgBrush}"
+                                 BorderBrush="{StaticResource BorderBrush}" Padding="3,1" />
+                    </DockPanel>
+                    <DataGrid x:Name="StringsGrid" ItemsSource="{Binding FilteredStrings}" IsReadOnly="True"
+                              AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
+                              RowStyle="{StaticResource BpRowStyle}"
+                              CellStyle="{StaticResource BpCellStyle}"
+                              RowBackground="{x:Null}" AlternatingRowBackground="{x:Null}"
+                              MouseDoubleClick="OnStringDoubleClick"
+                              PreviewMouseRightButtonDown="DataGrid_PreviewMouseRightButtonDown">
+                        <DataGrid.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Follow in Disassembler" Click="OnStringFollowDisasm" />
+                                <MenuItem Header="Follow in Dump" Click="OnStringFollowDump" />
+                                <Separator />
+                                <MenuItem Header="Set Breakpoint" Click="OnStringSetBreakpoint" />
+                                <Separator />
+                                <MenuItem Header="Copy Address" Click="OnStringCopyAddress" />
+                                <MenuItem Header="Copy String" Click="OnStringCopyValue" />
+                                <MenuItem Header="Copy Line" Click="OnStringCopyLine" />
+                            </ContextMenu>
+                        </DataGrid.ContextMenu>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Module" Width="120" Binding="{Binding ModuleName}" />
+                            <DataGridTextColumn Header="Section" Width="70" Binding="{Binding SectionName}">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource CommentBrush}" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Address" Width="150" Binding="{Binding AddressHex}">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Type" Width="60" Binding="{Binding TypeName}">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource CommentBrush}" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Length" Width="50" Binding="{Binding Length}" />
+                            <DataGridTextColumn Header="String" Width="*" Binding="{Binding Value}">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource HexBrush}" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
             <!-- Tab: Search -->
             <TabItem Header="Search">
                 <DataGrid x:Name="SearchGrid" ItemsSource="{Binding SearchResults}" IsReadOnly="True"

@@ -188,6 +188,7 @@ typedef struct _KF_CLEAR_THREAD_HIDE_IN {
 #define KF_DBG_HW_BREAKPOINT    3   /* DR0-3 hardware breakpoint (execute) */
 #define KF_DBG_HW_WATCHPOINT    4   /* DR0-3 write/RW watchpoint */
 #define KF_DBG_MEMORY_BP        5   /* PAGE_GUARD memory breakpoint */
+#define KF_DBG_ACCESS_VIOLATION 6   /* STATUS_ACCESS_VIOLATION (anti-debug kill?) */
 
 /* IOCTL_KF_CONTINUE_DEBUG_EVENT input (optional) */
 #define KF_CONTINUE_RUN             0   /* Just resume (no SW BP hit, or HW BP) */
@@ -205,6 +206,8 @@ typedef struct _KF_DEBUG_EVENT {
     ULONG           ThreadId;
     ULONG64         Address;        /* Exception address (RIP) */
     ULONG           PreviousMode;   /* 0=KernelMode, 1=UserMode */
+    ULONG           ExceptionCode;  /* NTSTATUS exception code (e.g. 0xC0000005 for AV) */
+    ULONG64         FaultAddress;   /* For AV: the target address that was accessed */
     KF_REGISTERS    Registers;      /* Full register context */
 } KF_DEBUG_EVENT, *PKF_DEBUG_EVENT;
 

@@ -33,6 +33,8 @@ C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\bin\Release\net9.0-windows\ru
 C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\bin\Release\net9.0-windows\runtimes\win-arm64\native\capstone.dll
 C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\bin\Release\net9.0-windows\runtimes\win-x64\native\capstone.dll
 C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\bin\Release\net9.0-windows\runtimes\win-x86\native\capstone.dll
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\bin\Release\net9.0-windows\KernelFlirt.SDK.dll
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\bin\Release\net9.0-windows\KernelFlirt.SDK.pdb
 C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\obj\Release\net9.0-windows\KernelFlirt.UI.csproj.AssemblyReference.cache
 C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\obj\Release\net9.0-windows\Controls\DisasmView.baml
 C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\obj\Release\net9.0-windows\Controls\HexDumpView.baml
@@ -61,5 +63,3 @@ C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\obj\Release\net9.0-windows\re
 C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\obj\Release\net9.0-windows\KernelFlirt.pdb
 C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\obj\Release\net9.0-windows\KernelFlirt.UI.genruntimeconfig.cache
 C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\obj\Release\net9.0-windows\ref\KernelFlirt.dll
-C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\bin\Release\net9.0-windows\KernelFlirt.SDK.dll
-C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\bin\Release\net9.0-windows\KernelFlirt.SDK.pdb
