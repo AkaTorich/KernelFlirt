@@ -4907,15 +4907,42 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 }
 
                 // Second pass: rename variables (after types are replaced)
+                // Build rename map first, then resolve conflicts
+                var renames = new List<(string From, string To)>();
                 for (int i = 0; i < matchCount; i++)
                 {
                     string retdecName = retdecParamNames[i];
                     var (pdbName, _) = typeInfo.Params[i];
                     if (string.IsNullOrEmpty(retdecName)) continue;
                     if (string.Equals(retdecName, pdbName, StringComparison.Ordinal)) continue;
+                    renames.Add((retdecName, pdbName));
+                }
 
-                    var renamePattern = $@"\b{System.Text.RegularExpressions.Regex.Escape(retdecName)}\b";
-                    code = System.Text.RegularExpressions.Regex.Replace(code, renamePattern, pdbName);
+                // Collect all names used in code (params + any variables that might conflict)
+                var allRetdecNames = new HashSet<string>(retdecParamNames.Where(n => !string.IsNullOrEmpty(n)));
+
+                // Pre-pass: rename away any existing variables that would collide with incoming PDB names
+                foreach (var (from, to) in renames)
+                {
+                    // If target name already exists as a different variable, rename it first
+                    if (allRetdecNames.Contains(to) && !renames.Any(r => r.From == to))
+                    {
+                        // This name exists but isn't being renamed itself — move it out of the way
+                        string safeName = to + "_";
+                        while (allRetdecNames.Contains(safeName)) safeName += "_";
+                        var conflictPattern = $@"\b{System.Text.RegularExpressions.Regex.Escape(to)}\b";
+                        code = System.Text.RegularExpressions.Regex.Replace(code, conflictPattern, safeName);
+                        allRetdecNames.Remove(to);
+                        allRetdecNames.Add(safeName);
+                        Log($"Rename conflict: moved '{to}' → '{safeName}' to avoid collision");
+                    }
+                }
+
+                // Now apply the actual renames
+                foreach (var (from, to) in renames)
+                {
+                    var renamePattern = $@"\b{System.Text.RegularExpressions.Regex.Escape(from)}\b";
+                    code = System.Text.RegularExpressions.Regex.Replace(code, renamePattern, to);
                     totalReplacements++;
                 }
             }
