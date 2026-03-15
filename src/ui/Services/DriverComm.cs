@@ -48,6 +48,7 @@ public class DriverComm : IDisposable
     private static readonly uint IOCTL_KF_SUSPEND_THREAD  = CTL_CODE(DeviceType, 0x831, 0, 0);
     private static readonly uint IOCTL_KF_RESUME_THREAD   = CTL_CODE(DeviceType, 0x832, 0, 0);
     private static readonly uint IOCTL_KF_ENUM_PROCESSES  = CTL_CODE(DeviceType, 0x835, 0, 0);
+    private static readonly uint IOCTL_KF_GET_PEB_ADDRESS = CTL_CODE(DeviceType, 0x836, 0, 0);
     private static readonly uint IOCTL_KF_INSTALL_HOOK    = CTL_CODE(DeviceType, 0x840, 0, 0);
     private static readonly uint IOCTL_KF_REMOVE_HOOK     = CTL_CODE(DeviceType, 0x841, 0, 0);
     private static readonly uint IOCTL_KF_WAIT_DEBUG_EVENT = CTL_CODE(DeviceType, 0x842, 0, 0);
@@ -174,6 +175,19 @@ public class DriverComm : IDisposable
         public uint SessionId;
         public ulong PeakVirtualSize;
         public fixed char Name[KF_MAX_PROCESS_NAME];
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    private struct KF_GET_PEB_IN
+    {
+        public uint ProcessId;
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    private struct KF_GET_PEB_OUT
+    {
+        public ulong PebAddress;
+        public ulong Peb32Address;
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -926,6 +940,15 @@ public class DriverComm : IDisposable
             }
         }
         return processes;
+    }
+
+    public (ulong PebAddress, ulong Peb32Address) GetPebAddress(uint pid)
+    {
+        var input = new KF_GET_PEB_IN { ProcessId = pid };
+        var (ok, data) = SendIoctl(IOCTL_KF_GET_PEB_ADDRESS, StructToBytes(input), Marshal.SizeOf<KF_GET_PEB_OUT>());
+        if (!ok || data == null) return (0, 0);
+        var result = BytesToStruct<KF_GET_PEB_OUT>(data, 0);
+        return (result.PebAddress, result.Peb32Address);
     }
 
     // ── Remote file browser (relay pseudo-IOCTLs) ──

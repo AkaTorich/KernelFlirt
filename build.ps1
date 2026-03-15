@@ -177,6 +177,57 @@ if (Test-Path $retDecSrc) {
     }
 }
 
+# Create plugins directory
+$pluginsDir = Join-Path $BinUI "plugins"
+if (!(Test-Path $pluginsDir)) { New-Item -ItemType Directory -Path $pluginsDir -Force | Out-Null }
+
+# Build and copy plugins
+$pluginProjects = @(
+    "samples\SamplePlugin\SamplePlugin.csproj",
+    "samples\AntiDebugPlugin\AntiDebugPlugin.csproj"
+)
+foreach ($pluginRelPath in $pluginProjects) {
+    $pluginProj = Join-Path $Root $pluginRelPath
+    if (Test-Path $pluginProj) {
+        & dotnet build $pluginProj -c $Configuration --nologo -v quiet 2>$null
+        $pluginName = [System.IO.Path]::GetFileNameWithoutExtension($pluginRelPath)
+        $pluginDir  = Join-Path $Root ([System.IO.Path]::GetDirectoryName($pluginRelPath))
+        # Try net9.0-windows first (WPF plugins), then net9.0
+        $pluginDll = Join-Path $pluginDir "bin\$Configuration\net9.0-windows\$pluginName.dll"
+        if (!(Test-Path $pluginDll)) {
+            $pluginDll = Join-Path $pluginDir "bin\$Configuration\net9.0\$pluginName.dll"
+        }
+        if (Test-Path $pluginDll) {
+            Copy-Item $pluginDll $pluginsDir -Force
+            Write-Host "  -> bin\UI\plugins\$pluginName.dll" -ForegroundColor DarkGreen
+        }
+    }
+}
+
+# Build AntiDebugTest (native C, needs MSVC cl.exe)
+$antiDebugSrc = Join-Path $Root "samples\AntiDebugTest\antidebug_test.c"
+if ((Test-Path $antiDebugSrc) -and $canBuildNative) {
+    $BinSamples = Join-Path $BinDir "Samples"
+    if (!(Test-Path $BinSamples)) { New-Item -ItemType Directory -Path $BinSamples -Force | Out-Null }
+
+    # Find vcvarsall.bat from VS installation
+    $vsInstall = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath 2>$null
+    if ($vsInstall) {
+        $vcvars = Join-Path $vsInstall "VC\Auxiliary\Build\vcvarsall.bat"
+    }
+    if ($vcvars -and (Test-Path $vcvars)) {
+        $antiDebugDir = Join-Path $Root "samples\AntiDebugTest"
+        cmd /c "call `"$vcvars`" x64 >nul 2>&1 && cd /d `"$antiDebugDir`" && cl /O2 /Zi /W3 /D_CRT_SECURE_NO_WARNINGS antidebug_test.c /Fe:antidebug_test.exe /link /DEBUG user32.lib kernel32.lib >nul 2>&1"
+        if ($LASTEXITCODE -eq 0) {
+            Copy-Item (Join-Path $antiDebugDir "antidebug_test.exe") $BinSamples -Force
+            Copy-Item (Join-Path $antiDebugDir "antidebug_test.pdb") $BinSamples -Force -ErrorAction SilentlyContinue
+            Write-Host "  -> bin\Samples\antidebug_test.exe + .pdb" -ForegroundColor DarkGreen
+        } else {
+            Write-Host "  [WARNING] AntiDebugTest compilation failed" -ForegroundColor Yellow
+        }
+    }
+}
+
 # Copy KD debugger (kd.exe, dbgeng.dll, dbghelp.dll, symsrv.dll, etc.)
 $kdSrc = Join-Path $Root "KD"
 if (Test-Path $kdSrc) {
@@ -294,6 +345,7 @@ Write-Host "  bin\Loader\      KfLoader.exe"
 Write-Host "  bin\Relay\       KfRelay.exe"
 Write-Host "  bin\TestDriver\  KfTestDriver.sys"
 Write-Host "  bin\UI\          KernelFlirt.exe"
+Write-Host "  bin\Samples\     antidebug_test.exe"
 Write-Host ""
 Write-Host "Usage:" -ForegroundColor Yellow
 Write-Host "  1. On VM: KfLoader.exe install + start"

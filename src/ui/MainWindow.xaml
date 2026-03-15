@@ -122,6 +122,7 @@
                 <Separator />
                 <MenuItem Header="_Clear Symbol Cache" Command="{Binding ClearSymbolCacheCommand}" />
             </MenuItem>
+            <MenuItem Header="_Plugins" x:Name="PluginsMenu" />
             <MenuItem Header="_Help">
                 <MenuItem Header="_About" Click="OnAboutClick" />
             </MenuItem>

@@ -33,3 +33,5 @@ C:\Users\psysh\OneDrive\Desktop\KernelFlirt\bin\UI\runtimes\osx-x64\native\libca
 C:\Users\psysh\OneDrive\Desktop\KernelFlirt\bin\UI\runtimes\win-arm64\native\capstone.dll
 C:\Users\psysh\OneDrive\Desktop\KernelFlirt\bin\UI\runtimes\win-x64\native\capstone.dll
 C:\Users\psysh\OneDrive\Desktop\KernelFlirt\bin\UI\runtimes\win-x86\native\capstone.dll
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\bin\UI\KernelFlirt.SDK.dll
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\bin\UI\KernelFlirt.SDK.pdb

@@ -11,7 +11,8 @@
           "AvalonEdit": "6.3.0.90",
           "CommunityToolkit.Mvvm": "8.4.0",
           "Dirkster.AvalonDock": "4.72.1",
-          "Gee.External.Capstone": "2.3.0"
+          "Gee.External.Capstone": "2.3.0",
+          "KernelFlirt.SDK": "1.0.0"
         },
         "runtime": {
           "KernelFlirt.dll": {}
@@ -148,6 +149,14 @@
             "fileVersion": "0.0.0.0"
           }
         }
+      },
+      "KernelFlirt.SDK/1.0.0": {
+        "runtime": {
+          "KernelFlirt.SDK.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
       }
     }
   },
@@ -184,6 +193,11 @@
       "sha512": "sha512-2ap/rYmjtzCOT8hxrnEW/QeiOt+paD8iRrIcdKX0cxVwWLFa1e+JDBNeECakmccXrSFeBQuu5AV8SNkipFMMMw==",
       "path": "gee.external.capstone/2.3.0",
       "hashPath": "gee.external.capstone.2.3.0.nupkg.sha512"
+    },
+    "KernelFlirt.SDK/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
     }
   }
 }
