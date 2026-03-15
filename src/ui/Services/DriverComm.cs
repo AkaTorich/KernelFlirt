@@ -48,7 +48,9 @@ public class DriverComm : IDisposable
     private static readonly uint IOCTL_KF_SUSPEND_THREAD  = CTL_CODE(DeviceType, 0x831, 0, 0);
     private static readonly uint IOCTL_KF_RESUME_THREAD   = CTL_CODE(DeviceType, 0x832, 0, 0);
     private static readonly uint IOCTL_KF_ENUM_PROCESSES  = CTL_CODE(DeviceType, 0x835, 0, 0);
-    private static readonly uint IOCTL_KF_GET_PEB_ADDRESS = CTL_CODE(DeviceType, 0x836, 0, 0);
+    private static readonly uint IOCTL_KF_GET_PEB_ADDRESS  = CTL_CODE(DeviceType, 0x836, 0, 0);
+    private static readonly uint IOCTL_KF_CLEAR_DEBUG_PORT = CTL_CODE(DeviceType, 0x837, 0, 0);
+    private static readonly uint IOCTL_KF_CLEAR_THREAD_HIDE = CTL_CODE(DeviceType, 0x838, 0, 0);
     private static readonly uint IOCTL_KF_INSTALL_HOOK    = CTL_CODE(DeviceType, 0x840, 0, 0);
     private static readonly uint IOCTL_KF_REMOVE_HOOK     = CTL_CODE(DeviceType, 0x841, 0, 0);
     private static readonly uint IOCTL_KF_WAIT_DEBUG_EVENT = CTL_CODE(DeviceType, 0x842, 0, 0);
@@ -188,6 +190,18 @@ public class DriverComm : IDisposable
     {
         public ulong PebAddress;
         public ulong Peb32Address;
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    private struct KF_CLEAR_DEBUG_PORT_IN
+    {
+        public uint ProcessId;
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    private struct KF_CLEAR_THREAD_HIDE_IN
+    {
+        public uint ProcessId;
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -949,6 +963,20 @@ public class DriverComm : IDisposable
         if (!ok || data == null) return (0, 0);
         var result = BytesToStruct<KF_GET_PEB_OUT>(data, 0);
         return (result.PebAddress, result.Peb32Address);
+    }
+
+    public bool ClearDebugPort(uint pid)
+    {
+        var input = new KF_CLEAR_DEBUG_PORT_IN { ProcessId = pid };
+        var (ok, _) = SendIoctl(IOCTL_KF_CLEAR_DEBUG_PORT, StructToBytes(input), 0);
+        return ok;
+    }
+
+    public bool ClearThreadHide(uint pid)
+    {
+        var input = new KF_CLEAR_THREAD_HIDE_IN { ProcessId = pid };
+        var (ok, _) = SendIoctl(IOCTL_KF_CLEAR_THREAD_HIDE, StructToBytes(input), 0);
+        return ok;
     }
 
     // ── Remote file browser (relay pseudo-IOCTLs) ──

@@ -22,6 +22,8 @@ extern NTSTATUS KfSuspendThread(PIRP Irp, PIO_STACK_LOCATION IoStack);
 extern NTSTATUS KfResumeThread(PIRP Irp, PIO_STACK_LOCATION IoStack);
 extern NTSTATUS KfEnumProcesses(PIRP Irp, PIO_STACK_LOCATION IoStack);
 extern NTSTATUS KfGetPebAddress(PIRP Irp, PIO_STACK_LOCATION IoStack);
+extern NTSTATUS KfClearDebugPort(PIRP Irp, PIO_STACK_LOCATION IoStack);
+extern NTSTATUS KfClearThreadHide(PIRP Irp, PIO_STACK_LOCATION IoStack);
 extern void KfRemoveAllBreakpoints(void);
 
 NTSTATUS
@@ -122,6 +124,14 @@ KfDispatchIoctl(
 
     case IOCTL_KF_GET_PEB_ADDRESS:
         status = KfGetPebAddress(Irp, ioStack);
+        break;
+
+    case IOCTL_KF_CLEAR_DEBUG_PORT:
+        status = KfClearDebugPort(Irp, ioStack);
+        break;
+
+    case IOCTL_KF_CLEAR_THREAD_HIDE:
+        status = KfClearThreadHide(Irp, ioStack);
         break;
 
     case IOCTL_KF_INSTALL_HOOK:

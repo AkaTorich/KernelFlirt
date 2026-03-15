@@ -307,3 +307,220 @@ KfGetPebAddress(
     Irp->IoStatus.Information = sizeof(KF_GET_PEB_OUT);
     return STATUS_SUCCESS;
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * FindDebugPortOffset - Extract EPROCESS.DebugPort offset from
+ * PsGetProcessDebugPort function bytes.
+ * PsGetProcessDebugPort is: mov rax,[rcx+XX]; ret
+ * ────────────────────────────────────────────────────────────────────────── */
+static ULONG FindDebugPortOffset(void)
+{
+    UNICODE_STRING funcName = RTL_CONSTANT_STRING(L"PsGetProcessDebugPort");
+    PUCHAR func = (PUCHAR)MmGetSystemRoutineAddress(&funcName);
+    ULONG i;
+
+    if (!func) return 0;
+
+    for (i = 0; i < 32; i++) {
+        /* mov rax, [rcx+disp32]: 48 8B 81 XX XX XX XX */
+        if (func[i] == 0x48 && func[i+1] == 0x8B && func[i+2] == 0x81) {
+            return *(ULONG*)(func + i + 3);
+        }
+        /* mov rax, [rcx+disp8]: 48 8B 41 XX */
+        if (func[i] == 0x48 && func[i+1] == 0x8B && func[i+2] == 0x41) {
+            return (ULONG)func[i + 3];
+        }
+    }
+    return 0;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * FindCrossThreadFlagsOffset - Extract ETHREAD.CrossThreadFlags offset from
+ * PsIsThreadTerminating: test byte ptr [rcx+XX], 1
+ * ────────────────────────────────────────────────────────────────────────── */
+static ULONG FindCrossThreadFlagsOffset(void)
+{
+    UNICODE_STRING funcName = RTL_CONSTANT_STRING(L"PsIsThreadTerminating");
+    PUCHAR func = (PUCHAR)MmGetSystemRoutineAddress(&funcName);
+    ULONG i;
+
+    if (!func) return 0;
+
+    for (i = 0; i < 32; i++) {
+        /* test byte ptr [rcx+disp32], imm8: F6 81 XX XX XX XX 01 */
+        if (func[i] == 0xF6 && func[i+1] == 0x81 && func[i+6] == 0x01) {
+            return *(ULONG*)(func + i + 2);
+        }
+        /* test byte ptr [rcx+disp8], imm8: F6 41 XX 01 */
+        if (func[i] == 0xF6 && func[i+1] == 0x41 && func[i+3] == 0x01) {
+            return (ULONG)func[i + 2];
+        }
+    }
+    return 0;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * KfClearDebugPort - Zero EPROCESS.DebugPort to hide from
+ * NtQueryInformationProcess(DebugPort/DebugObjectHandle/DebugFlags),
+ * CheckRemoteDebuggerPresent, and NtClose invalid handle exception.
+ * ────────────────────────────────────────────────────────────────────────── */
+NTSTATUS
+KfClearDebugPort(
+    _In_ PIRP               Irp,
+    _In_ PIO_STACK_LOCATION  IoStack
+)
+{
+    PKF_CLEAR_DEBUG_PORT_IN input;
+    PEPROCESS               process = NULL;
+    NTSTATUS                status;
+    ULONG                   offset;
+
+    if (IoStack->Parameters.DeviceIoControl.InputBufferLength < sizeof(KF_CLEAR_DEBUG_PORT_IN)) {
+        Irp->IoStatus.Information = 0;
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    input = (PKF_CLEAR_DEBUG_PORT_IN)Irp->AssociatedIrp.SystemBuffer;
+
+    offset = FindDebugPortOffset();
+    if (offset == 0) {
+        DbgPrint("[KernelFlirt] ClearDebugPort: failed to find DebugPort offset\n");
+        Irp->IoStatus.Information = 0;
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    status = PsLookupProcessByProcessId((HANDLE)(ULONG_PTR)input->ProcessId, &process);
+    if (!NT_SUCCESS(status)) {
+        Irp->IoStatus.Information = 0;
+        return status;
+    }
+
+    /* Zero the DebugPort pointer */
+    InterlockedExchangePointer((PVOID*)((PUCHAR)process + offset), NULL);
+    DbgPrint("[KernelFlirt] ClearDebugPort: zeroed DebugPort at EPROCESS+0x%X for PID %u\n",
+             offset, input->ProcessId);
+
+    ObDereferenceObject(process);
+
+    Irp->IoStatus.Information = 0;
+    return STATUS_SUCCESS;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * KfClearThreadHide - Clear HideFromDebugger flag in CrossThreadFlags
+ * for all threads of a process.
+ *
+ * Uses same SPI layout as threads.c (SPI_HDR + thread array at +0x100).
+ * ────────────────────────────────────────────────────────────────────────── */
+
+#define CLEAR_SPI  5  /* SystemProcessInformation */
+
+/* Minimal process entry header — same layout as threads.c */
+typedef struct _CTH_SPI_HDR {
+    ULONG   NextEntryOffset;    /* 0x00 */
+    ULONG   NumberOfThreads;    /* 0x04 */
+    UCHAR   _pad1[72];          /* 0x08 -> 0x50 */
+    HANDLE  UniqueProcessId;    /* 0x50 */
+} CTH_SPI_HDR;
+
+/* Minimal thread entry — only need ClientId.UniqueThread at 0x30 */
+typedef struct _CTH_STI {
+    UCHAR   _pad0[0x30];
+    HANDLE  UniqueThread;       /* 0x30 */
+    UCHAR   _pad1[0x18];       /* 0x38 -> 0x50 */
+} CTH_STI;
+
+C_ASSERT(sizeof(CTH_STI) == 0x50);
+
+#define CTH_THREADS_OFFSET  0x100
+
+NTSTATUS
+KfClearThreadHide(
+    _In_ PIRP               Irp,
+    _In_ PIO_STACK_LOCATION  IoStack
+)
+{
+    PKF_CLEAR_THREAD_HIDE_IN input;
+    PETHREAD                 thread = NULL;
+    NTSTATUS                 status;
+    ULONG                    offset;
+    ULONG                    cleared = 0;
+    PVOID                    buffer = NULL;
+    ULONG                    bufSize = 0x40000; /* 256KB */
+    ULONG                    retLen = 0;
+
+    if (IoStack->Parameters.DeviceIoControl.InputBufferLength < sizeof(KF_CLEAR_THREAD_HIDE_IN)) {
+        Irp->IoStatus.Information = 0;
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    input = (PKF_CLEAR_THREAD_HIDE_IN)Irp->AssociatedIrp.SystemBuffer;
+
+    offset = FindCrossThreadFlagsOffset();
+    if (offset == 0) {
+        DbgPrint("[KernelFlirt] ClearThreadHide: failed to find CrossThreadFlags offset\n");
+        Irp->IoStatus.Information = 0;
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    /* Enumerate threads via ZwQuerySystemInformation */
+    buffer = ExAllocatePoolWithTag(NonPagedPool, bufSize, 'fKtH');
+    if (!buffer) {
+        Irp->IoStatus.Information = 0;
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    status = ZwQuerySystemInformation(CLEAR_SPI, buffer, bufSize, &retLen);
+    if (status == STATUS_INFO_LENGTH_MISMATCH) {
+        ExFreePoolWithTag(buffer, 'fKtH');
+        bufSize = retLen + 0x10000;
+        buffer = ExAllocatePoolWithTag(NonPagedPool, bufSize, 'fKtH');
+        if (!buffer) {
+            Irp->IoStatus.Information = 0;
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        status = ZwQuerySystemInformation(CLEAR_SPI, buffer, bufSize, &retLen);
+    }
+
+    if (!NT_SUCCESS(status)) {
+        ExFreePoolWithTag(buffer, 'fKtH');
+        Irp->IoStatus.Information = 0;
+        return status;
+    }
+
+    /* Walk process list, find target PID, iterate threads */
+    __try {
+        CTH_SPI_HDR *proc = (CTH_SPI_HDR *)buffer;
+        for (;;) {
+            if ((ULONG)(ULONG_PTR)proc->UniqueProcessId == input->ProcessId) {
+                CTH_STI *threads = (CTH_STI *)((UCHAR *)proc + CTH_THREADS_OFFSET);
+                ULONG i;
+                for (i = 0; i < proc->NumberOfThreads; i++) {
+                    status = PsLookupThreadByThreadId(threads[i].UniqueThread, &thread);
+                    if (NT_SUCCESS(status)) {
+                        PULONG flagsPtr = (PULONG)((PUCHAR)thread + offset);
+                        if (*flagsPtr & 0x04) {
+                            InterlockedAnd(flagsPtr, ~0x04);
+                            cleared++;
+                        }
+                        ObDereferenceObject(thread);
+                    }
+                }
+                break;
+            }
+            if (proc->NextEntryOffset == 0) break;
+            proc = (CTH_SPI_HDR *)((UCHAR *)proc + proc->NextEntryOffset);
+        }
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        DbgPrint("[KernelFlirt] Exception 0x%08X in KfClearThreadHide\n", GetExceptionCode());
+    }
+
+    ExFreePoolWithTag(buffer, 'fKtH');
+
+    DbgPrint("[KernelFlirt] ClearThreadHide: cleared HideFromDebugger on %u threads for PID %u\n",
+             cleared, input->ProcessId);
+
+    Irp->IoStatus.Information = 0;
+    return STATUS_SUCCESS;
+}

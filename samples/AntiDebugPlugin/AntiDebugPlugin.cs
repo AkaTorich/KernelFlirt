@@ -119,22 +119,22 @@ public class AntiDebugPanel : ScrollViewer
         root.Children.Add(MakeGroup("Kernel Debugger", [ChkKdDebuggerEnabled, ChkKdDebuggerNotPresent], white));
 
         // ── NtQueryInformationProcess ──
-        ChkDebugPort = MakeCheckBox("ProcessDebugPort", false, "NtQueryInformationProcess(7) -> 0", false, white);
-        ChkDebugObjectHandle = MakeCheckBox("ProcessDebugObjectHandle", false, "NtQueryInformationProcess(0x1E) -> fail", false, white);
-        ChkDebugFlags = MakeCheckBox("ProcessDebugFlags", false, "NtQueryInformationProcess(0x1F) -> 1", false, white);
-        root.Children.Add(MakeGroup("NtQueryInformationProcess (requires hooks)", [ChkDebugPort, ChkDebugObjectHandle, ChkDebugFlags], white));
+        ChkDebugPort = MakeCheckBox("ProcessDebugPort", true, "Clear EPROCESS.DebugPort (defeats DebugPort/DebugObjectHandle/DebugFlags)", true, white);
+        ChkDebugObjectHandle = MakeCheckBox("ProcessDebugObjectHandle", true, "Cleared by DebugPort zeroing", true, white);
+        ChkDebugFlags = MakeCheckBox("ProcessDebugFlags", true, "Cleared by DebugPort zeroing", true, white);
+        root.Children.Add(MakeGroup("NtQueryInformationProcess (via ClearDebugPort)", [ChkDebugPort, ChkDebugObjectHandle, ChkDebugFlags], white));
 
         // ── NtQuerySystemInformation ──
-        ChkSystemKernelDebugger = MakeCheckBox("SystemKernelDebuggerInfo", false, "NtQuerySystemInformation(0x23) spoof", false, white);
-        root.Children.Add(MakeGroup("NtQuerySystemInformation (requires hooks)", [ChkSystemKernelDebugger], white));
+        ChkSystemKernelDebugger = MakeCheckBox("SystemKernelDebuggerInfo", true, "Auto-handled by KdDebuggerEnabled/KdDebuggerNotPresent patches above", true, white);
+        root.Children.Add(MakeGroup("NtQuerySystemInformation (via KdDebugger* patches)", [ChkSystemKernelDebugger], white));
 
         // ── NtSetInformationThread ──
-        ChkThreadHideFromDebugger = MakeCheckBox("ThreadHideFromDebugger", false, "Block NtSetInformationThread(0x11)", false, white);
-        root.Children.Add(MakeGroup("NtSetInformationThread (requires hooks)", [ChkThreadHideFromDebugger], white));
+        ChkThreadHideFromDebugger = MakeCheckBox("ThreadHideFromDebugger", true, "Clear HideFromDebugger bit in all threads' CrossThreadFlags", true, white);
+        root.Children.Add(MakeGroup("NtSetInformationThread (via ClearThreadHide)", [ChkThreadHideFromDebugger], white));
 
         // ── NtClose ──
-        ChkNtClose = MakeCheckBox("NtClose", false, "Prevent EXCEPTION_INVALID_HANDLE on CloseHandle", false, white);
-        root.Children.Add(MakeGroup("NtClose (requires hooks)", [ChkNtClose], white));
+        ChkNtClose = MakeCheckBox("NtClose", true, "Cleared by DebugPort zeroing (no debug object = no invalid handle exception)", true, white);
+        root.Children.Add(MakeGroup("NtClose (via ClearDebugPort)", [ChkNtClose], white));
 
         // ── Context / DRx ──
         ChkHideDRx = MakeCheckBox("Hide DRx registers", false, "Zero DR0-DR3 in target thread context", true, white);
@@ -187,7 +187,7 @@ public class AntiDebugPanel : ScrollViewer
         // ── Status ──
         root.Children.Add(new TextBlock
         {
-            Text = "Grayed out options require syscall hooking (future update).",
+            Text = "All patches use kernel driver. ClearDebugPort defeats multiple checks at once.",
             FontStyle = FontStyles.Italic,
             Foreground = white,
             Margin = new Thickness(0, 10, 0, 0)
@@ -199,7 +199,10 @@ public class AntiDebugPanel : ScrollViewer
     private void SetAllEnabled(bool check)
     {
         foreach (var chk in new[] { ChkBeingDebugged, ChkNtGlobalFlag, ChkHeapFlags,
-            ChkKdDebuggerEnabled, ChkKdDebuggerNotPresent, ChkHideDRx, ChkAutoApply })
+            ChkKdDebuggerEnabled, ChkKdDebuggerNotPresent,
+            ChkDebugPort, ChkDebugObjectHandle, ChkDebugFlags,
+            ChkSystemKernelDebugger, ChkThreadHideFromDebugger, ChkNtClose,
+            ChkHideDRx, ChkAutoApply })
         {
             chk.IsChecked = check;
         }
@@ -270,6 +273,52 @@ public class AntiDebugPanel : ScrollViewer
 
         if (ChkKdDebuggerNotPresent.IsChecked == true)
             patches += PatchKernelByte("KdDebuggerNotPresent", 1); // TRUE
+
+        // ── ClearDebugPort (defeats DebugPort, DebugObjectHandle, DebugFlags, NtClose) ──
+        if (ChkDebugPort.IsChecked == true || ChkDebugObjectHandle.IsChecked == true ||
+            ChkDebugFlags.IsChecked == true || ChkNtClose.IsChecked == true)
+        {
+            if (_api.Process.ClearDebugPort(pid))
+            {
+                patches++;
+                _api.Log.Info("  DebugPort cleared (defeats NtQIP + NtClose checks)");
+            }
+            else
+            {
+                _api.Log.Warning("  ClearDebugPort failed");
+            }
+        }
+
+        // ── SystemKernelDebuggerInfo ──
+        if (ChkSystemKernelDebugger.IsChecked == true)
+        {
+            // This is automatically handled by KdDebuggerEnabled=FALSE + KdDebuggerNotPresent=TRUE above
+            // Just ensure those patches are also applied
+            if (ChkKdDebuggerEnabled.IsChecked != true)
+            {
+                patches += PatchKernelByte("KdDebuggerEnabled", 0);
+                _api.Log.Info("  KdDebuggerEnabled=FALSE (for SystemKernelDebuggerInfo)");
+            }
+            if (ChkKdDebuggerNotPresent.IsChecked != true)
+            {
+                patches += PatchKernelByte("KdDebuggerNotPresent", 1);
+                _api.Log.Info("  KdDebuggerNotPresent=TRUE (for SystemKernelDebuggerInfo)");
+            }
+        }
+
+        // ── ClearThreadHide ──
+        if (ChkThreadHideFromDebugger.IsChecked == true)
+        {
+            if (_api.Process.ClearThreadHide(pid))
+            {
+                patches++;
+                _api.Log.Info("  ThreadHideFromDebugger cleared for all threads");
+            }
+            else
+            {
+                _api.Log.Warning("  ClearThreadHide failed");
+            }
+        }
 
         // ── Hide DRx registers ──
         if (ChkHideDRx.IsChecked == true)
