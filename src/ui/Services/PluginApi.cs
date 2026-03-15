@@ -190,6 +190,8 @@ public class ProcessApiAdapter : IProcessApi
     public bool SuspendThread(uint tid) => _driver.SuspendThread(tid);
     public bool ResumeThread(uint tid) => _driver.ResumeThread(tid);
     public (ulong PebAddress, ulong Peb32Address) GetPebAddress(uint pid) => _driver.GetPebAddress(pid);
+    public bool ClearDebugPort(uint pid) => _driver.ClearDebugPort(pid);
+    public bool ClearThreadHide(uint pid) => _driver.ClearThreadHide(pid);
 }
 
 public class LogApiAdapter : ILogApi
