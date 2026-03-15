@@ -269,6 +269,7 @@
                         <ContextMenu>
                             <MenuItem Header="Go to Address" Click="OnBreakpointGoTo" />
                             <MenuItem Header="Follow in Dump" Click="OnBreakpointFollowInDump" />
+                            <MenuItem Header="Decompile" Click="OnBreakpointDecompile" />
                             <MenuItem Header="Remove" Click="OnBreakpointRemove" />
                             <MenuItem Header="Remove All" Command="{Binding RemoveAllBreakpointsCommand}" />
                         </ContextMenu>
@@ -390,6 +391,7 @@
                         <ContextMenu>
                             <MenuItem Header="Follow in Disassembler" Click="OnCallStackFollowDisasm" />
                             <MenuItem Header="Follow in Dump" Click="OnCallStackFollowDump" />
+                            <MenuItem Header="Decompile" Click="OnCallStackDecompile" />
                             <MenuItem Header="Copy Address" Click="OnCallStackCopy" />
                         </ContextMenu>
                     </DataGrid.ContextMenu>
@@ -488,6 +490,7 @@
                                 <MenuItem Header="Follow Start in Disassembler" Click="OnExceptionFollowDisasm" />
                                 <MenuItem Header="Follow End in Disassembler" Click="OnExceptionFollowEnd" />
                                 <MenuItem Header="Follow in Dump" Click="OnExceptionFollowDump" />
+                                <MenuItem Header="Decompile" Click="OnExceptionDecompile" />
                                 <Separator />
                                 <MenuItem Header="Set Breakpoint at Start" Click="OnExceptionSetBp" />
                                 <MenuItem Header="Set Breakpoint at End" Click="OnExceptionSetBpEnd" />
@@ -624,6 +627,7 @@
                         <ContextMenu>
                             <MenuItem Header="Follow in Disassembler" Click="OnSearchFollowDisasm" />
                             <MenuItem Header="Follow in Dump" Click="OnSearchFollowDump" />
+                            <MenuItem Header="Decompile" Click="OnSearchDecompile" />
                             <MenuItem Header="Set Breakpoint" Click="OnSearchSetBp" />
                         </ContextMenu>
                     </DataGrid.ContextMenu>
@@ -661,6 +665,7 @@
                             <ContextMenu>
                                 <MenuItem Header="Follow in Disassembler" Click="OnImportFollowDisasm" />
                                 <MenuItem Header="Follow in Dump" Click="OnImportFollowDump" />
+                                <MenuItem Header="Decompile" Click="OnImportDecompile" />
                                 <MenuItem Header="Set Breakpoint on Function" Click="OnImportSetBp" />
                                 <MenuItem Header="Copy Address" Click="OnImportCopy" />
                             </ContextMenu>
@@ -706,6 +711,7 @@
                         <DataGrid.ContextMenu>
                             <ContextMenu>
                                 <MenuItem Header="Follow in Disassembler" Click="OnFunctionFollowDisasm" />
+                                <MenuItem Header="Decompile" Click="OnFunctionDecompile" />
                                 <MenuItem Header="Set Breakpoint" Click="OnFunctionSetBp" />
                                 <MenuItem Header="Copy Address" Click="OnFunctionCopy" />
                             </ContextMenu>
@@ -728,6 +734,33 @@
                             </DataGridTextColumn>
                         </DataGrid.Columns>
                     </DataGrid>
+                </DockPanel>
+            </TabItem>
+
+            <!-- Tab: Decompiler -->
+            <TabItem Header="Decompiler" x:Name="DecompilerTab">
+                <DockPanel>
+                    <Border DockPanel.Dock="Top" Background="{StaticResource ToolbarBgBrush}" Padding="4,2">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Decompiler (RetDec)" FontWeight="SemiBold" Margin="0,0,12,0" />
+                            <TextBlock Text="Decompiling..." Foreground="{StaticResource CommentBrush}" VerticalAlignment="Center"
+                                       Visibility="{Binding IsDecompiling, Converter={StaticResource BoolVisConv}}" />
+                        </StackPanel>
+                    </Border>
+                    <RichTextBox x:Name="DecompilerOutput"
+                                 IsReadOnly="True"
+                                 FontFamily="Consolas" FontSize="13"
+                                 Background="{StaticResource BgBrush}"
+                                 Foreground="{StaticResource FgBrush}"
+                                 BorderBrush="{StaticResource BorderBrush}"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Auto">
+                        <RichTextBox.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Copy All" Click="OnDecompilerCopyAll" />
+                            </ContextMenu>
+                        </RichTextBox.ContextMenu>
+                    </RichTextBox>
                 </DockPanel>
             </TabItem>
 

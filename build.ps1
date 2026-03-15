@@ -159,13 +159,29 @@ if ($LASTEXITCODE -ne 0) { throw "UI build failed." }
 
 Write-Host "  -> bin\UI\KernelFlirt.exe" -ForegroundColor DarkGreen
 
-# Copy symbol DLLs (dbghelp.dll, symsrv.dll) next to the UI executable
-foreach ($dll in @("dbghelp.dll", "symsrv.dll")) {
-    $src = Join-Path $Root $dll
-    if (Test-Path $src) {
-        Copy-Item $src $BinUI -Force
-        Write-Host "  -> bin\UI\$dll" -ForegroundColor DarkGreen
+# Copy RetDec decompiler
+$retDecSrc = Join-Path $Root "retdec-bin"
+if (Test-Path $retDecSrc) {
+    $retDecBin   = Join-Path $retDecSrc "bin"
+    $retDecShare = Join-Path $retDecSrc "share"
+    $retDecDst   = Join-Path $BinUI "retdec"
+
+    if (Test-Path $retDecBin) {
+        if (!(Test-Path $retDecDst)) { New-Item -ItemType Directory -Path $retDecDst -Force | Out-Null }
+        Copy-Item "$retDecBin\*" $retDecDst -Recurse -Force
+        Write-Host "  -> bin\UI\retdec\ (RetDec decompiler)" -ForegroundColor DarkGreen
     }
+    if (Test-Path $retDecShare) {
+        Copy-Item $retDecShare $BinUI -Recurse -Force
+        Write-Host "  -> bin\UI\share\ (RetDec support files)" -ForegroundColor DarkGreen
+    }
+}
+
+# Copy KD debugger (kd.exe, dbgeng.dll, dbghelp.dll, symsrv.dll, etc.)
+$kdSrc = Join-Path $Root "KD"
+if (Test-Path $kdSrc) {
+    Copy-Item "$kdSrc\*" $BinUI -Force
+    Write-Host "  -> bin\UI\kd.exe + dbgeng DLLs (KD debugger)" -ForegroundColor DarkGreen
 }
 
 # ── Sign Drivers ─────────────────────────────────────────────────────────────

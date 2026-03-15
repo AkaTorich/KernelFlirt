@@ -1,7 +1,10 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
+using System.Windows.Media;
 using KernelFlirt.UI.Models;
 using KernelFlirt.UI.ViewModels;
 
@@ -27,6 +30,10 @@ public partial class MainWindow : Window
         {
             if (e.PropertyName == nameof(MainViewModel.HexData))
                 UpdateHexDumpDisplay();
+            if (e.PropertyName == nameof(MainViewModel.IsDecompiling) && VM.IsDecompiling)
+                MainTabControl.SelectedItem = DecompilerTab;
+            if (e.PropertyName == nameof(MainViewModel.DecompiledCode))
+                UpdateDecompilerHighlighting();
         };
     }
 
@@ -595,6 +602,149 @@ public partial class MainWindow : Window
     {
         if (FunctionsGrid.SelectedItem is FunctionEntry fn)
             Clipboard.SetText($"{fn.Name} {fn.AddressHex}");
+    }
+
+    private void OnFunctionDecompile(object sender, RoutedEventArgs e)
+    {
+        if (FunctionsGrid.SelectedItem is FunctionEntry fn)
+            DecompileAddress(fn.Address, fn.Size);
+    }
+
+    private void OnImportDecompile(object sender, RoutedEventArgs e)
+    {
+        if (ImportsGrid.SelectedItem is ImportEntry imp)
+            DecompileAddress(imp.ResolvedAddress);
+    }
+
+    private void OnExceptionDecompile(object sender, RoutedEventArgs e)
+    {
+        if (ExceptionsGrid.SelectedItem is ExceptionEntry ex)
+            DecompileAddress(ex.FunctionStart, (uint)(ex.FunctionEnd - ex.FunctionStart));
+    }
+
+    private void OnCallStackDecompile(object sender, RoutedEventArgs e)
+    {
+        if (CallStackGrid.SelectedItem is CallStackFrame f)
+            DecompileAddress(f.ReturnAddress);
+    }
+
+    private void OnSearchDecompile(object sender, RoutedEventArgs e)
+    {
+        if (SearchGrid.SelectedItem is SearchResult sr)
+            DecompileAddress(sr.Address);
+    }
+
+    private void OnBreakpointDecompile(object sender, RoutedEventArgs e)
+    {
+        if (BpGrid.SelectedItem is Breakpoint bp)
+            DecompileAddress(bp.Address);
+    }
+
+    private void DecompileAddress(ulong address, uint size = 0)
+    {
+        if (address == 0) return;
+        VM.DecompileFunction(address, size);
+        MainTabControl.SelectedItem = DecompilerTab;
+    }
+
+    /* ================================================================== */
+    /*  Decompiler tab                                                     */
+    /* ================================================================== */
+
+    private void OnDecompilerCopyAll(object sender, RoutedEventArgs e)
+    {
+        if (!string.IsNullOrEmpty(VM.DecompiledCode))
+            Clipboard.SetText(VM.DecompiledCode);
+    }
+
+    private void UpdateDecompilerHighlighting()
+    {
+        var code = VM.DecompiledCode;
+        var doc = new FlowDocument
+        {
+            FontFamily = new FontFamily("Consolas"),
+            FontSize = 13,
+            Background = (Brush)FindResource("BgBrush"),
+            Foreground = (Brush)FindResource("FgBrush"),
+            PageWidth = 10000
+        };
+
+        if (string.IsNullOrEmpty(code))
+        {
+            DecompilerOutput.Document = doc;
+            return;
+        }
+
+        var keywordBrush = (Brush)FindResource("MnemonicBrush");   // #DCDCAA yellow
+        var typeBrush = (Brush)FindResource("RegisterBrush");      // #4EC9B0 teal
+        var commentBrush = (Brush)FindResource("CommentBrush");    // #6A9955 green
+        var stringBrush = (Brush)FindResource("HexBrush");         // #CE9178 orange
+        var numberBrush = (Brush)FindResource("AddressBrush");     // #569CD6 blue
+        var funcBrush = (Brush)FindResource("MnemonicBrush");      // #DCDCAA yellow
+        var defaultBrush = (Brush)FindResource("FgBrush");         // #D4D4D4
+
+        var keywords = new HashSet<string>
+        {
+            "if", "else", "while", "for", "do", "return", "break", "continue",
+            "switch", "case", "default", "goto", "sizeof", "typedef", "struct",
+            "union", "enum", "const", "static", "extern", "volatile", "inline",
+            "NULL", "true", "false"
+        };
+        var types = new HashSet<string>
+        {
+            "void", "char", "short", "int", "long", "float", "double", "unsigned",
+            "signed", "bool", "int8_t", "int16_t", "int32_t", "int64_t",
+            "uint8_t", "uint16_t", "uint32_t", "uint64_t", "uintptr_t", "intptr_t",
+            "size_t", "BOOL", "BYTE", "WORD", "DWORD", "QWORD", "PVOID",
+            "HANDLE", "NTSTATUS", "ULONG", "UCHAR", "USHORT", "LONGLONG",
+            "ULONGLONG", "PUCHAR", "PULONG", "PCHAR", "PWCHAR", "WCHAR"
+        };
+
+        // Regex: comments, strings, hex numbers, decimal numbers, identifiers
+        var tokenPattern = new Regex(
+            @"(//[^\n]*)" +                           // line comment
+            @"|(""(?:[^""\\]|\\.)*"")" +              // string literal
+            @"|(\b0[xX][0-9a-fA-F]+\b)" +            // hex number
+            @"|(\b\d+\b)" +                           // decimal number
+            @"|(\b[a-zA-Z_]\w*\b)" +                  // identifier
+            @"|([^\w\s]+)" +                          // punctuation
+            @"|(\s+)",                                // whitespace
+            RegexOptions.Compiled);
+
+        var lines = code.Split('\n');
+        var para = new Paragraph { Margin = new Thickness(0) };
+
+        foreach (var line in lines)
+        {
+            var matches = tokenPattern.Matches(line);
+            foreach (Match m in matches)
+            {
+                if (m.Groups[1].Success) // comment
+                    para.Inlines.Add(new Run(m.Value) { Foreground = commentBrush });
+                else if (m.Groups[2].Success) // string
+                    para.Inlines.Add(new Run(m.Value) { Foreground = stringBrush });
+                else if (m.Groups[3].Success) // hex number
+                    para.Inlines.Add(new Run(m.Value) { Foreground = numberBrush });
+                else if (m.Groups[4].Success) // decimal number
+                    para.Inlines.Add(new Run(m.Value) { Foreground = numberBrush });
+                else if (m.Groups[5].Success) // identifier
+                {
+                    var word = m.Value;
+                    if (keywords.Contains(word))
+                        para.Inlines.Add(new Run(word) { Foreground = keywordBrush });
+                    else if (types.Contains(word))
+                        para.Inlines.Add(new Run(word) { Foreground = typeBrush });
+                    else
+                        para.Inlines.Add(new Run(word) { Foreground = defaultBrush });
+                }
+                else // whitespace or punctuation
+                    para.Inlines.Add(new Run(m.Value) { Foreground = defaultBrush });
+            }
+            para.Inlines.Add(new LineBreak());
+        }
+
+        doc.Blocks.Add(para);
+        DecompilerOutput.Document = doc;
     }
 
     /* ================================================================== */

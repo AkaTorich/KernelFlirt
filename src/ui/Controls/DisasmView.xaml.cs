@@ -455,6 +455,11 @@ public partial class DisasmView : UserControl
         GetViewModel()?.SearchStringsCommand.Execute(null);
     }
 
+    private void OnContextDecompile(object sender, RoutedEventArgs e)
+    {
+        GetViewModel()?.DecompileAtCursorCommand.Execute(null);
+    }
+
     private static bool TryParseOperandAddress(string operands, out ulong address)
     {
         address = 0;
