@@ -75,7 +75,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _exceptionFilter = "";
     public RangeObservableCollection<SectionEntry> FilteredSections { get; } = [];
     private List<SectionEntry> _allSections = [];
+    private readonly Dictionary<string, List<SectionEntry>> _pluginSections = new();
     [ObservableProperty] private string _sectionFilter = "";
+
+    public RangeObservableCollection<StringEntry> FilteredStrings { get; } = [];
+    private List<StringEntry> _allStrings = [];
+    [ObservableProperty] private string _stringFilter = "";
     [ObservableProperty] private byte[] _hexData = [];
     [ObservableProperty] private string _decompiledCode = "";
     [ObservableProperty] private bool _isDecompiling;
@@ -111,9 +116,51 @@ public partial class MainViewModel : ObservableObject, IDisposable
             () => KernelModules,
             addr => NavigateDisasmTo(addr),
             (header, callback) => AddPluginMenuItem?.Invoke(header, callback),
-            (title, content) => AddPluginToolPanel?.Invoke(title, content));
+            (title, content) => AddPluginToolPanel?.Invoke(title, content),
+            (peBase, name) => AddUnpackedModule(peBase, name),
+            () => { _ = RefreshModulesAndSectionsAsync(); },
+            (modName, sections) => AddModuleSections(modName, sections));
+        // Wire Continue/SingleStep callbacks so plugins can resume execution
+        _pluginManager.ContinueAction = () =>
+            Application.Current.Dispatcher.InvokeAsync(async () => await PluginContinue());
+        _pluginManager.SingleStepAction = () =>
+            Application.Current.Dispatcher.InvokeAsync(async () => await PluginSingleStep());
+
         _pluginManager.LoadPlugins(pluginsDir, api);
     }
+
+    /// <summary>
+    /// Called by plugin via Continue() — resumes process with minimal UI state changes.
+    /// Avoids triggering disassembly/register refreshes.
+    /// </summary>
+    private async Task PluginContinue()
+    {
+        if (!IsConnected || TargetPid == 0) return;
+
+        // Minimal state: just restart listener and continue, no UI property changes
+        StartDebugListener();
+
+        var mode = _hitSwBp != null ? DriverComm.CONTINUE_STEP_PAST : DriverComm.CONTINUE_RUN;
+        await Task.Run(() => _driver.ContinueDebugEvent(mode));
+        _hitSwBp = null;
+    }
+
+    /// <summary>
+    /// Called by plugin via SingleStep() — executes one instruction.
+    /// </summary>
+    private async Task PluginSingleStep()
+    {
+        if (!IsConnected || TargetPid == 0) return;
+
+        IsBreakState = false;
+        IsRunning = true;
+        StartDebugListener();
+
+        await Task.Run(() => _driver.ContinueDebugEvent(DriverComm.CONTINUE_STEP_INTO));
+        _hitSwBp = null;
+    }
+
+    private string _lastConnectAddress = "";
 
     private void LoadSettings()
     {
@@ -124,6 +171,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
             {
                 if (line.StartsWith("SymbolPath=", StringComparison.Ordinal))
                     _symbols.SymbolPath = line["SymbolPath=".Length..];
+                else if (line.StartsWith("LastConnect=", StringComparison.Ordinal))
+                    _lastConnectAddress = line["LastConnect=".Length..];
             }
         }
         catch { /* ignore */ }
@@ -133,7 +182,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         try
         {
-            File.WriteAllText(SettingsFile, $"SymbolPath={_symbols.SymbolPath}\n");
+            File.WriteAllText(SettingsFile,
+                $"SymbolPath={_symbols.SymbolPath}\nLastConnect={_lastConnectAddress}\n");
         }
         catch { /* ignore */ }
     }
@@ -146,7 +196,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private async Task ConnectKernelAsync()
     {
         string input = PromptInput("Connect",
-            "Enter host:port for remote, or leave blank for local driver:");
+            "Enter host:port for remote, or leave blank for local driver:",
+            _lastConnectAddress);
         if (input == null) return; // cancelled
 
         StatusText = "Connecting...";
@@ -182,6 +233,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     IsConnected = true;
                     StatusText = $"Connected (v{version:X})";
                     Log($"Connected, driver version 0x{version:X8}");
+                    _lastConnectAddress = input.Trim();
+                    SaveSettings();
                     _pluginManager.NotifyConnected();
                     await PostConnectRefreshAsync();
                 }
@@ -609,6 +662,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         RefreshImports();
         RefreshExceptions();
         RefreshSections();
+        RefreshStrings();
         RefreshCallStack();
         _ = RefreshFunctionsAsync();
 
@@ -896,6 +950,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         RefreshImports();
         RefreshExceptions();
         RefreshSections();
+        RefreshStrings();
         _ = RefreshFunctionsAsync();
 
         _isPausedViaSuspend = false;
@@ -1140,6 +1195,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         RefreshImports();
         RefreshExceptions();
         RefreshSections();
+        RefreshStrings();
         _ = RefreshFunctionsAsync();
 
         // Auto-set breakpoint at real entry point and run
@@ -1302,6 +1358,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         FilteredExceptions.Clear();
         _allSections.Clear();
         FilteredSections.Clear();
+        _allStrings.Clear();
+        FilteredStrings.Clear();
         Imports.Clear();
         FilteredImports.Clear();
         Functions.Clear();
@@ -1580,6 +1638,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         if (!IsConnected || TargetPid == 0) return;
         if (IsRunning) return;
+
+        // Notify plugins before resuming — they can set breakpoints here
+        _pluginManager.NotifyBeforeRun();
 
         // WoW64: use EB FE spin traps instead of 0xCC (INT3 bypasses KdTrap hook)
         if (_isPausedViaSuspend && Is32Bit)
@@ -2802,7 +2863,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
         StopDebugListener();
         _listenerCts = new CancellationTokenSource();
         var ct = _listenerCts.Token;
-        Log("DebugListener: starting WaitDebugEvent...");
 
         _listenerTask = Task.Run(() =>
         {
@@ -2819,12 +2879,35 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     continue;
                 }
 
+                // Run plugin filters on THIS background thread — UI is not touched.
+                var pluginEvt = new KernelFlirt.SDK.PluginDebugEvent
+                {
+                    Type = (KernelFlirt.SDK.PluginDebugEventType)(int)evt.Type,
+                    ProcessId = evt.ProcessId,
+                    ThreadId = evt.ThreadId,
+                    Address = evt.Address,
+                    IsKernelMode = evt.IsKernelMode,
+                    ExceptionCode = evt.ExceptionCode,
+                    FaultAddress = evt.FaultAddress
+                };
+
+                if (_pluginManager.RunDebugEventFilters(pluginEvt))
+                {
+                    // Plugin handled — continue process without touching UI thread.
+                    // Use STEP_PAST for breakpoint events (skip INT3), RUN otherwise.
+                    var mode = evt.Type == DebugEventType.Breakpoint
+                        ? DriverComm.CONTINUE_STEP_PAST
+                        : DriverComm.CONTINUE_RUN;
+                    _driver.ContinueDebugEvent(mode);
+                    continue; // Loop back to WaitDebugEvent
+                }
+
+                // Not handled by plugin — dispatch to UI thread
                 Application.Current?.Dispatcher.InvokeAsync(() =>
                 {
-                    Log($"DebugListener: got event Type={evt.Type} Addr={evt.Address:X16} PID={evt.ProcessId} TID={evt.ThreadId}");
                     OnDebugEvent(evt);
                 });
-                return; // One event at a time — UI decides what to do next
+                return; // Stop listener, UI takes over
             }
         }, ct);
     }
@@ -2845,9 +2928,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     private async void OnDebugEvent(DebugEvent evt)
     {
+        // Plugin filters already ran on the listener thread.
+        // If we're here, the event was NOT handled by any plugin.
         TargetPid = evt.ProcessId;
         SelectedThreadId = evt.ThreadId;
-
         IsBreakState = true;
         IsRunning = false;
 
@@ -2867,7 +2951,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
                  ?? Breakpoints.FirstOrDefault(b => b.Address == evt.Address - 1);
         _hitSwBp = hitBp?.Type == BreakpointType.Software ? hitBp : null;
 
-        Log($"Break at {evt.Address:X16} (PID={evt.ProcessId} TID={evt.ThreadId})");
+        if (evt.Type == DebugEventType.AccessViolation)
+        {
+            Log($"ACCESS VIOLATION at {evt.Address:X16} → target address 0x{evt.FaultAddress:X} (PID={evt.ProcessId} TID={evt.ThreadId})");
+            if (evt.FaultAddress < 0x10000)
+                Log("Anti-debug protection triggered! The protector detected the debugger and crashed intentionally. Apply anti-debug patches and restart the process.");
+            else
+                Log($"Access violation: exception code 0x{evt.ExceptionCode:X8}, fault address 0x{evt.FaultAddress:X16}");
+            StatusText = $"Access Violation at {evt.Address:X16} → 0x{evt.FaultAddress:X}";
+        }
+        else
+        {
+            Log($"Break at {evt.Address:X16} (PID={evt.ProcessId} TID={evt.ThreadId})");
+        }
         DisasmAddress = evt.Address;
 
         // Use registers from debug event (captured at exception time) when available.
@@ -3019,6 +3115,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
             sec.HasBreakpoint = bpAddrs.Contains(sec.VirtualAddress);
         foreach (var sec in FilteredSections)
             sec.HasBreakpoint = bpAddrs.Contains(sec.VirtualAddress);
+        foreach (var str in _allStrings)
+            str.HasBreakpoint = bpAddrs.Contains(str.Address);
+        foreach (var str in FilteredStrings)
+            str.HasBreakpoint = bpAddrs.Contains(str.Address);
         BreakpointMarkersChanged?.Invoke();
     }
 
@@ -3042,13 +3142,33 @@ public partial class MainViewModel : ObservableObject, IDisposable
         Registers.ReplaceAll(regs);
     }
 
-    public async void RefreshModules()
+    public async Task RefreshModulesAndSectionsAsync()
+    {
+        await RefreshModulesAsync();
+        RefreshSections();
+    }
+
+    public async void RefreshModules() => await RefreshModulesAsync();
+
+    public async Task RefreshModulesAsync()
     {
         if (!IsConnected || TargetPid == 0) return;
         var pid = TargetPid;
         var mods = await Task.Run(() => _driver.EnumModules(pid));
         if (Is32Bit)
             foreach (var m in mods) m.Is32Bit = true;
+
+        // Preserve modules from the old list that aren't in the new one
+        // (protectors may unlink the exe from PEB LDR list as anti-debug)
+        foreach (var old in Modules)
+        {
+            if (!mods.Any(m => m.BaseAddress == old.BaseAddress))
+            {
+                mods.Add(old);
+                Log($"  Kept unlisted module '{old.Name}' at 0x{old.BaseAddress:X}");
+            }
+        }
+
         Modules.ReplaceAll(mods);
         Log($"Found {mods.Count} modules");
     }
@@ -3173,6 +3293,38 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    private void AddModuleSections(string moduleName, IReadOnlyList<KernelFlirt.SDK.PluginSectionInfo> sections)
+    {
+        // Build section entries from plugin data
+        var pluginEntries = new List<SectionEntry>();
+        foreach (var s in sections)
+        {
+            pluginEntries.Add(new SectionEntry
+            {
+                ModuleName = moduleName,
+                Name = s.Name,
+                VirtualAddress = s.VirtualAddress,
+                VirtualSize = s.VirtualSize,
+                RawDataOffset = 0,
+                RawDataSize = s.VirtualSize,
+                Characteristics = s.Characteristics,
+                Is32Bit = Is32Bit
+            });
+        }
+
+        // Store for re-application after RefreshSections
+        _pluginSections[moduleName] = pluginEntries;
+
+        // Apply now
+        _allSections.RemoveAll(s => s.ModuleName == moduleName);
+        int idx = _allSections.Count > 0 ? _allSections.Max(s => s.Index) + 1 : 0;
+        foreach (var e in pluginEntries)
+            e.Index = idx++;
+        _allSections.AddRange(pluginEntries);
+        ApplySectionFilter();
+        Log($"Sections: plugin provided {sections.Count} sections for '{moduleName}'");
+    }
+
     partial void OnSectionFilterChanged(string value) => ApplySectionFilter();
 
     private void ApplySectionFilter()
@@ -3228,6 +3380,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
             entries.AddRange(parsed);
         }
 
+        // Re-apply plugin-provided sections (survive refresh)
+        foreach (var kv in _pluginSections)
+        {
+            entries.RemoveAll(s => s.ModuleName == kv.Key);
+            foreach (var e in kv.Value)
+                e.Index = idx++;
+            entries.AddRange(kv.Value);
+        }
+
         _allSections = entries;
         ApplySectionFilter();
         Log($"Sections: {entries.Count} sections from {mods.Count + kmods.Count} modules");
@@ -3238,10 +3399,47 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var result = new List<SectionEntry>();
         try
         {
-            if (image[0] != 'M' || image[1] != 'Z') return result;
-            uint peOffset = BitConverter.ToUInt32(image, 0x3C);
-            if (peOffset + 0x18 > image.Length) return result;
-            if (image[peOffset] != 'P' || image[peOffset + 1] != 'E') return result;
+            // Try MZ first; if zeroed (anti-dump), fall back to e_lfanew → PE check
+            bool hasMz = image[0] == 'M' && image[1] == 'Z';
+            uint peOffset = 0;
+            bool hasPe = false;
+
+            if (hasMz)
+            {
+                peOffset = BitConverter.ToUInt32(image, 0x3C);
+                if (peOffset + 0x18 <= image.Length &&
+                    image[peOffset] == 'P' && image[peOffset + 1] == 'E')
+                    hasPe = true;
+            }
+
+            // MZ zeroed but e_lfanew might still point to valid PE (packer anti-dump)
+            if (!hasPe && image.Length >= 0x44)
+            {
+                peOffset = BitConverter.ToUInt32(image, 0x3C);
+                if (peOffset >= 0x40 && peOffset < 0x400 && peOffset + 0x18 <= image.Length &&
+                    image[peOffset] == 'P' && image[peOffset + 1] == 'E')
+                    hasPe = true;
+            }
+
+            if (!hasPe)
+            {
+                // No PE header at all — create a synthetic section.
+                var mod = Modules.FirstOrDefault(m => m.BaseAddress == modBase);
+                uint size = mod?.Size ?? (uint)image.Length;
+                result.Add(new SectionEntry
+                {
+                    Index = idx++,
+                    ModuleName = modName,
+                    Name = "[mapped]",
+                    VirtualAddress = modBase,
+                    VirtualSize = size,
+                    RawDataOffset = 0,
+                    RawDataSize = size,
+                    Characteristics = 0x60000020, // CODE | X | R
+                    Is32Bit = Is32Bit
+                });
+                return result;
+            }
 
             ushort magic = BitConverter.ToUInt16(image, (int)peOffset + 0x18);
             // Size of optional header
@@ -3281,6 +3479,279 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
         catch { }
         return result;
+    }
+
+    /* ================================================================== */
+    /*  Strings                                                            */
+    /* ================================================================== */
+
+    partial void OnStringFilterChanged(string value) => ApplyStringFilter();
+
+    private void ApplyStringFilter()
+    {
+        if (string.IsNullOrWhiteSpace(StringFilter))
+        {
+            FilteredStrings.ReplaceAll(_allStrings);
+        }
+        else
+        {
+            var filter = StringFilter;
+            var filtered = _allStrings
+                .Where(s => s.Value.Contains(filter, StringComparison.OrdinalIgnoreCase)
+                         || s.ModuleName.Contains(filter, StringComparison.OrdinalIgnoreCase)
+                         || s.SectionName.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            FilteredStrings.ReplaceAll(filtered);
+        }
+    }
+
+    /// <summary>
+    /// Extract printable strings from all loaded user-mode modules.
+    /// Scans .rdata, .data, and any readable section for ASCII and Unicode strings.
+    /// </summary>
+    public async void RefreshStrings()
+    {
+        if (!IsConnected || TargetPid == 0) return;
+
+        var pid = TargetPid;
+        var mods = Modules.ToList();
+        var entries = new List<StringEntry>();
+        int idx = 0;
+
+        foreach (var mod in mods)
+        {
+            // Read PE header to find section table
+            var header = await Task.Run(() => _driver.ReadMemory(pid, mod.BaseAddress,
+                Math.Min(mod.Size, 4096u)));
+            if (header == null || header.Length < 0x40) continue;
+            if (header[0] != 'M' || header[1] != 'Z') continue;
+
+            uint peOffset = BitConverter.ToUInt32(header, 0x3C);
+            if (peOffset + 0x18 > header.Length) continue;
+            if (header[peOffset] != 'P' || header[peOffset + 1] != 'E') continue;
+
+            ushort numSections = BitConverter.ToUInt16(header, (int)peOffset + 6);
+            ushort optHdrSize = BitConverter.ToUInt16(header, (int)peOffset + 20);
+            uint sectTableOff = peOffset + 24u + optHdrSize;
+
+            if (sectTableOff + numSections * 40 > header.Length) continue;
+
+            for (int s = 0; s < numSections; s++)
+            {
+                int off = (int)(sectTableOff + s * 40);
+                string sectName = Encoding.ASCII.GetString(header, off, 8).TrimEnd('\0');
+                uint vaddr = BitConverter.ToUInt32(header, off + 12);
+                uint vsize = BitConverter.ToUInt32(header, off + 8);
+                uint chars = BitConverter.ToUInt32(header, off + 36);
+
+                // Only scan readable sections (skip code-only sections)
+                if ((chars & 0x40000000) == 0) continue; // not readable
+                if (vsize == 0 || vsize > 0x400000) continue; // skip empty or huge
+
+                var data = await Task.Run(() => _driver.ReadMemory(pid, mod.BaseAddress + vaddr, vsize));
+                if (data == null) continue;
+
+                // Extract ASCII strings (min length 4)
+                ExtractAsciiStrings(data, mod.BaseAddress + vaddr, mod.Name, sectName, ref idx, entries);
+                // Extract Unicode strings (min length 4)
+                ExtractUnicodeStrings(data, mod.BaseAddress + vaddr, mod.Name, sectName, ref idx, entries);
+            }
+        }
+
+        _allStrings = entries;
+        ApplyStringFilter();
+        Log($"Strings: {entries.Count} strings from {mods.Count} modules");
+    }
+
+    private void ExtractAsciiStrings(byte[] data, ulong baseAddr, string modName, string sectName,
+        ref int idx, List<StringEntry> results)
+    {
+        int start = -1;
+        for (int i = 0; i <= data.Length; i++)
+        {
+            bool printable = i < data.Length && data[i] >= 0x20 && data[i] < 0x7F;
+            if (printable)
+            {
+                if (start < 0) start = i;
+            }
+            else
+            {
+                if (start >= 0)
+                {
+                    int len = i - start;
+                    // Require null terminator and minimum length
+                    if (len >= 4 && i < data.Length && data[i] == 0)
+                    {
+                        string val = Encoding.ASCII.GetString(data, start, len);
+                        results.Add(new StringEntry
+                        {
+                            Index = idx++,
+                            ModuleName = modName,
+                            SectionName = sectName,
+                            Address = baseAddr + (ulong)start,
+                            Value = val,
+                            Type = StringType.ASCII,
+                            Length = len,
+                            Is32Bit = Is32Bit
+                        });
+                    }
+                    start = -1;
+                }
+            }
+        }
+    }
+
+    private void ExtractUnicodeStrings(byte[] data, ulong baseAddr, string modName, string sectName,
+        ref int idx, List<StringEntry> results)
+    {
+        int start = -1;
+        for (int i = 0; i <= data.Length - 1; i += 2)
+        {
+            bool printable = i + 1 < data.Length && data[i] >= 0x20 && data[i] < 0x7F && data[i + 1] == 0;
+            if (printable)
+            {
+                if (start < 0) start = i;
+            }
+            else
+            {
+                if (start >= 0)
+                {
+                    int charCount = (i - start) / 2;
+                    // Require null terminator and minimum length
+                    if (charCount >= 4 && i + 1 < data.Length && data[i] == 0 && data[i + 1] == 0)
+                    {
+                        string val = Encoding.Unicode.GetString(data, start, i - start);
+                        // Skip if this looks like it was already captured as ASCII
+                        if (!results.Any(r => r.Address == baseAddr + (ulong)start && r.Type == StringType.ASCII))
+                        {
+                            results.Add(new StringEntry
+                            {
+                                Index = idx++,
+                                ModuleName = modName,
+                                SectionName = sectName,
+                                Address = baseAddr + (ulong)start,
+                                Value = val,
+                                Type = StringType.Unicode,
+                                Length = charCount,
+                                Is32Bit = Is32Bit
+                            });
+                        }
+                    }
+                    start = -1;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Add a dynamically unpacked PE as a virtual module.
+    /// Reads PE header, adds to Modules, refreshes all views.
+    /// </summary>
+    public void AddUnpackedModule(ulong peBase, string name)
+    {
+        if (!IsConnected || TargetPid == 0) return;
+
+        var pid = TargetPid;
+        uint sizeOfImage = 0;
+
+        // Try reading PE header
+        var dosHeader = _driver.ReadMemory(pid, peBase, 0x40);
+        bool hasPeHeader = dosHeader != null && dosHeader.Length >= 0x40 &&
+                           dosHeader[0] == 'M' && dosHeader[1] == 'Z';
+
+        if (hasPeHeader)
+        {
+            uint lfanew = BitConverter.ToUInt32(dosHeader, 0x3C);
+            var peHeader = _driver.ReadMemory(pid, peBase + lfanew, 0x78);
+            if (peHeader != null && peHeader.Length >= 0x58)
+            {
+                sizeOfImage = BitConverter.ToUInt32(peHeader, 24 + 56);
+            }
+        }
+        else
+        {
+            // No PE header — scan pages to find committed memory regions.
+            Log($"No PE header at 0x{peBase:X} — scanning committed pages...");
+
+            // Scan in 64KB blocks, then refine boundaries with 4KB pages
+            ulong firstReadable = 0;
+            ulong lastReadable = 0;
+
+            // Coarse scan: 64KB steps
+            for (uint off = 0; off < 0x1000000; off += 0x10000)
+            {
+                var probe = _driver.ReadMemory(pid, peBase + off, 1);
+                if (probe != null && probe.Length > 0)
+                {
+                    if (firstReadable == 0) firstReadable = peBase + off;
+                    lastReadable = peBase + off + 0x10000;
+                }
+                else if (lastReadable != 0 && off > (lastReadable - peBase) + 0x40000)
+                {
+                    break; // 4 consecutive empty 64KB blocks after data — stop
+                }
+            }
+
+            if (firstReadable != 0)
+            {
+                peBase = firstReadable;
+                sizeOfImage = (uint)(lastReadable - firstReadable);
+                Log($"  Committed range: 0x{firstReadable:X} – 0x{lastReadable:X} (0x{sizeOfImage:X} bytes)");
+            }
+        }
+
+        if (sizeOfImage == 0) sizeOfImage = 0x100000; // fallback 1MB
+
+        // Check if already in the module list
+        bool exists = Modules.Any(m => m.BaseAddress == peBase);
+        if (!exists)
+        {
+            Modules.Add(new ModuleInfo
+            {
+                BaseAddress = peBase,
+                Size = sizeOfImage,
+                Name = name,
+                Is32Bit = Is32Bit
+            });
+        }
+
+        Log($"Added unpacked module: {name} at 0x{peBase:X} (size 0x{sizeOfImage:X})");
+
+        // Try to load symbols (may find PDB via debug directory if protector didn't strip it)
+        if (_symbols.LoadModule(TargetPid, name, peBase, sizeOfImage))
+            Log($"Symbols loaded for {name}");
+
+        Log("Refreshing imports, sections, strings, functions...");
+
+        // Refresh all views — imports specifically from the unpacked PE
+        RefreshImports(peBase);
+        RefreshSections();
+        RefreshStrings();
+        RefreshExceptions();
+        RefreshRegisters(); // show updated RIP after WriteRip
+    }
+
+    /// <summary>
+    /// Set RIP/EIP to a new address (e.g., jump to unpacked OEP).
+    /// </summary>
+    public void SetInstructionPointer(ulong newAddress)
+    {
+        if (!IsConnected || !IsBreakState || TargetPid == 0) return;
+
+        var tid = SelectedThreadId;
+        if (tid == 0) { Log("No thread selected"); return; }
+
+        bool ok = _driver.WriteRip(TargetPid, tid, newAddress);
+        if (ok)
+        {
+            Log($"RIP set to 0x{newAddress:X}");
+            // Refresh registers to show the new value
+            RefreshRegisters();
+        }
+        else
+        {
+            Log($"Failed to set RIP to 0x{newAddress:X}");
+        }
     }
 
     /// <summary>
@@ -3666,7 +4137,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    private static List<ImportEntry> ParseImportsFromBuffer(byte[] image, ulong modBase)
+    private List<ImportEntry> ParseImportsFromBuffer(byte[] image, ulong modBase)
     {
         var result = new List<ImportEntry>();
         try
@@ -3683,7 +4154,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
             uint importRva = BitConverter.ToUInt32(image, (int)peOffset + importDirOffset);
             uint importSize = BitConverter.ToUInt32(image, (int)peOffset + importDirOffset + 4);
-            if (importRva == 0 || importSize == 0) return result;
+
+            // If import directory is zeroed (common in packed PEs), try to find it by scanning
+            if (importRva == 0 || importSize == 0)
+            {
+                (importRva, importSize) = FindImportDirectoryByScan(image, peOffset, is64);
+                if (importRva == 0) return result;
+            }
             if (importRva + importSize > image.Length) return result;
 
             int descriptorSize = 20;
@@ -3763,6 +4240,123 @@ public partial class MainViewModel : ObservableObject, IDisposable
             Debug.WriteLine($"Import parse error: {ex.Message}");
         }
         return result;
+    }
+
+    /// <summary>
+    /// Scans the PE image for IMAGE_IMPORT_DESCRIPTOR chain when the PE header's
+    /// Import Directory RVA has been zeroed by a protector.
+    /// Searches readable sections (.rdata, .idata, etc.) for valid descriptor chains.
+    /// </summary>
+    private (uint rva, uint size) FindImportDirectoryByScan(byte[] image, uint peOffset, bool is64)
+    {
+        try
+        {
+            ushort numberOfSections = BitConverter.ToUInt16(image, (int)peOffset + 0x06);
+            ushort sizeOfOptional = BitConverter.ToUInt16(image, (int)peOffset + 0x14);
+            int sectionStart = (int)peOffset + 4 + 20 + sizeOfOptional;
+
+            // Collect candidate sections: .rdata, .idata, or any readable non-executable section
+            // NOTE: image buffer is a memory dump (mapped PE), so sections are at their VirtualAddress,
+            // NOT at RawDataOffset. Use RVA as buffer offset and VirtualSize as length.
+            var candidates = new List<(uint rva, uint virtualSize, string name)>();
+            for (int i = 0; i < numberOfSections; i++)
+            {
+                int off = sectionStart + i * 40;
+                if (off + 40 > image.Length) break;
+                string secName = Encoding.ASCII.GetString(image, off, 8).TrimEnd('\0');
+                uint secVirtualSize = BitConverter.ToUInt32(image, off + 8);
+                uint secRva = BitConverter.ToUInt32(image, off + 12);
+                uint chars = BitConverter.ToUInt32(image, off + 36);
+
+                // Prefer .rdata/.idata; also try any readable section
+                bool isReadable = (chars & 0x40000000) != 0; // IMAGE_SCN_MEM_READ
+                bool isCode = (chars & 0x20000000) != 0;     // IMAGE_SCN_MEM_EXECUTE
+                if (secName == ".rdata" || secName == ".idata")
+                    candidates.Insert(0, (secRva, secVirtualSize, secName)); // prioritize
+                else if (isReadable && !isCode && secVirtualSize > 0)
+                    candidates.Add((secRva, secVirtualSize, secName));
+            }
+
+            foreach (var (secRva, secVirtualSize, secName) in candidates)
+            {
+                if (secRva + secVirtualSize > image.Length) continue;
+
+                // Scan for chains of valid IMAGE_IMPORT_DESCRIPTORs (20 bytes each)
+                int limit = (int)Math.Min(secVirtualSize, 0x100000); // 1MB max scan
+                for (int pos = 0; pos + 20 <= limit; pos += 4) // align to DWORD
+                {
+                    int absPos = (int)secRva + pos;
+                    if (absPos + 20 > image.Length) break;
+
+                    // Read first descriptor candidate
+                    uint iltRva = BitConverter.ToUInt32(image, absPos);
+                    uint nameRva = BitConverter.ToUInt32(image, absPos + 12);
+                    uint iatRva = BitConverter.ToUInt32(image, absPos + 16);
+
+                    if (nameRva == 0 || iatRva == 0) continue;
+                    if (nameRva >= image.Length || iatRva >= image.Length) continue;
+
+                    // Validate: nameRva should point to a DLL name
+                    if (!IsValidDllName(image, nameRva)) continue;
+
+                    // Count consecutive valid descriptors
+                    int count = 0;
+                    for (int d = 0; d < 256; d++)
+                    {
+                        int dOff = absPos + d * 20;
+                        if (dOff + 20 > image.Length) break;
+
+                        uint dNameRva = BitConverter.ToUInt32(image, dOff + 12);
+                        if (dNameRva == 0) { count = d; break; } // null terminator
+                        if (dNameRva >= image.Length) break;
+                        if (!IsValidDllName(image, dNameRva)) break;
+
+                        uint dIatRva = BitConverter.ToUInt32(image, dOff + 16);
+                        if (dIatRva == 0 || dIatRva >= image.Length) break;
+                    }
+
+                    // Need at least 2 imports to be confident
+                    if (count < 2) continue;
+
+                    // Convert file offset back to RVA
+                    uint foundRva = secRva + (uint)pos;
+                    uint foundSize = (uint)((count + 1) * 20); // +1 for null terminator
+
+                    Debug.WriteLine($"Found import directory by scan at RVA 0x{foundRva:X} in {secName}: {count} DLLs");
+                    return (foundRva, foundSize);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"FindImportDirectoryByScan error: {ex.Message}");
+        }
+
+        return (0, 0);
+    }
+
+    /// <summary>
+    /// Checks if the RVA points to a valid DLL name: ASCII printable, ends with .dll (case insensitive).
+    /// </summary>
+    private static bool IsValidDllName(byte[] image, uint rva)
+    {
+        if (rva + 5 >= image.Length) return false; // minimum "a.dll"
+
+        int end = (int)rva;
+        int maxLen = (int)Math.Min(rva + 260, image.Length);
+        while (end < maxLen && image[end] != 0)
+        {
+            byte b = image[end];
+            if (b < 0x20 || b > 0x7E) return false; // not printable ASCII
+            end++;
+        }
+
+        int len = end - (int)rva;
+        if (len < 5) return false; // minimum "a.dll"
+
+        // Check .dll or .DLL suffix (case insensitive)
+        string name = Encoding.ASCII.GetString(image, (int)rva, len);
+        return name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase);
     }
 
     public async void RefreshKernelModules()
@@ -4151,7 +4745,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         RefreshCallStack();
     }
 
-    private static string PromptInput(string title, string prompt)
+    private static string PromptInput(string title, string prompt, string defaultValue = "")
     {
         var dialog = new Window
         {
@@ -4171,12 +4765,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         var textBox = new System.Windows.Controls.TextBox
         {
+            Text = defaultValue ?? "",
             Background = Application.Current.Resources["BgBrush"] as System.Windows.Media.Brush,
             Foreground = Application.Current.Resources["FgBrush"] as System.Windows.Media.Brush,
             BorderBrush = Application.Current.Resources["BorderBrush"] as System.Windows.Media.Brush,
             CaretBrush = Application.Current.Resources["FgBrush"] as System.Windows.Media.Brush,
             FontFamily = new System.Windows.Media.FontFamily("Consolas"),
         };
+        textBox.SelectAll();
 
         var buttonPanel = new StackPanel
         {

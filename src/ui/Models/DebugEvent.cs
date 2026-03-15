@@ -6,7 +6,8 @@ public enum DebugEventType
     SingleStep = 2,
     HwBreakpoint = 3,
     HwWatchpoint = 4,
-    MemoryBp = 5
+    MemoryBp = 5,
+    AccessViolation = 6
 }
 
 public class DebugEventRegisters
@@ -25,6 +26,8 @@ public class DebugEvent
     public uint ThreadId { get; set; }
     public ulong Address { get; set; }
     public bool IsKernelMode { get; set; }
+    public uint ExceptionCode { get; set; }
+    public ulong FaultAddress { get; set; }
     public DebugEventRegisters? Registers { get; set; }
 
     public string TypeName => Type switch
@@ -34,6 +37,7 @@ public class DebugEvent
         DebugEventType.HwBreakpoint => "HW BP",
         DebugEventType.HwWatchpoint => "HW Watch",
         DebugEventType.MemoryBp => "Mem BP",
+        DebugEventType.AccessViolation => "Access Violation",
         _ => "Unknown"
     };
 

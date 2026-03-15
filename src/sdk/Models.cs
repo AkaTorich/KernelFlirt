@@ -15,7 +15,8 @@ public enum PluginDebugEventType
     SingleStep = 2,
     HwBreakpoint = 3,
     HwWatchpoint = 4,
-    MemoryBp = 5
+    MemoryBp = 5,
+    AccessViolation = 6
 }
 
 public class PluginRegister
@@ -65,6 +66,14 @@ public class PluginThreadInfo
     public uint Priority { get; set; }
 }
 
+public class PluginSectionInfo
+{
+    public string Name { get; set; } = "";
+    public ulong VirtualAddress { get; set; }
+    public uint VirtualSize { get; set; }
+    public uint Characteristics { get; set; }
+}
+
 public class PluginDebugEvent
 {
     public PluginDebugEventType Type { get; set; }
@@ -72,4 +81,6 @@ public class PluginDebugEvent
     public uint ThreadId { get; set; }
     public ulong Address { get; set; }
     public bool IsKernelMode { get; set; }
+    public uint ExceptionCode { get; set; }
+    public ulong FaultAddress { get; set; }
 }

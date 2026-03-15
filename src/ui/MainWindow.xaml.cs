@@ -877,6 +877,58 @@ public partial class MainWindow : Window
     }
 
     /* ================================================================== */
+    /*  Strings tab                                                        */
+    /* ================================================================== */
+
+    private void OnStringDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (StringsGrid.SelectedItem is StringEntry str)
+        {
+            VM.FollowInDisasmCommand.Execute(str.Address);
+            MainTabControl.SelectedIndex = 0;
+        }
+    }
+
+    private void OnStringFollowDisasm(object sender, RoutedEventArgs e)
+    {
+        if (StringsGrid.SelectedItem is StringEntry str)
+        {
+            VM.FollowInDisasmCommand.Execute(str.Address);
+            MainTabControl.SelectedIndex = 0;
+        }
+    }
+
+    private void OnStringFollowDump(object sender, RoutedEventArgs e)
+    {
+        if (StringsGrid.SelectedItem is StringEntry str)
+            VM.FollowInDumpCommand.Execute(str.Address);
+    }
+
+    private void OnStringSetBreakpoint(object sender, RoutedEventArgs e)
+    {
+        if (StringsGrid.SelectedItem is StringEntry str)
+            VM.ToggleBreakpointCommand.Execute(str.Address);
+    }
+
+    private void OnStringCopyAddress(object sender, RoutedEventArgs e)
+    {
+        if (StringsGrid.SelectedItem is StringEntry str)
+            Clipboard.SetText(str.AddressHex);
+    }
+
+    private void OnStringCopyValue(object sender, RoutedEventArgs e)
+    {
+        if (StringsGrid.SelectedItem is StringEntry str)
+            Clipboard.SetText(str.Value);
+    }
+
+    private void OnStringCopyLine(object sender, RoutedEventArgs e)
+    {
+        if (StringsGrid.SelectedItem is StringEntry str)
+            Clipboard.SetText($"{str.ModuleName}\t{str.SectionName}\t{str.AddressHex}\t{str.TypeName}\t{str.Length}\t{str.Value}");
+    }
+
+    /* ================================================================== */
     /*  Log context menu                                                   */
     /* ================================================================== */
 

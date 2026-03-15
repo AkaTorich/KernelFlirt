@@ -265,6 +265,8 @@ public class DriverComm : IDisposable
         public uint ThreadId;
         public ulong Address;
         public uint PreviousMode;
+        public uint ExceptionCode;
+        public ulong FaultAddress;
         public KF_REGISTERS Registers;
     }
 
@@ -890,6 +892,8 @@ public class DriverComm : IDisposable
             ThreadId = ev.ThreadId,
             Address = ev.Address,
             IsKernelMode = ev.PreviousMode == 0,
+            ExceptionCode = ev.ExceptionCode,
+            FaultAddress = ev.FaultAddress,
             Registers = new DebugEventRegisters
             {
                 Rax = ev.Registers.Rax, Rbx = ev.Registers.Rbx,

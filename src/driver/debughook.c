@@ -724,6 +724,8 @@ static void KfFillDebugEvent(
             evt->Type = KF_DBG_SINGLE_STEP;
             ContextRecord->Dr6 = 0;
         }
+    } else if (ExceptionRecord->ExceptionCode == STATUS_ACCESS_VIOLATION) {
+        evt->Type = KF_DBG_ACCESS_VIOLATION;
     } else {
         evt->Type = KF_DBG_BREAKPOINT;
     }
@@ -732,6 +734,10 @@ static void KfFillDebugEvent(
     evt->ThreadId  = (ULONG)(ULONG_PTR)PsGetCurrentThreadId();
     evt->Address   = ContextRecord->Rip;
     evt->PreviousMode = (ULONG)PreviousMode;
+    evt->ExceptionCode = ExceptionRecord->ExceptionCode;
+    evt->FaultAddress  = (ExceptionRecord->ExceptionCode == STATUS_ACCESS_VIOLATION &&
+                          ExceptionRecord->NumberParameters >= 2)
+                         ? (ULONG64)ExceptionRecord->ExceptionInformation[1] : 0;
 
     evt->Registers.Rax    = ContextRecord->Rax;
     evt->Registers.Rbx    = ContextRecord->Rbx;
@@ -853,6 +859,9 @@ static BOOLEAN KfDebugHandler(
     /* Treat as target: matching PID, any PID if g_TargetPid==0, or kernel-space address */
     BOOLEAN isTarget = (g_TargetPid == 0 || currentPid == g_TargetPid
                         || excAddr >= 0xFFFF800000000000ULL);
+    /* For AV: strict PID match only (kernel AVs happen all the time and are not anti-debug) */
+    BOOLEAN isTargetAv = (g_TargetPid != 0 && currentPid == g_TargetPid
+                          && excAddr < 0xFFFF800000000000ULL);
 
     UNREFERENCED_PARAMETER(ExceptionFrame);
 
@@ -870,15 +879,23 @@ static BOOLEAN KfDebugHandler(
         g_LastNonTargetPid = currentPid;
     }
 
-    /* Only handle BP, SingleStep, GuardPage */
+    /* Only handle BP, SingleStep, GuardPage, and AV for target process (user-mode only) */
     if (ExceptionRecord->ExceptionCode != STATUS_BREAKPOINT &&
         ExceptionRecord->ExceptionCode != STATUS_SINGLE_STEP &&
-        ExceptionRecord->ExceptionCode != STATUS_GUARD_PAGE_VIOLATION) {
+        ExceptionRecord->ExceptionCode != STATUS_GUARD_PAGE_VIOLATION &&
+        !(ExceptionRecord->ExceptionCode == STATUS_ACCESS_VIOLATION && isTargetAv && !SecondChance)) {
         return FALSE;  /* Not handled — let normal exception dispatch continue */
     }
 
     if (SecondChance)
         return FALSE;
+
+    /* ============================================================== */
+    /*  ACCESS VIOLATION — catch anti-debug kill (target, 1st chance)  */
+    /* ============================================================== */
+    if (ExceptionRecord->ExceptionCode == STATUS_ACCESS_VIOLATION && isTargetAv) {
+        goto report_to_ui;
+    }
 
     /* ============================================================== */
     /*  SINGLE STEP - check if this is a re-arm after step-past        */

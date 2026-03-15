@@ -51,10 +51,14 @@ static NTSTATUS NTAPI KfNtQsiHandler(
     PULONG ReturnLength)
 {
     NTSTATUS status;
+    PFN_NtQuerySystemInformation origFn = g_OrigNtQsi;
+
+    /* Safety: if hook was removed while we're executing, bail */
+    if (!origFn) return STATUS_NOT_IMPLEMENTED;
 
     /* Call original via trampoline */
-    status = g_OrigNtQsi(SystemInformationClass, SystemInformation,
-                         SystemInformationLength, ReturnLength);
+    status = origFn(SystemInformationClass, SystemInformation,
+                    SystemInformationLength, ReturnLength);
 
     /* Spoof class 0x23 result */
     if (NT_SUCCESS(status) &&
@@ -519,8 +523,6 @@ NTSTATUS KfInstallNtQsiHook(void)
 
 void KfRemoveNtQsiHook(void)
 {
-    LARGE_INTEGER delay;
-
     if (!g_NtQsiHookActive || !g_NtQsiAddr) return;
 
     /* Mark inactive FIRST — handler will see this and skip spoofing */
@@ -529,11 +531,6 @@ void KfRemoveNtQsiHook(void)
 
     /* Restore original bytes */
     KfPatchBytes(g_NtQsiAddr, g_NtQsiOrigBytes, g_NtQsiCopyLen);
-
-    /* Wait for in-flight calls to drain through the trampoline.
-     * 500ms is generous — NtQuerySystemInformation completes in <1ms. */
-    delay.QuadPart = -5000000;  /* 500ms */
-    KeDelayExecutionThread(KernelMode, FALSE, &delay);
 
     /* Do NOT free the trampoline here — a thread could still be executing
      * inside it.  The trampoline is only 32 bytes, so leaking it is fine.
