@@ -32,6 +32,17 @@ bld/
 [Oo]bj/
 [Ll]og/
 [Ll]ogs/
+retdec/
+
+# Keep these project directories (override [Bb]in/ rule for retdec-bin/bin/)
+!retdec-bin/
+!retdec-bin/**
+!KD/
+!KD/**
+!TestPrograms/
+!TestPrograms/**
+!Scripts/
+!Scripts/**
 
 # Visual Studio 2015/2017 cache/options directory
 .vs/

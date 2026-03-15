@@ -15,6 +15,7 @@ public class SymbolService : IDisposable
     private readonly DriverComm _debugger;
     private readonly Dictionary<ulong, string> _symbolCache = new();
     private readonly HashSet<ulong> _loadedModules = new();
+    private readonly Dictionary<ulong, string> _pdbPaths = new();
     private readonly object _lock = new();
     private IntPtr _hProcess;
     private bool _initialized;
@@ -143,11 +144,24 @@ public class SymbolService : IDisposable
             if (ok)
             {
                 _loadedModules.Add(baseAddress);
+                if (pdbPath != null)
+                    _pdbPaths[baseAddress] = pdbPath;
                 return true;
             }
 
             LogMessage?.Invoke($"  {moduleName}: SymLoadModuleExW FAILED err={err}");
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Get the local PDB file path for a loaded module, or null if not available.
+    /// </summary>
+    public string? GetPdbPath(ulong baseAddress)
+    {
+        lock (_lock)
+        {
+            return _pdbPaths.TryGetValue(baseAddress, out var path) ? path : null;
         }
     }
 
@@ -391,6 +405,64 @@ public class SymbolService : IDisposable
                 DbgHelpNative.FreeSymbolInfo(symbolInfo);
             }
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Resolve address to exact symbol name (displacement must be 0).
+    /// Returns null if address is not at the start of a known symbol.
+    /// </summary>
+    public string? ResolveExact(ulong address)
+    {
+        lock (_lock)
+        {
+            if (!_initialized) return null;
+
+            var symbolInfo = DbgHelpNative.AllocSymbolInfo();
+            try
+            {
+                bool ok = DbgHelpNative.SymFromAddrW(_hProcess, address, out ulong displacement, symbolInfo);
+                if (ok && displacement == 0)
+                {
+                    var (name, _, _) = DbgHelpNative.ReadSymbolInfo(symbolInfo);
+                    if (!string.IsNullOrEmpty(name))
+                        return name;
+                }
+            }
+            finally
+            {
+                DbgHelpNative.FreeSymbolInfo(symbolInfo);
+            }
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Get the containing function's start address and size for the given address.
+    /// Returns (funcStart, funcSize) or (0, 0) if not found.
+    /// </summary>
+    public (ulong Address, uint Size) GetFunctionBounds(ulong address)
+    {
+        lock (_lock)
+        {
+            if (!_initialized) return (0, 0);
+
+            var symbolInfo = DbgHelpNative.AllocSymbolInfo();
+            try
+            {
+                bool ok = DbgHelpNative.SymFromAddrW(_hProcess, address, out _, symbolInfo);
+                if (ok)
+                {
+                    var (_, symAddr, symSize) = DbgHelpNative.ReadSymbolInfo(symbolInfo);
+                    if (symAddr != 0 && symSize > 0)
+                        return (symAddr, symSize);
+                }
+            }
+            finally
+            {
+                DbgHelpNative.FreeSymbolInfo(symbolInfo);
+            }
+            return (0, 0);
         }
     }
 

@@ -76,6 +76,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private List<SectionEntry> _allSections = [];
     [ObservableProperty] private string _sectionFilter = "";
     [ObservableProperty] private byte[] _hexData = [];
+    [ObservableProperty] private string _decompiledCode = "";
+    [ObservableProperty] private bool _isDecompiling;
 
     private static readonly string SettingsFile =
         Path.Combine(AppContext.BaseDirectory, "kf_settings.txt");
@@ -4325,6 +4327,513 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         _symbols.Reset();
         Log("Symbol cache cleared — modules unloaded");
+    }
+
+    /* ================================================================== */
+    /*  RetDec decompiler integration                                     */
+    /* ================================================================== */
+
+    private static readonly string RetDecExe = Path.Combine(
+        AppDomain.CurrentDomain.BaseDirectory, "retdec", "retdec-decompiler.exe");
+
+    /// <summary>
+    /// Decompile a function at the given address with the given size.
+    /// Dumps the containing PE module from memory, writes it as a temp file,
+    /// then invokes retdec-decompiler.exe with --select-ranges.
+    /// </summary>
+    public async void DecompileFunction(ulong address, uint size)
+    {
+        if (!IsConnected || TargetPid == 0) return;
+
+        // Try to resolve to containing function for accurate boundaries
+        if (size == 0)
+        {
+            // 1. Check PDB functions (current module)
+            var fn = _allFunctions.FirstOrDefault(f =>
+                f.Address <= address && address < f.Address + f.Size && f.Size > 0);
+            if (fn != null)
+            {
+                address = fn.Address;
+                size = fn.Size;
+            }
+            else
+            {
+                // 2. Check exception entries (RUNTIME_FUNCTION — always has exact boundaries)
+                var ex = _allExceptions.FirstOrDefault(e =>
+                    e.FunctionStart <= address && address < e.FunctionEnd);
+                if (ex != null)
+                {
+                    address = ex.FunctionStart;
+                    size = ex.FunctionSize;
+                }
+                else
+                {
+                    // 3. Use dbghelp SymFromAddr — works for ALL loaded modules
+                    var (symAddr, symSize) = _symbols.GetFunctionBounds(address);
+                    if (symAddr != 0 && symSize > 0)
+                    {
+                        address = symAddr;
+                        size = symSize;
+                    }
+                    else
+                        size = 1; // minimal: RetDec finds function boundary by start address
+                }
+            }
+        }
+
+        // Follow thunk stubs (JMP/CALL wrappers in kernel32 → kernelbase etc.)
+        ulong originalAddress = address;
+        uint originalSize = size;
+        ulong resolved = await ResolveThunkTarget(address, 5);
+        if (resolved != address)
+        {
+            address = resolved;
+            size = 0;
+            var (symAddr, symSize) = _symbols.GetFunctionBounds(address);
+            if (symAddr != 0 && symSize > 0) { address = symAddr; size = symSize; }
+            else size = 1;
+        }
+
+        if (!File.Exists(RetDecExe))
+        {
+            Log($"RetDec not found: {RetDecExe}");
+            DecompiledCode = $"// RetDec not found at:\n// {RetDecExe}\n// Place retdec-decompiler.exe in the 'retdec' subfolder next to KernelFlirt.exe";
+            return;
+        }
+
+        // Find the module containing this address (search both user-mode and kernel modules)
+        (ulong ModBase, uint ModSize, string ModName, uint ReadPid) FindModule(ulong addr)
+        {
+            var um = Modules.FirstOrDefault(m => addr >= m.BaseAddress && addr < m.BaseAddress + m.Size);
+            if (um != null) return (um.BaseAddress, um.Size, um.Name, TargetPid);
+            var km = KernelModules.FirstOrDefault(m => addr >= m.BaseAddress && addr < m.BaseAddress + m.Size);
+            if (km != null) return (km.BaseAddress, km.Size, km.Name, 4);
+            return (0, 0, "", 0);
+        }
+
+        var mod = FindModule(address);
+        if (mod.ModBase == 0)
+        {
+            if (address != originalAddress)
+            {
+                Log($"Decompile: thunk target {FormatAddr(address)} not in any module, falling back to stub");
+                address = originalAddress;
+                size = originalSize;
+                mod = FindModule(address);
+            }
+            if (mod.ModBase == 0)
+            {
+                DecompiledCode = "// Cannot decompile: function address is not inside any loaded module.\n// Load modules first.";
+                Log($"Decompile: no module contains {FormatAddr(address)}");
+                return;
+            }
+        }
+
+        IsDecompiling = true;
+        DecompiledCode = "// Decompiling...";
+        ulong endAddr = address + size;
+        Log($"Decompiling {FormatAddr(address)}-{FormatAddr(endAddr)} in {mod.ModName} (modSize=0x{mod.ModSize:X})...");
+
+        try
+        {
+            // 1. Dump the PE module from process memory (page-by-page to handle paged-out pages)
+            uint readSize = mod.ModSize > 0 ? mod.ModSize : 0x400000;
+            if (readSize > 0x2000000) readSize = 0x2000000; // cap 32MB
+            Log($"Decompile: reading 0x{readSize:X} bytes from {mod.ModName} at {FormatAddr(mod.ModBase)} (pid={mod.ReadPid})");
+            var image = await Task.Run(() => ReadModulePageByPage(mod.ReadPid, mod.ModBase, readSize));
+            if (image == null)
+            {
+                // If thunk target module unreadable, fall back to original stub
+                if (address != originalAddress)
+                {
+                    Log($"Decompile: can't read {mod.ModName}, falling back to original stub");
+                    address = originalAddress;
+                    size = originalSize;
+                    endAddr = address + size;
+                    mod = FindModule(address);
+                    if (mod.ModBase == 0) { DecompiledCode = "// Failed to read module"; return; }
+                    readSize = mod.ModSize > 0 ? mod.ModSize : 0x400000;
+                    if (readSize > 0x2000000) readSize = 0x2000000;
+                    image = ReadModulePageByPage(mod.ReadPid, mod.ModBase, readSize);
+                }
+                if (image == null)
+                {
+                    DecompiledCode = $"// Failed to read module image from {mod.ModName} (0x{readSize:X} bytes)";
+                    Log($"Decompile: ReadMemory failed for {mod.ModName} (0x{readSize:X} bytes)");
+                    return;
+                }
+            }
+
+            // 2. Fix memory-dumped PE for RetDec
+            FixMemoryDumpPE(image, mod.ModBase);
+
+            // 3. Write fixed PE image to temp file
+            var tempDir = Path.Combine(Path.GetTempPath(), "KernelFlirt");
+            Directory.CreateDirectory(tempDir);
+            var inputFile = Path.Combine(tempDir, $"mod_{mod.ModBase:X}.exe");
+            var outputFile = Path.Combine(tempDir, $"func_{address:X}.c");
+            await File.WriteAllBytesAsync(inputFile, image);
+            string rangeArg = $"0x{address:X}-0x{endAddr:X}";
+            Log($"Decompile: range={rangeArg} (module {mod.ModName} base=0x{mod.ModBase:X})");
+            string pdbArg = "";
+            string selectArg;
+            string decompileMethod;
+            var pdbPath = _symbols.GetPdbPath(mod.ModBase);
+            if (pdbPath != null && File.Exists(pdbPath))
+            {
+                pdbArg = $"-p \"{pdbPath}\"";
+                Log($"Decompile: using PDB {pdbPath}");
+
+                // If we have PDB + exact symbol name, use --select-functions (better quality)
+                var symName = _symbols.ResolveExact(address);
+                if (symName != null)
+                {
+                    selectArg = $"--select-functions \"{symName}\"";
+                    decompileMethod = $"select-functions \"{symName}\" + PDB";
+                    Log($"Decompile: method={decompileMethod}");
+                }
+                else
+                {
+                    selectArg = $"--select-ranges {rangeArg}";
+                    decompileMethod = $"select-ranges {rangeArg} + PDB";
+                    Log($"Decompile: method={decompileMethod}");
+                }
+            }
+            else
+            {
+                selectArg = $"--select-ranges {rangeArg}";
+                decompileMethod = $"select-ranges {rangeArg} (no PDB)";
+                Log($"Decompile: method={decompileMethod}");
+            }
+            var psi = new ProcessStartInfo
+            {
+                FileName = RetDecExe,
+                Arguments = $"{selectArg} --disable-static-code-detection {pdbArg} -o \"{outputFile}\" -s \"{inputFile}\"",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+                WorkingDirectory = Path.GetDirectoryName(RetDecExe)!
+            };
+
+            var result = await Task.Run(() =>
+            {
+                using var proc = Process.Start(psi);
+                if (proc == null) return (code: -1, stdout: "", stderr: "Failed to start process");
+                string stdout = proc.StandardOutput.ReadToEnd();
+                string stderr = proc.StandardError.ReadToEnd();
+                proc.WaitForExit(120_000);
+                if (!proc.HasExited) { proc.Kill(); return (code: -1, stdout, stderr: "Timeout (120s)"); }
+                return (code: proc.ExitCode, stdout, stderr);
+            });
+
+            // 4. Read decompiled output and resolve symbols
+            if (File.Exists(outputFile))
+            {
+                var code = await File.ReadAllTextAsync(outputFile);
+                code = CleanRetDecOutput(code);
+                code = ResolveDecompiledSymbols(code);
+                code = $"// Decompiled: {mod.ModName} @ {FormatAddr(address)} [{decompileMethod}]\n\n{code}";
+                DecompiledCode = code;
+                Log($"Decompilation complete: {FormatAddr(address)} [{decompileMethod}] ({code.Split('\n').Length} lines)");
+            }
+            else
+            {
+                DecompiledCode = $"// Decompilation failed (exit code {result.code})\n// {result.stderr}";
+                Log($"Decompile failed: exit={result.code} {result.stderr}");
+            }
+
+            // 5. Cleanup temp files
+            try
+            {
+                if (File.Exists(inputFile)) File.Delete(inputFile);
+                foreach (var f in Directory.GetFiles(tempDir, $"func_{address:X}.*"))
+                    File.Delete(f);
+                foreach (var f in Directory.GetFiles(tempDir, $"mod_{mod.ModBase:X}.*"))
+                    File.Delete(f);
+            }
+            catch { }
+        }
+        catch (Exception ex)
+        {
+            DecompiledCode = $"// Exception: {ex.Message}";
+            Log($"Decompile exception: {ex.Message}");
+        }
+        finally
+        {
+            IsDecompiling = false;
+        }
+    }
+
+    /// <summary>
+    /// <summary>
+    /// Read a module from process memory page-by-page.
+    /// Pages that fail to read are filled with zeros (handles paged-out pages).
+    /// Returns null only if the PE header (first page) can't be read.
+    /// </summary>
+    private byte[]? ReadModulePageByPage(uint pid, ulong baseAddress, uint totalSize)
+    {
+        const uint PAGE_SIZE = 0x1000;
+
+        // Try a single read first (fast path)
+        var full = _driver.ReadMemory(pid, baseAddress, totalSize);
+        if (full != null && full.Length > 0) return full;
+
+        // Fallback: read page by page
+        var result = new byte[totalSize];
+        uint pages = (totalSize + PAGE_SIZE - 1) / PAGE_SIZE;
+        int readOk = 0;
+
+        for (uint i = 0; i < pages; i++)
+        {
+            uint offset = i * PAGE_SIZE;
+            uint chunkSize = Math.Min(PAGE_SIZE, totalSize - offset);
+            var page = _driver.ReadMemory(pid, baseAddress + offset, chunkSize);
+            if (page != null && page.Length > 0)
+            {
+                Array.Copy(page, 0, result, offset, page.Length);
+                readOk++;
+            }
+            // else: leave zeros (paged out / inaccessible)
+        }
+
+        // If we couldn't even read the PE header, fail
+        if (readOk == 0) return null;
+
+        return result;
+    }
+
+    /// <summary>
+    /// <summary>
+    /// Fix a memory-dumped PE so RetDec can parse it correctly:
+    /// 1. Patch ImageBase to match runtime base address
+    /// <summary>
+    /// Follow thunk/stub chains (JMP [rip+X], JMP rel32, CALL rel32) to reach the real function.
+    /// Returns the final target address, or the original address if not a thunk.
+    /// maxDepth limits how many levels of indirection to follow.
+    /// </summary>
+    private async Task<ulong> ResolveThunkTarget(ulong address, int maxDepth)
+    {
+        ulong original = address;
+        for (int i = 0; i < maxDepth; i++)
+        {
+            var code = await Task.Run(() => _driver.ReadMemory(TargetPid, address, 16));
+            if (code == null || code.Length < 6) break;
+
+            // FF 25 XX XX XX XX — JMP [rip + disp32] (6 bytes, indirect jump through IAT)
+            if (code[0] == 0xFF && code[1] == 0x25)
+            {
+                int disp = BitConverter.ToInt32(code, 2);
+                ulong ptrAddr = address + 6 + (ulong)disp;
+                var ptr = await Task.Run(() => _driver.ReadMemory(TargetPid, ptrAddr, 8));
+                if (ptr == null || ptr.Length < 8) break;
+                ulong target = BitConverter.ToUInt64(ptr, 0);
+                Log($"Decompile: thunk JMP [rip] at {FormatAddr(address)} → {FormatAddr(target)}");
+                address = target;
+                continue;
+            }
+
+            // E9 XX XX XX XX — JMP rel32 (5 bytes, direct relative jump)
+            if (code[0] == 0xE9)
+            {
+                int disp = BitConverter.ToInt32(code, 1);
+                ulong target = address + 5 + (ulong)disp;
+                Log($"Decompile: thunk JMP rel32 at {FormatAddr(address)} → {FormatAddr(target)}");
+                address = target;
+                continue;
+            }
+
+            // 48 FF 25 XX XX XX XX — REX.W JMP [rip + disp32] (7 bytes)
+            if (code[0] == 0x48 && code[1] == 0xFF && code[2] == 0x25)
+            {
+                int disp = BitConverter.ToInt32(code, 3);
+                ulong ptrAddr = address + 7 + (ulong)disp;
+                var ptr = await Task.Run(() => _driver.ReadMemory(TargetPid, ptrAddr, 8));
+                if (ptr == null || ptr.Length < 8) break;
+                ulong target = BitConverter.ToUInt64(ptr, 0);
+                Log($"Decompile: thunk REX JMP [rip] at {FormatAddr(address)} → {FormatAddr(target)}");
+                address = target;
+                continue;
+            }
+
+            // Not a thunk — stop following
+            break;
+        }
+
+        if (address != original)
+        {
+            var name = _symbols.ResolveExact(address);
+            Log($"Decompile: resolved thunk chain → {FormatAddr(address)}{(name != null ? $" ({name})" : "")}");
+        }
+
+        return address;
+    }
+
+    /// <summary>
+    /// Fix a memory-dumped PE so RetDec can parse it correctly:
+    /// 1. Patch ImageBase to match runtime base address
+    /// 2. Fix section headers: PointerToRawData=VirtualAddress, SizeOfRawData=VirtualSize
+    /// </summary>
+    private static void FixMemoryDumpPE(byte[] image, ulong runtimeBase)
+    {
+        if (image.Length < 0x40) return;
+        if (image[0] != 0x4D || image[1] != 0x5A) return; // MZ check
+
+        uint lfanew = BitConverter.ToUInt32(image, 0x3C);
+        if (lfanew + 0x18 >= (uint)image.Length) return;
+        if (BitConverter.ToUInt32(image, (int)lfanew) != 0x4550) return; // PE\0\0
+
+        ushort magic = BitConverter.ToUInt16(image, (int)lfanew + 0x18);
+        int optHeaderSize;
+
+        // Patch ImageBase
+        if (magic == 0x20B) // PE32+
+        {
+            BitConverter.TryWriteBytes(image.AsSpan((int)lfanew + 0x30), runtimeBase);
+            optHeaderSize = 0x70; // size of PE32+ specific fields before data dirs
+        }
+        else if (magic == 0x10B) // PE32
+        {
+            BitConverter.TryWriteBytes(image.AsSpan((int)lfanew + 0x34), (uint)runtimeBase);
+            optHeaderSize = 0x60;
+        }
+        else return;
+
+        // Read number of sections and optional header size
+        ushort numSections = BitConverter.ToUInt16(image, (int)lfanew + 0x06);
+        ushort sizeOfOptHeader = BitConverter.ToUInt16(image, (int)lfanew + 0x14);
+
+        // Section headers start after: PE sig (4) + COFF header (20) + optional header
+        int sectionStart = (int)lfanew + 4 + 20 + sizeOfOptHeader;
+
+        // Each section header is 40 bytes:
+        //   +12: VirtualSize (4), +16: VirtualAddress (4)
+        //   +20: SizeOfRawData (4), +24: PointerToRawData (4)
+        for (int i = 0; i < numSections; i++)
+        {
+            int off = sectionStart + i * 40;
+            if (off + 40 > image.Length) break;
+
+            uint virtualSize = BitConverter.ToUInt32(image, off + 8);
+            uint virtualAddr = BitConverter.ToUInt32(image, off + 12);
+
+            // Set PointerToRawData = VirtualAddress (data is at VA offset in memory dump)
+            BitConverter.TryWriteBytes(image.AsSpan(off + 20), virtualAddr);
+            // Set SizeOfRawData = VirtualSize
+            BitConverter.TryWriteBytes(image.AsSpan(off + 16), virtualSize);
+        }
+    }
+
+    /// <summary>
+    /// Remove RetDec boilerplate: header comment, section separators, meta-information.
+    /// </summary>
+    private static string CleanRetDecOutput(string code)
+    {
+        var sb = new System.Text.StringBuilder();
+        bool inHeader = true;
+        bool inMeta = false;
+
+        foreach (var line in code.Split('\n'))
+        {
+            var trimmed = line.TrimEnd('\r');
+
+            // Skip the "This file was generated by" header block
+            if (inHeader)
+            {
+                if (string.IsNullOrWhiteSpace(trimmed) || trimmed.StartsWith("//"))
+                {
+                    if (trimmed.Contains("#include"))
+                        { inHeader = false; sb.AppendLine(trimmed); }
+                    continue;
+                }
+                inHeader = false;
+            }
+
+            // Skip meta-information at the end
+            if (trimmed.StartsWith("// ---") && trimmed.Contains("Meta-Information"))
+                { inMeta = true; continue; }
+            if (inMeta) continue;
+
+            // Skip section separator comments like "// --- Function Prototypes ---"
+            if (trimmed.StartsWith("// ---") && trimmed.EndsWith("---"))
+                continue;
+
+            // Skip empty lines that were around separators
+            sb.AppendLine(trimmed);
+        }
+
+        // Trim leading/trailing blank lines
+        return sb.ToString().Trim('\r', '\n') + "\n";
+    }
+
+    /// <summary>
+    /// Post-process RetDec output: replace function_XXXX / entry_point / unknown_XXXX with real symbol names.
+    /// Uses dbghelp ResolveExact (displacement=0 only) for function names.
+    /// Addresses in the output are runtime addresses (PE ImageBase patched to match module base).
+    /// </summary>
+    private string ResolveDecompiledSymbols(string code)
+    {
+        // Cache resolved addresses to avoid repeated dbghelp calls
+        var cache = new Dictionary<ulong, string?>();
+
+        string? ResolveAddr(ulong addr)
+        {
+            if (cache.TryGetValue(addr, out var cached))
+                return cached;
+
+            // Use exact match only — no displacement names like "Foo+0x118"
+            string? name = _symbols.ResolveExact(addr);
+            cache[addr] = name;
+            return name;
+        }
+
+        // Replace function_HEXADDR, entry_point_HEXADDR, unknown_HEXADDR
+        var result = System.Text.RegularExpressions.Regex.Replace(code,
+            @"\b(function_|entry_point_?|unknown_)([0-9a-fA-F]{6,16})\b",
+            match =>
+            {
+                string hexStr = match.Groups[2].Value;
+                if (ulong.TryParse(hexStr, System.Globalization.NumberStyles.HexNumber, null, out ulong addr))
+                {
+                    var name = ResolveAddr(addr);
+                    if (name != null) return name;
+                }
+                return match.Value;
+            });
+
+        // Standalone "entry_point" → resolve via Address range comment
+        if (result.Contains("entry_point"))
+        {
+            var firstRange = System.Text.RegularExpressions.Regex.Match(result,
+                @"// Address range: 0x([0-9a-fA-F]+)");
+            if (firstRange.Success && ulong.TryParse(firstRange.Groups[1].Value,
+                System.Globalization.NumberStyles.HexNumber, null, out ulong epAddr))
+            {
+                var epName = ResolveAddr(epAddr);
+                if (epName != null)
+                    result = result.Replace("entry_point", epName);
+            }
+        }
+
+        return result;
+    }
+
+    [RelayCommand]
+    private void DecompileAtCursor()
+    {
+        var addr = SelectedDisasmAddress != 0 ? SelectedDisasmAddress : DisasmAddress;
+        if (addr == 0) return;
+
+        // Try to find function containing this address for accurate size
+        uint size = 0;
+        var fn = _allFunctions.FirstOrDefault(f => f.Address <= addr && addr < f.Address + f.Size && f.Size > 0);
+        if (fn != null)
+        {
+            addr = fn.Address;  // decompile from function start
+            size = fn.Size;
+        }
+
+        DecompileFunction(addr, size);
     }
 
     public void Log(string message)

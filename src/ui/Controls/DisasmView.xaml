@@ -35,6 +35,8 @@
                             <Separator />
                             <MenuItem Header="Search Binary..." Click="OnContextSearchBinary" />
                             <MenuItem Header="Search Strings..." Click="OnContextSearchStrings" />
+                            <Separator />
+                            <MenuItem Header="Decompile Function" Click="OnContextDecompile" />
                         </ContextMenu>
                     </ItemsControl.ContextMenu>
                 </ItemsControl>
