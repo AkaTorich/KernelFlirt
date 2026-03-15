@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "ida-pro": {
+      "command": "python",
+      "args": [
+        "-m",
+        "ida_mcp.mcp_server",
+        "--transport",
+        "stdio",
+        "--ida-host",
+        "127.0.0.1",
+        "--ida-port",
+        "13370"
+      ],
+      "env": {
+        "PYTHONPATH": "C:\\Users\\psysh\\OneDrive\\Desktop\\KernelFlirt\\IdaPRO-MCP\\src"
+      }
+    }
+  }
+}

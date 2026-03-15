@@ -6,6 +6,7 @@
 #include <ntddk.h>
 #include "../../include/kf_shared.h"
 #include "debughook.h"
+#include "ntqsi_hook.h"
 
 /* Forward declarations */
 DRIVER_INITIALIZE DriverEntry;
@@ -96,7 +97,8 @@ KfUnload(
 
     DbgPrint("[KernelFlirt] Unloading driver\n");
 
-    /* Remove debug hook before destroying device */
+    /* Remove hooks before destroying device */
+    KfNtQsiCleanup();
     KfDebugHookCleanup();
 
     RtlInitUnicodeString(&symlinkName, KF_SYMLINK_NAME);

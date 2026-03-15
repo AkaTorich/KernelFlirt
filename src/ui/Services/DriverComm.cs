@@ -51,6 +51,9 @@ public class DriverComm : IDisposable
     private static readonly uint IOCTL_KF_GET_PEB_ADDRESS  = CTL_CODE(DeviceType, 0x836, 0, 0);
     private static readonly uint IOCTL_KF_CLEAR_DEBUG_PORT = CTL_CODE(DeviceType, 0x837, 0, 0);
     private static readonly uint IOCTL_KF_CLEAR_THREAD_HIDE = CTL_CODE(DeviceType, 0x838, 0, 0);
+    private static readonly uint IOCTL_KF_INSTALL_NTQSI_HOOK = CTL_CODE(DeviceType, 0x850, 0, 0);
+    private static readonly uint IOCTL_KF_REMOVE_NTQSI_HOOK = CTL_CODE(DeviceType, 0x851, 0, 0);
+    private static readonly uint IOCTL_KF_PROBE_NTQSI = CTL_CODE(DeviceType, 0x852, 0, 0);
     private static readonly uint IOCTL_KF_INSTALL_HOOK    = CTL_CODE(DeviceType, 0x840, 0, 0);
     private static readonly uint IOCTL_KF_REMOVE_HOOK     = CTL_CODE(DeviceType, 0x841, 0, 0);
     private static readonly uint IOCTL_KF_WAIT_DEBUG_EVENT = CTL_CODE(DeviceType, 0x842, 0, 0);
@@ -977,6 +980,36 @@ public class DriverComm : IDisposable
         var input = new KF_CLEAR_THREAD_HIDE_IN { ProcessId = pid };
         var (ok, _) = SendIoctl(IOCTL_KF_CLEAR_THREAD_HIDE, StructToBytes(input), 0);
         return ok;
+    }
+
+    public bool InstallNtQsiHook()
+    {
+        var (ok, _) = SendIoctl(IOCTL_KF_INSTALL_NTQSI_HOOK, [], 0);
+        return ok;
+    }
+
+    public bool RemoveNtQsiHook()
+    {
+        var (ok, _) = SendIoctl(IOCTL_KF_REMOVE_NTQSI_HOOK, [], 0);
+        return ok;
+    }
+
+    public (bool ok, ulong address, byte[] bytes, uint status, uint decodedLen, uint numInsns, bool hasRipRelative) ProbeNtQsi()
+    {
+        int outSize = 8 + 32 + 4 + 4 + 4 + 1 + 3; // KF_PROBE_NTQSI_OUT = 56 bytes
+        var (ok, data) = SendIoctl(IOCTL_KF_PROBE_NTQSI, [], outSize);
+        if (!ok || data == null || data.Length < outSize)
+            return (false, 0, [], 0, 0, 0, false);
+
+        ulong address = BitConverter.ToUInt64(data, 0);
+        byte[] bytes = new byte[32];
+        Array.Copy(data, 8, bytes, 0, 32);
+        uint st = BitConverter.ToUInt32(data, 40);
+        uint decodedLen = BitConverter.ToUInt32(data, 44);
+        uint numInsns = BitConverter.ToUInt32(data, 48);
+        bool hasRipRel = data[52] != 0;
+
+        return (true, address, bytes, st, decodedLen, numInsns, hasRipRel);
     }
 
     // ── Remote file browser (relay pseudo-IOCTLs) ──

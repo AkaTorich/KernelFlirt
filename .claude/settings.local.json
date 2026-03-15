@@ -11,7 +11,10 @@
       "Bash(powershell -ExecutionPolicy Bypass -File build.ps1)",
       "Bash(powershell -File build.ps1)",
       "Bash(grep -E \"\\\\.cpp$|\\\\.h$\")",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "mcp__ida-pro__decompile_function",
+      "mcp__ida-pro__get_disassembly_range",
+      "mcp__ida-pro__execute_script"
     ]
   }
 }

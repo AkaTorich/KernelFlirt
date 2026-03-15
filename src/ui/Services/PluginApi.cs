@@ -192,6 +192,21 @@ public class ProcessApiAdapter : IProcessApi
     public (ulong PebAddress, ulong Peb32Address) GetPebAddress(uint pid) => _driver.GetPebAddress(pid);
     public bool ClearDebugPort(uint pid) => _driver.ClearDebugPort(pid);
     public bool ClearThreadHide(uint pid) => _driver.ClearThreadHide(pid);
+    public bool InstallNtQsiHook() => _driver.InstallNtQsiHook();
+    public bool RemoveNtQsiHook() => _driver.RemoveNtQsiHook();
+
+    public string ProbeNtQsiHook()
+    {
+        var (ok, address, bytes, status, decodedLen, numInsns, hasRipRel) = _driver.ProbeNtQsi();
+        if (!ok) return "Probe IOCTL failed";
+        if (status == 1) return "NtQuerySystemInformation not found";
+        if (status == 2)
+            return $"Decode error at 0x{address:X}: {BitConverter.ToString(bytes, 0, 20).Replace("-", " ")} (decoded {decodedLen} bytes, {numInsns} insns)";
+
+        return $"NtQSI at 0x{address:X}\n" +
+               $"Bytes: {BitConverter.ToString(bytes, 0, 20).Replace("-", " ")}\n" +
+               $"Decoded: {decodedLen} bytes, {numInsns} insns, RIP-relative: {(hasRipRel ? "YES" : "no")}";
+    }
 }
 
 public class LogApiAdapter : ILogApi

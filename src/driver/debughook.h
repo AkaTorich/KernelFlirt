@@ -34,4 +34,7 @@ BOOLEAN KfIsDebugHookActive(void);
 /* Re-assert KdDebuggerEnabled=TRUE (call before expecting debug events) */
 void KfReassertDebugFlags(void);
 
+/* Patch kernel memory via MDL remap (used by ntqsi_hook.c too) */
+NTSTATUS KfPatchBytes(PVOID dest, const void *src, SIZE_T size);
+
 #endif /* KF_DEBUGHOOK_H */

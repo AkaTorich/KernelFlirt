@@ -36,6 +36,9 @@
 #define IOCTL_KF_GET_PEB_ADDRESS    CTL_CODE(KF_DEVICE_TYPE, 0x836, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_KF_CLEAR_DEBUG_PORT   CTL_CODE(KF_DEVICE_TYPE, 0x837, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_KF_CLEAR_THREAD_HIDE  CTL_CODE(KF_DEVICE_TYPE, 0x838, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_KF_INSTALL_NTQSI_HOOK CTL_CODE(KF_DEVICE_TYPE, 0x850, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_KF_REMOVE_NTQSI_HOOK  CTL_CODE(KF_DEVICE_TYPE, 0x851, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_KF_PROBE_NTQSI        CTL_CODE(KF_DEVICE_TYPE, 0x852, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_KF_RESET              CTL_CODE(KF_DEVICE_TYPE, 0x8FE, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_KF_PING               CTL_CODE(KF_DEVICE_TYPE, 0x8FF, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
@@ -282,6 +285,17 @@ typedef struct _KF_LOAD_DRIVER_OUT {
 } KF_LOAD_DRIVER_OUT, *PKF_LOAD_DRIVER_OUT;
 
 /* IOCTL_KF_UNLOAD_DRIVER input: null-terminated ANSI service name */
+
+/* IOCTL_KF_PROBE_NTQSI output — probe without hooking */
+typedef struct _KF_PROBE_NTQSI_OUT {
+    ULONG64 Address;            /* NtQuerySystemInformation address (0 if not found) */
+    UCHAR   Bytes[32];          /* First 32 bytes at the address */
+    ULONG   Status;             /* 0=ok, 1=not found, 2=decode error */
+    ULONG   DecodedLen;         /* Total decoded instruction bytes (for 14+ hook) */
+    ULONG   NumInsns;           /* Number of decoded instructions */
+    UCHAR   HasRipRelative;     /* 1 if any instruction is RIP-relative */
+    UCHAR   Reserved[3];
+} KF_PROBE_NTQSI_OUT, *PKF_PROBE_NTQSI_OUT;
 
 #pragma pack(pop)
 

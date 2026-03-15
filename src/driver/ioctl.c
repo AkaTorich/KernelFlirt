@@ -6,6 +6,7 @@
 #include <ntddk.h>
 #include "../../include/kf_shared.h"
 #include "debughook.h"
+#include "ntqsi_hook.h"
 
 /* Forward declarations for handlers (implemented in other files) */
 extern NTSTATUS KfReadMemory(PIRP Irp, PIO_STACK_LOCATION IoStack);
@@ -134,6 +135,21 @@ KfDispatchIoctl(
         status = KfClearThreadHide(Irp, ioStack);
         break;
 
+    case IOCTL_KF_INSTALL_NTQSI_HOOK:
+        status = KfInstallNtQsiHook();
+        Irp->IoStatus.Information = 0;
+        break;
+
+    case IOCTL_KF_REMOVE_NTQSI_HOOK:
+        KfRemoveNtQsiHook();
+        status = STATUS_SUCCESS;
+        Irp->IoStatus.Information = 0;
+        break;
+
+    case IOCTL_KF_PROBE_NTQSI:
+        status = KfProbeNtQsi(Irp, ioStack);
+        break;
+
     case IOCTL_KF_INSTALL_HOOK:
     {
         /* Optional: pass target PID in input buffer */
@@ -154,7 +170,8 @@ KfDispatchIoctl(
         break;
 
     case IOCTL_KF_RESET:
-        DbgPrint("[KernelFlirt] RESET: removing all breakpoints and hook\n");
+        DbgPrint("[KernelFlirt] RESET: removing all breakpoints and hooks\n");
+        KfRemoveNtQsiHook();
         KfRemoveAllBreakpoints();
         KfDebugHookCleanup();   /* removes hook AND cancels pending WAIT IRP */
         KfSetTargetPid(0);
