@@ -1,10 +1,11 @@
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Xml;
+using ICSharpCode.AvalonEdit.Highlighting;
+using ICSharpCode.AvalonEdit.Highlighting.Xshd;
 using KernelFlirt.UI.Models;
 using KernelFlirt.UI.ViewModels;
 
@@ -17,6 +18,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        LoadDecompilerHighlighting();
         VM.Instructions.CollectionChanged += (_, _) => RefreshDisasmView();
         VM.BreakpointMarkersChanged += () =>
         {
@@ -33,8 +35,43 @@ public partial class MainWindow : Window
             if (e.PropertyName == nameof(MainViewModel.IsDecompiling) && VM.IsDecompiling)
                 MainTabControl.SelectedItem = DecompilerTab;
             if (e.PropertyName == nameof(MainViewModel.DecompiledCode))
-                UpdateDecompilerHighlighting();
+                UpdateDecompilerText();
         };
+    }
+
+    private void LoadDecompilerHighlighting()
+    {
+        var asm = typeof(MainWindow).Assembly;
+        using var stream = asm.GetManifestResourceStream("KernelFlirt.UI.Themes.CDecompiler.xshd");
+        if (stream != null)
+        {
+            using var reader = new XmlTextReader(stream);
+            DecompilerOutput.SyntaxHighlighting = HighlightingLoader.Load(reader, HighlightingManager.Instance);
+        }
+        DecompilerOutput.LineNumbersForeground = new SolidColorBrush(Color.FromRgb(0x60, 0x60, 0x60));
+
+        // Context menu
+        var ctx = new ContextMenu();
+        var copyItem = new MenuItem { Header = "Copy", InputGestureText = "Ctrl+C" };
+        copyItem.Click += (_, _) => DecompilerOutput.Copy();
+        var selectAllItem = new MenuItem { Header = "Select All", InputGestureText = "Ctrl+A" };
+        selectAllItem.Click += (_, _) => DecompilerOutput.SelectAll();
+        var copyAllItem = new MenuItem { Header = "Copy All" };
+        copyAllItem.Click += (_, _) =>
+        {
+            if (!string.IsNullOrEmpty(VM.DecompiledCode))
+                Clipboard.SetText(VM.DecompiledCode);
+        };
+        ctx.Items.Add(copyItem);
+        ctx.Items.Add(selectAllItem);
+        ctx.Items.Add(new Separator());
+        ctx.Items.Add(copyAllItem);
+        DecompilerOutput.ContextMenu = ctx;
+    }
+
+    private void UpdateDecompilerText()
+    {
+        DecompilerOutput.Text = VM.DecompiledCode ?? "";
     }
 
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -645,106 +682,6 @@ public partial class MainWindow : Window
         if (address == 0) return;
         VM.DecompileFunction(address, size);
         MainTabControl.SelectedItem = DecompilerTab;
-    }
-
-    /* ================================================================== */
-    /*  Decompiler tab                                                     */
-    /* ================================================================== */
-
-    private void OnDecompilerCopyAll(object sender, RoutedEventArgs e)
-    {
-        if (!string.IsNullOrEmpty(VM.DecompiledCode))
-            Clipboard.SetText(VM.DecompiledCode);
-    }
-
-    private void UpdateDecompilerHighlighting()
-    {
-        var code = VM.DecompiledCode;
-        var doc = new FlowDocument
-        {
-            FontFamily = new FontFamily("Consolas"),
-            FontSize = 13,
-            Background = (Brush)FindResource("BgBrush"),
-            Foreground = (Brush)FindResource("FgBrush"),
-            PageWidth = 10000
-        };
-
-        if (string.IsNullOrEmpty(code))
-        {
-            DecompilerOutput.Document = doc;
-            return;
-        }
-
-        var keywordBrush = (Brush)FindResource("MnemonicBrush");   // #DCDCAA yellow
-        var typeBrush = (Brush)FindResource("RegisterBrush");      // #4EC9B0 teal
-        var commentBrush = (Brush)FindResource("CommentBrush");    // #6A9955 green
-        var stringBrush = (Brush)FindResource("HexBrush");         // #CE9178 orange
-        var numberBrush = (Brush)FindResource("AddressBrush");     // #569CD6 blue
-        var funcBrush = (Brush)FindResource("MnemonicBrush");      // #DCDCAA yellow
-        var defaultBrush = (Brush)FindResource("FgBrush");         // #D4D4D4
-
-        var keywords = new HashSet<string>
-        {
-            "if", "else", "while", "for", "do", "return", "break", "continue",
-            "switch", "case", "default", "goto", "sizeof", "typedef", "struct",
-            "union", "enum", "const", "static", "extern", "volatile", "inline",
-            "NULL", "true", "false"
-        };
-        var types = new HashSet<string>
-        {
-            "void", "char", "short", "int", "long", "float", "double", "unsigned",
-            "signed", "bool", "int8_t", "int16_t", "int32_t", "int64_t",
-            "uint8_t", "uint16_t", "uint32_t", "uint64_t", "uintptr_t", "intptr_t",
-            "size_t", "BOOL", "BYTE", "WORD", "DWORD", "QWORD", "PVOID",
-            "HANDLE", "NTSTATUS", "ULONG", "UCHAR", "USHORT", "LONGLONG",
-            "ULONGLONG", "PUCHAR", "PULONG", "PCHAR", "PWCHAR", "WCHAR"
-        };
-
-        // Regex: comments, strings, hex numbers, decimal numbers, identifiers
-        var tokenPattern = new Regex(
-            @"(//[^\n]*)" +                           // line comment
-            @"|(""(?:[^""\\]|\\.)*"")" +              // string literal
-            @"|(\b0[xX][0-9a-fA-F]+\b)" +            // hex number
-            @"|(\b\d+\b)" +                           // decimal number
-            @"|(\b[a-zA-Z_]\w*\b)" +                  // identifier
-            @"|([^\w\s]+)" +                          // punctuation
-            @"|(\s+)",                                // whitespace
-            RegexOptions.Compiled);
-
-        var lines = code.Split('\n');
-        var para = new Paragraph { Margin = new Thickness(0) };
-
-        foreach (var line in lines)
-        {
-            var matches = tokenPattern.Matches(line);
-            foreach (Match m in matches)
-            {
-                if (m.Groups[1].Success) // comment
-                    para.Inlines.Add(new Run(m.Value) { Foreground = commentBrush });
-                else if (m.Groups[2].Success) // string
-                    para.Inlines.Add(new Run(m.Value) { Foreground = stringBrush });
-                else if (m.Groups[3].Success) // hex number
-                    para.Inlines.Add(new Run(m.Value) { Foreground = numberBrush });
-                else if (m.Groups[4].Success) // decimal number
-                    para.Inlines.Add(new Run(m.Value) { Foreground = numberBrush });
-                else if (m.Groups[5].Success) // identifier
-                {
-                    var word = m.Value;
-                    if (keywords.Contains(word))
-                        para.Inlines.Add(new Run(word) { Foreground = keywordBrush });
-                    else if (types.Contains(word))
-                        para.Inlines.Add(new Run(word) { Foreground = typeBrush });
-                    else
-                        para.Inlines.Add(new Run(word) { Foreground = defaultBrush });
-                }
-                else // whitespace or punctuation
-                    para.Inlines.Add(new Run(m.Value) { Foreground = defaultBrush });
-            }
-            para.Inlines.Add(new LineBreak());
-        }
-
-        doc.Blocks.Add(para);
-        DecompilerOutput.Document = doc;
     }
 
     /* ================================================================== */

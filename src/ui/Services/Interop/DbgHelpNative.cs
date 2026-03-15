@@ -162,6 +162,68 @@ internal static class DbgHelpNative
         SymEnumSymbolsCallbackW EnumSymbolsCallback,
         IntPtr UserContext);
 
+    // SymSetContext — set scope to a function for enumerating locals/params
+    // IMAGEHLP_STACK_FRAME: 128 bytes, only InstructionOffset (offset 0) matters
+    [DllImport(Dll, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SymSetContext(
+        IntPtr hProcess,
+        IntPtr StackFrame,  // IMAGEHLP_STACK_FRAME*
+        IntPtr Context);    // unused, pass IntPtr.Zero
+
+    // SymGetTypeInfo — get type information from a type index
+    [DllImport(Dll, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SymGetTypeInfo(
+        IntPtr hProcess,
+        ulong ModBase,
+        uint TypeId,
+        int GetType,       // IMAGEHLP_SYMBOL_TYPE_INFO enum
+        IntPtr pInfo);
+
+    // IMAGEHLP_SYMBOL_TYPE_INFO values
+    public const int TI_GET_SYMTAG   = 0;
+    public const int TI_GET_SYMNAME  = 1;  // returns WCHAR*, caller must LocalFree
+    public const int TI_GET_LENGTH   = 2;
+    public const int TI_GET_TYPE     = 3;  // underlying type for pointer/typedef
+    public const int TI_GET_TYPEID   = 4;
+    public const int TI_GET_BASETYPE = 5;
+    public const int TI_GET_ARRAYINDEXTYPEID = 6;
+    public const int TI_FINDCHILDREN = 7;  // requires TI_FINDCHILDREN_PARAMS
+    public const int TI_GET_DATAKIND = 8;
+    public const int TI_GET_COUNT    = 12;
+    public const int TI_GET_CHILDRENCOUNT = 13;
+
+    // SymTagEnum values (from cvconst.h)
+    public const uint SymTagFunctionArgType = 18;
+    public const uint SymTagData        = 7;
+    public const uint SymTagUDT         = 11;
+    public const uint SymTagEnum        = 12;
+    public const uint SymTagFunctionType = 13;
+    public const uint SymTagPointerType = 14;
+    public const uint SymTagArrayType   = 15;
+    public const uint SymTagBaseType    = 16;
+    public const uint SymTagTypedef     = 17;
+
+    // BasicType enum
+    public const uint btNoType = 0;
+    public const uint btVoid   = 1;
+    public const uint btChar   = 2;
+    public const uint btWChar  = 3;
+    public const uint btInt    = 6;
+    public const uint btUInt   = 7;
+    public const uint btFloat  = 8;
+    public const uint btBool   = 10;
+    public const uint btLong   = 13;
+    public const uint btULong  = 14;
+    public const uint btHresult = 31;
+
+    // SYMFLAG constants
+    public const uint SYMFLAG_PARAMETER = 0x00000040;
+
+    [DllImport("kernel32.dll")]
+    public static extern IntPtr LocalFree(IntPtr hMem);
+
     // SymFindFileInPathW — searches symbol path (including symbol servers) for a PDB
     public const uint SSRVOPT_GUIDPTR = 0x0008;
 

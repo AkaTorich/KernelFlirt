@@ -4533,6 +4533,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 var code = await File.ReadAllTextAsync(outputFile);
                 code = CleanRetDecOutput(code);
                 code = ResolveDecompiledSymbols(code);
+                code = ResolveDecompiledTypes(code, address);
                 code = $"// Decompiled: {mod.ModName} @ {FormatAddr(address)} [{decompileMethod}]\n\n{code}";
                 DecompiledCode = code;
                 Log($"Decompilation complete: {FormatAddr(address)} [{decompileMethod}] ({code.Split('\n').Length} lines)");
@@ -4816,6 +4817,131 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
 
         return result;
+    }
+
+    // Regex matching C type declarations used by RetDec
+    private static readonly System.Text.RegularExpressions.Regex TypeDeclPattern = new(
+        @"\b(u?int(?:8|16|32|64|128)_t|char|void|float|double|float64_t|int|long|short|bool|unsigned\s+int|unsigned\s+long)\s*(\*{0,3})",
+        System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// Post-process RetDec output: replace generic C types (int32_t, int32_t*, etc.)
+    /// with proper PDB type names (HWND, LPARAM, BOOL, etc.) for known parameters/locals.
+    /// Matches parameters by position (RetDec renames params to a1,a2...).
+    /// Also renames parameters to their real PDB names throughout the code.
+    /// </summary>
+    private string ResolveDecompiledTypes(string code, ulong funcAddress)
+    {
+        SymbolService.FunctionTypeInfo typeInfo;
+        try
+        {
+            typeInfo = _symbols.GetFunctionTypeInfo(funcAddress);
+        }
+        catch (Exception ex)
+        {
+            Log($"ResolveDecompiledTypes: {ex.Message}");
+            return code;
+        }
+
+        if (typeInfo.Params.Count == 0 && typeInfo.Locals.Count == 0) return code;
+
+        Log($"PDB params: {string.Join(", ", typeInfo.Params.Select(p => $"{p.Type} {p.Name}"))}");
+        if (typeInfo.Locals.Count > 0)
+            Log($"PDB locals: {string.Join(", ", typeInfo.Locals.Select(kv => $"{kv.Value} {kv.Key}"))}");
+
+        int totalReplacements = 0;
+
+        // 1. Match parameters by position in function signature
+        if (typeInfo.Params.Count > 0)
+        {
+            // Find the function definition: starts at column 0 (no indentation),
+            // has return type + function name + params + opening brace.
+            // RetDec function definitions are never indented; if/while/for are always indented.
+            var funcSigPattern = new System.Text.RegularExpressions.Regex(
+                @"^(?=\S).*?\b(\w+)\s*\(([^)]*)\)\s*\{",
+                System.Text.RegularExpressions.RegexOptions.Multiline);
+
+            System.Text.RegularExpressions.Match? sigMatch = null;
+            foreach (System.Text.RegularExpressions.Match m in funcSigPattern.Matches(code))
+            {
+                sigMatch = m; // take the last one (actual definition, not forward decl)
+            }
+
+            if (sigMatch != null)
+            {
+                string funcName = sigMatch.Groups[1].Value;
+                string paramList = sigMatch.Groups[2].Value;
+                Log($"Found function definition: {funcName}({paramList.Substring(0, Math.Min(60, paramList.Length))}...)");
+
+                string[] retdecParams = paramList.Split(',');
+
+                // Extract RetDec parameter names
+                var retdecParamNames = new List<string>();
+                var paramNamePattern = new System.Text.RegularExpressions.Regex(@"\b(\w+)\s*$");
+                foreach (string rp in retdecParams)
+                {
+                    var m = paramNamePattern.Match(rp.Trim());
+                    retdecParamNames.Add(m.Success ? m.Groups[1].Value : "");
+                }
+
+                Log($"RetDec params: [{string.Join(", ", retdecParamNames)}]");
+                Log($"PDB   params: [{string.Join(", ", typeInfo.Params.Select(p => $"{p.Type} {p.Name}"))}]");
+
+                // Match by position and build rename map
+                int matchCount = Math.Min(typeInfo.Params.Count, retdecParamNames.Count);
+                // First pass: replace types (before renaming variables)
+                for (int i = 0; i < matchCount; i++)
+                {
+                    string retdecName = retdecParamNames[i];
+                    var (_, pdbType) = typeInfo.Params[i];
+                    if (string.IsNullOrEmpty(retdecName)) continue;
+
+                    // Replace type in all declarations of this variable
+                    var typePattern = $@"\b(u?int(?:8|16|32|64|128)_t|char|void|float|double|float64_t|int|long|short|bool|unsigned\s+int|unsigned\s+long)\s*(\*{{0,3}})\s+({System.Text.RegularExpressions.Regex.Escape(retdecName)})\b";
+                    code = System.Text.RegularExpressions.Regex.Replace(code, typePattern,
+                        match =>
+                        {
+                            totalReplacements++;
+                            return $"{pdbType} {match.Groups[3].Value}";
+                        });
+                }
+
+                // Second pass: rename variables (after types are replaced)
+                for (int i = 0; i < matchCount; i++)
+                {
+                    string retdecName = retdecParamNames[i];
+                    var (pdbName, _) = typeInfo.Params[i];
+                    if (string.IsNullOrEmpty(retdecName)) continue;
+                    if (string.Equals(retdecName, pdbName, StringComparison.Ordinal)) continue;
+
+                    var renamePattern = $@"\b{System.Text.RegularExpressions.Regex.Escape(retdecName)}\b";
+                    code = System.Text.RegularExpressions.Regex.Replace(code, renamePattern, pdbName);
+                    totalReplacements++;
+                }
+            }
+            else
+            {
+                Log("ResolveDecompiledTypes: could not find function definition in code");
+            }
+        }
+
+        // 2. Match locals by name (they sometimes keep PDB names)
+        foreach (var (varName, pdbType) in typeInfo.Locals)
+        {
+            var pattern = $@"\b(u?int(?:8|16|32|64|128)_t|char|void|float|double|float64_t|int|long|short|bool|unsigned\s+int|unsigned\s+long)\s*(\*{{0,3}})\s+({System.Text.RegularExpressions.Regex.Escape(varName)})\b";
+            code = System.Text.RegularExpressions.Regex.Replace(code, pattern,
+                match =>
+                {
+                    string oldType = match.Groups[1].Value + match.Groups[2].Value.Trim();
+                    if (string.Equals(oldType, pdbType, StringComparison.OrdinalIgnoreCase))
+                        return match.Value;
+                    totalReplacements++;
+                    return $"{pdbType} {match.Groups[3].Value}";
+                });
+        }
+
+        Log($"ResolveDecompiledTypes: {totalReplacements} replacements made");
+        return code;
     }
 
     [RelayCommand]
