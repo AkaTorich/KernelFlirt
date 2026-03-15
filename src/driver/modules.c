@@ -262,3 +262,48 @@ KfEnumModules(
     Irp->IoStatus.Information = count * sizeof(KF_MODULE_ENTRY);
     return status;
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * KfGetPebAddress - Return PEB address for a given process
+ * ────────────────────────────────────────────────────────────────────────── */
+NTSTATUS
+KfGetPebAddress(
+    _In_ PIRP               Irp,
+    _In_ PIO_STACK_LOCATION  IoStack
+)
+{
+    PKF_GET_PEB_IN  input;
+    PKF_GET_PEB_OUT output;
+    PEPROCESS       process = NULL;
+    NTSTATUS        status;
+    ULONG           targetPid;
+
+    if (IoStack->Parameters.DeviceIoControl.InputBufferLength < sizeof(KF_GET_PEB_IN)) {
+        Irp->IoStatus.Information = 0;
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    if (IoStack->Parameters.DeviceIoControl.OutputBufferLength < sizeof(KF_GET_PEB_OUT)) {
+        Irp->IoStatus.Information = 0;
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    input = (PKF_GET_PEB_IN)Irp->AssociatedIrp.SystemBuffer;
+    targetPid = input->ProcessId;
+
+    output = (PKF_GET_PEB_OUT)Irp->AssociatedIrp.SystemBuffer;
+
+    status = PsLookupProcessByProcessId((HANDLE)(ULONG_PTR)targetPid, &process);
+    if (!NT_SUCCESS(status)) {
+        Irp->IoStatus.Information = 0;
+        return status;
+    }
+
+    output->PebAddress   = (ULONG64)PsGetProcessPeb(process);
+    output->Peb32Address = (ULONG64)PsGetProcessWow64Process(process);
+
+    ObDereferenceObject(process);
+
+    Irp->IoStatus.Information = sizeof(KF_GET_PEB_OUT);
+    return STATUS_SUCCESS;
+}

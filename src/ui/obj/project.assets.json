@@ -149,6 +149,16 @@
             "rid": "win-x86"
           }
         }
+      },
+      "KernelFlirt.SDK/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v9.0",
+        "compile": {
+          "bin/placeholder/KernelFlirt.SDK.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/KernelFlirt.SDK.dll": {}
+        }
       }
     }
   },
@@ -309,6 +319,11 @@
         "runtimes/win-x64/native/capstone.dll",
         "runtimes/win-x86/native/capstone.dll"
       ]
+    },
+    "KernelFlirt.SDK/1.0.0": {
+      "type": "project",
+      "path": "../sdk/KernelFlirt.SDK.csproj",
+      "msbuildProject": "../sdk/KernelFlirt.SDK.csproj"
     }
   },
   "projectFileDependencyGroups": {
@@ -316,7 +331,8 @@
       "AvalonEdit >= 6.3.0.90",
       "CommunityToolkit.Mvvm >= 8.4.0",
       "Dirkster.AvalonDock >= 4.72.1",
-      "Gee.External.Capstone >= 2.3.0"
+      "Gee.External.Capstone >= 2.3.0",
+      "KernelFlirt.SDK >= 1.0.0"
     ]
   },
   "packageFolders": {
@@ -351,7 +367,11 @@
       "frameworks": {
         "net9.0-windows7.0": {
           "targetAlias": "net9.0-windows",
-          "projectReferences": {}
+          "projectReferences": {
+            "C:\\Users\\psysh\\OneDrive\\Desktop\\KernelFlirt\\src\\sdk\\KernelFlirt.SDK.csproj": {
+              "projectPath": "C:\\Users\\psysh\\OneDrive\\Desktop\\KernelFlirt\\src\\sdk\\KernelFlirt.SDK.csproj"
+            }
+          }
         }
       },
       "warningProperties": {

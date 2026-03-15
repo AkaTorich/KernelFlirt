@@ -17,6 +17,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly DriverComm _driver = new();
     private readonly Disassembler _disasm = new();
     private readonly SymbolService _symbols;
+    private readonly PluginManager _pluginManager;
 
     private uint? _tempBpHandle;  // For Step Over / Run to Cursor temp breakpoint
     private CancellationTokenSource? _listenerCts;
@@ -82,11 +83,36 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private static readonly string SettingsFile =
         Path.Combine(AppContext.BaseDirectory, "kf_settings.txt");
 
+    // Plugin UI integration - set by MainWindow
+    public Action<string, Action>? AddPluginMenuItem { get; set; }
+    public Action<string, object>? AddPluginToolPanel { get; set; }
+
     public MainViewModel()
     {
         _symbols = new SymbolService(_driver);
         _symbols.LogMessage += msg => Application.Current.Dispatcher.Invoke(() => Log(msg));
+        _pluginManager = new PluginManager(msg => Application.Current.Dispatcher.Invoke(() => Log(msg)));
         LoadSettings();
+    }
+
+    public void LoadPlugins()
+    {
+        var pluginsDir = Path.Combine(AppContext.BaseDirectory, "plugins");
+        var api = new DebuggerApiAdapter(
+            _driver, _symbols, _pluginManager,
+            () => IsConnected,
+            () => IsBreakState,
+            () => TargetPid,
+            () => SelectedThreadId,
+            () => Is32Bit,
+            msg => Application.Current.Dispatcher.Invoke(() => Log(msg)),
+            () => Breakpoints,
+            () => Modules,
+            () => KernelModules,
+            addr => NavigateDisasmTo(addr),
+            (header, callback) => AddPluginMenuItem?.Invoke(header, callback),
+            (title, content) => AddPluginToolPanel?.Invoke(title, content));
+        _pluginManager.LoadPlugins(pluginsDir, api);
     }
 
     private void LoadSettings()
@@ -156,6 +182,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     IsConnected = true;
                     StatusText = $"Connected (v{version:X})";
                     Log($"Connected, driver version 0x{version:X8}");
+                    _pluginManager.NotifyConnected();
                     await PostConnectRefreshAsync();
                 }
                 else
@@ -194,6 +221,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _driver.Disconnect();
         _symbols.Reset();
         IsConnected = false;
+        _pluginManager.NotifyDisconnected();
 
         // Clear all tabs
         KernelModules.Clear();
@@ -3083,6 +3111,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
         ApplyFunctionFilter();
     }
 
+    partial void OnIsBreakStateChanged(bool value)
+    {
+        if (value) _pluginManager.NotifyBreakStateEntered();
+        else _pluginManager.NotifyBreakStateExited();
+    }
+
     partial void OnImportFilterChanged(string value) => ApplyImportFilter();
 
     private void ApplyImportFilter()
@@ -4997,6 +5031,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        _pluginManager.UnloadAll();
         StopDebugListener();
         _symbols.Dispose();
         _driver.Dispose();

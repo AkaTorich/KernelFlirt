@@ -37,6 +37,20 @@ public partial class MainWindow : Window
             if (e.PropertyName == nameof(MainViewModel.DecompiledCode))
                 UpdateDecompilerText();
         };
+
+        // Plugin UI integration
+        VM.AddPluginMenuItem = (header, callback) =>
+        {
+            var item = new MenuItem { Header = header };
+            item.Click += (_, _) => callback();
+            PluginsMenu.Items.Add(item);
+        };
+        VM.AddPluginToolPanel = (title, content) =>
+        {
+            var tab = new TabItem { Header = title, Content = content };
+            MainTabControl.Items.Insert(MainTabControl.Items.Count - 1, tab); // Before Log tab
+        };
+        VM.LoadPlugins();
     }
 
     private void LoadDecompilerHighlighting()

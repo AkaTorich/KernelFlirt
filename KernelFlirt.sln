@@ -5,6 +5,8 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KernelFlirt.UI", "src\ui\KernelFlirt.UI.csproj", "{C1D2E3F4-A5B6-7890-CDEF-123456789ABC}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KernelFlirt.SDK", "src\sdk\KernelFlirt.SDK.csproj", "{F1A2B3C4-D5E6-7890-ABCD-123456789DEF}"
+EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "KernelFlirt.Driver", "src\driver\driver.vcxproj", "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "KernelFlirt.Loader", "src\loader\loader.vcxproj", "{B2C3D4E5-F6A7-8901-BCDE-F12345678901}"
@@ -33,5 +35,9 @@ Global
 		{D3E4F5A6-B7C8-9012-DEFA-345678901234}.Debug|x64.Build.0 = Debug|x64
 		{D3E4F5A6-B7C8-9012-DEFA-345678901234}.Release|x64.ActiveCfg = Release|x64
 		{D3E4F5A6-B7C8-9012-DEFA-345678901234}.Release|x64.Build.0 = Release|x64
+		{F1A2B3C4-D5E6-7890-ABCD-123456789DEF}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{F1A2B3C4-D5E6-7890-ABCD-123456789DEF}.Debug|x64.Build.0 = Debug|Any CPU
+		{F1A2B3C4-D5E6-7890-ABCD-123456789DEF}.Release|x64.ActiveCfg = Release|Any CPU
+		{F1A2B3C4-D5E6-7890-ABCD-123456789DEF}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
