@@ -1,0 +1,176 @@
+<?xml version="1.0"?>
+<SyntaxDefinition name="CDecompiler" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <Color name="Comment" foreground="#6A9955" />
+  <Color name="String" foreground="#CE9178" />
+  <Color name="Number" foreground="#B5CEA8" />
+  <Color name="Keyword" foreground="#C586C0" />
+  <Color name="Type" foreground="#4EC9B0" />
+  <Color name="Function" foreground="#DCDCAA" />
+  <Color name="Punctuation" foreground="#D4D4D4" />
+
+  <RuleSet>
+    <!-- Line comments -->
+    <Span color="Comment">
+      <Begin>//</Begin>
+    </Span>
+
+    <!-- Block comments -->
+    <Span color="Comment" multiline="true">
+      <Begin>/\*</Begin>
+      <End>\*/</End>
+    </Span>
+
+    <!-- Strings -->
+    <Span color="String">
+      <Begin>"</Begin>
+      <End>"</End>
+      <RuleSet>
+        <Span begin="\\" end="." />
+      </RuleSet>
+    </Span>
+
+    <!-- Char literals -->
+    <Span color="String">
+      <Begin>'</Begin>
+      <End>'</End>
+      <RuleSet>
+        <Span begin="\\" end="." />
+      </RuleSet>
+    </Span>
+
+    <!-- Hex numbers -->
+    <Rule color="Number">\b0[xX][0-9a-fA-F]+\b</Rule>
+
+    <!-- Decimal numbers -->
+    <Rule color="Number">\b[0-9]+\b</Rule>
+
+    <!-- C keywords -->
+    <Keywords color="Keyword">
+      <Word>if</Word>
+      <Word>else</Word>
+      <Word>while</Word>
+      <Word>for</Word>
+      <Word>do</Word>
+      <Word>return</Word>
+      <Word>break</Word>
+      <Word>continue</Word>
+      <Word>switch</Word>
+      <Word>case</Word>
+      <Word>default</Word>
+      <Word>goto</Word>
+      <Word>sizeof</Word>
+      <Word>typedef</Word>
+      <Word>struct</Word>
+      <Word>union</Word>
+      <Word>enum</Word>
+      <Word>const</Word>
+      <Word>static</Word>
+      <Word>extern</Word>
+      <Word>volatile</Word>
+      <Word>inline</Word>
+      <Word>NULL</Word>
+      <Word>true</Word>
+      <Word>false</Word>
+    </Keywords>
+
+    <!-- Windows / C types -->
+    <Keywords color="Type">
+      <Word>void</Word>
+      <Word>char</Word>
+      <Word>short</Word>
+      <Word>int</Word>
+      <Word>long</Word>
+      <Word>float</Word>
+      <Word>double</Word>
+      <Word>unsigned</Word>
+      <Word>signed</Word>
+      <Word>bool</Word>
+      <Word>int8_t</Word>
+      <Word>int16_t</Word>
+      <Word>int32_t</Word>
+      <Word>int64_t</Word>
+      <Word>uint8_t</Word>
+      <Word>uint16_t</Word>
+      <Word>uint32_t</Word>
+      <Word>uint64_t</Word>
+      <Word>uintptr_t</Word>
+      <Word>intptr_t</Word>
+      <Word>size_t</Word>
+      <Word>wchar_t</Word>
+      <Word>BOOL</Word>
+      <Word>BYTE</Word>
+      <Word>WORD</Word>
+      <Word>DWORD</Word>
+      <Word>QWORD</Word>
+      <Word>PVOID</Word>
+      <Word>LPVOID</Word>
+      <Word>HANDLE</Word>
+      <Word>NTSTATUS</Word>
+      <Word>HRESULT</Word>
+      <Word>ULONG</Word>
+      <Word>LONG</Word>
+      <Word>UCHAR</Word>
+      <Word>USHORT</Word>
+      <Word>LONGLONG</Word>
+      <Word>ULONGLONG</Word>
+      <Word>PUCHAR</Word>
+      <Word>PULONG</Word>
+      <Word>PCHAR</Word>
+      <Word>PWCHAR</Word>
+      <Word>WCHAR</Word>
+      <Word>CHAR</Word>
+      <Word>HWND</Word>
+      <Word>HDC</Word>
+      <Word>HMENU</Word>
+      <Word>HICON</Word>
+      <Word>HCURSOR</Word>
+      <Word>HBRUSH</Word>
+      <Word>HFONT</Word>
+      <Word>HPEN</Word>
+      <Word>HBITMAP</Word>
+      <Word>HRGN</Word>
+      <Word>HPALETTE</Word>
+      <Word>HINSTANCE</Word>
+      <Word>HMODULE</Word>
+      <Word>HKEY</Word>
+      <Word>HTREEITEM</Word>
+      <Word>HIMAGELIST</Word>
+      <Word>WPARAM</Word>
+      <Word>LPARAM</Word>
+      <Word>LRESULT</Word>
+      <Word>ATOM</Word>
+      <Word>LPSTR</Word>
+      <Word>LPCSTR</Word>
+      <Word>LPWSTR</Word>
+      <Word>LPCWSTR</Word>
+      <Word>LPTSTR</Word>
+      <Word>LPCTSTR</Word>
+      <Word>PSTR</Word>
+      <Word>PCSTR</Word>
+      <Word>PWSTR</Word>
+      <Word>PCWSTR</Word>
+      <Word>UINT</Word>
+      <Word>INT</Word>
+      <Word>DWORD_PTR</Word>
+      <Word>UINT_PTR</Word>
+      <Word>INT_PTR</Word>
+      <Word>ULONG_PTR</Word>
+      <Word>LONG_PTR</Word>
+      <Word>SIZE_T</Word>
+      <Word>COLORREF</Word>
+      <Word>RECT</Word>
+      <Word>POINT</Word>
+      <Word>SIZE</Word>
+      <Word>MSG</Word>
+      <Word>WNDCLASS</Word>
+      <Word>WNDCLASSEX</Word>
+      <Word>PAINTSTRUCT</Word>
+      <Word>CREATESTRUCT</Word>
+      <Word>NMHDR</Word>
+      <Word>LVITEM</Word>
+      <Word>LVCOLUMN</Word>
+      <Word>TVITEM</Word>
+      <Word>TVINSERTSTRUCT</Word>
+    </Keywords>
+  </RuleSet>
+</SyntaxDefinition>

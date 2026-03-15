@@ -542,6 +542,480 @@ public class SymbolService : IDisposable
         return results;
     }
 
+    /// <summary>
+    /// Result of PDB type resolution for a function's parameters and locals.
+    /// </summary>
+    public class FunctionTypeInfo
+    {
+        /// <summary>Ordered list of parameters (in declaration order) with PDB name and type.</summary>
+        public List<(string Name, string Type)> Params { get; } = new();
+        /// <summary>Local variables: PDB name → resolved type.</summary>
+        public Dictionary<string, string> Locals { get; } = new(StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Get parameter and local variable types for a function from PDB.
+    /// Uses SymSetContext + SymEnumSymbolsW to enumerate function scope,
+    /// then SymGetTypeInfo to resolve type names (HWND, LPARAM, etc.).
+    /// </summary>
+    public FunctionTypeInfo GetFunctionTypeInfo(ulong funcAddress)
+    {
+        var result = new FunctionTypeInfo();
+        lock (_lock)
+        {
+            if (!_initialized)
+            {
+                LogMessage?.Invoke("GetFunctionTypeInfo: not initialized");
+                return result;
+            }
+
+            // 1. Get the function symbol to find its module base
+            var symbolInfo = DbgHelpNative.AllocSymbolInfo();
+            ulong modBase;
+            string funcName;
+            uint funcTypeIndex;
+            try
+            {
+                if (!DbgHelpNative.SymFromAddrW(_hProcess, funcAddress, out _, symbolInfo))
+                {
+                    LogMessage?.Invoke($"GetFunctionTypeInfo: SymFromAddr failed for 0x{funcAddress:X} err={Marshal.GetLastWin32Error()}");
+                    return result;
+                }
+                modBase = (ulong)Marshal.ReadInt64(symbolInfo, 32);
+                funcTypeIndex = (uint)Marshal.ReadInt32(symbolInfo, 4); // TypeIndex
+                var (name, _, _) = DbgHelpNative.ReadSymbolInfo(symbolInfo);
+                funcName = name;
+            }
+            finally
+            {
+                DbgHelpNative.FreeSymbolInfo(symbolInfo);
+            }
+
+            LogMessage?.Invoke($"GetFunctionTypeInfo: func={funcName} modBase=0x{modBase:X}");
+            if (modBase == 0) return result;
+
+            // 2. Set context to the function scope
+            IntPtr stackFrame = Marshal.AllocHGlobal(128);
+            try
+            {
+                unsafe { new Span<byte>((void*)stackFrame, 128).Clear(); }
+                Marshal.WriteInt64(stackFrame, 0, (long)funcAddress);
+
+                bool ctxOk = DbgHelpNative.SymSetContext(_hProcess, stackFrame, IntPtr.Zero);
+                int ctxErr = Marshal.GetLastWin32Error();
+                LogMessage?.Invoke($"GetFunctionTypeInfo: SymSetContext={ctxOk} err={ctxErr}");
+
+                if (!ctxOk && ctxErr != 0)
+                    return result;
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(stackFrame);
+            }
+
+            // 3. Enumerate locals/params in function scope
+            // IMPORTANT: collect (name, typeIndex) pairs first, then resolve types AFTER
+            // SymEnumSymbolsW returns — dbghelp is not re-entrant, SymGetTypeInfo inside
+            // a SymEnumSymbols callback causes a crash.
+            var collected = new List<(string Name, uint TypeIndex, bool IsParam)>();
+            DbgHelpNative.SymEnumSymbolsCallbackW callback = (pSymInfo, symSize, ctx) =>
+            {
+                uint tag = (uint)Marshal.ReadInt32(pSymInfo, 72);
+                if (tag != DbgHelpNative.SymTagData) return true;
+
+                uint flags = (uint)Marshal.ReadInt32(pSymInfo, 40);
+                uint typeIndex = (uint)Marshal.ReadInt32(pSymInfo, 4);
+
+                // Read name — use null-terminated read to avoid including trailing \0
+                string name = Marshal.PtrToStringUni(pSymInfo + DbgHelpNative.SYMBOL_INFO_NAME_OFFSET) ?? "";
+
+                if (!string.IsNullOrEmpty(name))
+                {
+                    bool isParam = (flags & DbgHelpNative.SYMFLAG_PARAMETER) != 0;
+                    collected.Add((name, typeIndex, isParam));
+                }
+                return true;
+            };
+
+            DbgHelpNative.SymEnumSymbolsW(_hProcess, 0, "*", callback, IntPtr.Zero);
+            LogMessage?.Invoke($"GetFunctionTypeInfo: enumerated {collected.Count} symbols");
+
+            // 4. Resolve types AFTER enumeration is complete
+            foreach (var (name, typeIndex, isParam) in collected)
+            {
+                string? typeName = ResolveTypeNameFromIndex(modBase, typeIndex, 0);
+                LogMessage?.Invoke($"  {name} (typeIdx={typeIndex}, param={isParam}) -> {typeName ?? "(null)"}");
+                if (typeName == null) continue;
+
+                if (isParam)
+                    result.Params.Add((name, typeName));
+                else if (!result.Locals.ContainsKey(name))
+                    result.Locals[name] = typeName;
+            }
+
+            // 5. Fallback for public PDBs: if SymEnumSymbolsW returned no params,
+            // try to get parameter types from the function's FunctionType via TI_FINDCHILDREN.
+            // Public PDBs have function type info but no local/param symbol info.
+            if (result.Params.Count == 0)
+            {
+                var funcTypeParams = GetFunctionTypeParams(modBase, funcTypeIndex);
+                if (funcTypeParams.Count > 0)
+                {
+                    LogMessage?.Invoke($"GetFunctionTypeInfo: fallback via FunctionType got {funcTypeParams.Count} param types");
+                    foreach (var (name, type) in funcTypeParams)
+                    {
+                        result.Params.Add((name, type));
+                        LogMessage?.Invoke($"  param: {type} {name}");
+                    }
+                }
+            }
+
+            LogMessage?.Invoke($"GetFunctionTypeInfo: {result.Params.Count} params, {result.Locals.Count} locals");
+        }
+        return result;
+    }
+
+    // Windows handle types: internal struct pointer → proper typedef name
+    // e.g., HWND__* → HWND, HDC__* → HDC, etc.
+    private static readonly Dictionary<string, string> HandleTypeMap = new(StringComparer.Ordinal)
+    {
+        // Window/UI handles
+        { "HWND__*", "HWND" },
+        { "HDC__*", "HDC" },
+        { "HMENU__*", "HMENU" },
+        { "HICON__*", "HICON" },
+        { "HCURSOR__*", "HCURSOR" },
+        { "HBRUSH__*", "HBRUSH" },
+        { "HFONT__*", "HFONT" },
+        { "HPEN__*", "HPEN" },
+        { "HBITMAP__*", "HBITMAP" },
+        { "HRGN__*", "HRGN" },
+        { "HPALETTE__*", "HPALETTE" },
+        { "HACCEL__*", "HACCEL" },
+        { "HDWP__*", "HDWP" },
+        { "HMONITOR__*", "HMONITOR" },
+
+        // GDI handles
+        { "HGDIOBJ__*", "HGDIOBJ" },
+        { "HMETAFILE__*", "HMETAFILE" },
+        { "HENHMETAFILE__*", "HENHMETAFILE" },
+        { "HCOLORSPACE__*", "HCOLORSPACE" },
+        { "HGLRC__*", "HGLRC" },
+
+        // System handles
+        { "HINSTANCE__*", "HINSTANCE" },
+        { "HMODULE__*", "HMODULE" },
+        { "HKEY__*", "HKEY" },
+        { "HDESK__*", "HDESK" },
+        { "HWINSTA__*", "HWINSTA" },
+        { "HTASK__*", "HTASK" },
+        { "HFILE__*", "HFILE" },
+        { "HRSRC__*", "HRSRC" },
+        { "HGLOBAL__*", "HGLOBAL" },
+        { "HLOCAL__*", "HLOCAL" },
+        { "HDPA__*", "HDPA" },
+        { "HDSA__*", "HDSA" },
+
+        // Service/event/device handles
+        { "SC_HANDLE__*", "SC_HANDLE" },
+        { "SERVICE_STATUS_HANDLE__*", "SERVICE_STATUS_HANDLE" },
+        { "HDEVINFO__*", "HDEVINFO" },
+        { "HDEVNOTIFY__*", "HDEVNOTIFY" },
+        { "HPOWERNOTIFY__*", "HPOWERNOTIFY" },
+
+        // Multimedia handles
+        { "HWAVEOUT__*", "HWAVEOUT" },
+        { "HWAVEIN__*", "HWAVEIN" },
+        { "HMIDIOUT__*", "HMIDIOUT" },
+        { "HMIDIIN__*", "HMIDIIN" },
+        { "HMIXER__*", "HMIXER" },
+
+        // Imaging/print
+        { "HIMAGELIST__*", "HIMAGELIST" },
+        { "HDROP__*", "HDROP" },
+        { "HPROPSHEETPAGE__*", "HPROPSHEETPAGE" },
+
+        // Common controls
+        { "HTREEITEM__*", "HTREEITEM" },
+
+        // Crypto
+        { "HCERTSTORE__*", "HCERTSTORE" },
+        { "HCRYPTPROV__*", "HCRYPTPROV" },
+    };
+
+    /// <summary>
+    /// Get parameter types from a function's FunctionType (works with public PDBs).
+    /// The function symbol's TypeIndex → FunctionType → children = FunctionArgType → actual type.
+    /// Returns param types without names (public PDBs don't have param names).
+    /// </summary>
+    private List<(string Name, string Type)> GetFunctionTypeParams(ulong modBase, uint funcSymTypeIndex)
+    {
+        var result = new List<(string, string)>();
+        LogMessage?.Invoke($"  FuncType fallback: typeIndex={funcSymTypeIndex}");
+
+        if (funcSymTypeIndex == 0)
+        {
+            LogMessage?.Invoke("  FuncType fallback: typeIndex=0, no type info in PDB");
+            return result;
+        }
+
+        uint funcTypeId = funcSymTypeIndex;
+
+        IntPtr buf = Marshal.AllocHGlobal(8);
+        try
+        {
+            // Check tag of funcSymTypeIndex
+            if (!DbgHelpNative.SymGetTypeInfo(_hProcess, modBase, funcSymTypeIndex,
+                DbgHelpNative.TI_GET_SYMTAG, buf))
+            {
+                LogMessage?.Invoke($"  FuncType fallback: TI_GET_SYMTAG failed err={Marshal.GetLastWin32Error()}");
+                return result;
+            }
+            uint tag = (uint)Marshal.ReadInt32(buf);
+            LogMessage?.Invoke($"  FuncType fallback: symTag={tag} (need 13=FunctionType)");
+
+            if (tag != DbgHelpNative.SymTagFunctionType)
+            {
+                // Chase TI_GET_TYPE to get the FunctionType
+                if (!DbgHelpNative.SymGetTypeInfo(_hProcess, modBase, funcSymTypeIndex,
+                    DbgHelpNative.TI_GET_TYPE, buf))
+                {
+                    LogMessage?.Invoke($"  FuncType fallback: TI_GET_TYPE failed err={Marshal.GetLastWin32Error()}");
+                    return result;
+                }
+                funcTypeId = (uint)Marshal.ReadInt32(buf);
+                LogMessage?.Invoke($"  FuncType fallback: chased to funcTypeId={funcTypeId}");
+
+                // Verify tag of chased type
+                if (DbgHelpNative.SymGetTypeInfo(_hProcess, modBase, funcTypeId,
+                    DbgHelpNative.TI_GET_SYMTAG, buf))
+                {
+                    uint chasedTag = (uint)Marshal.ReadInt32(buf);
+                    LogMessage?.Invoke($"  FuncType fallback: chased tag={chasedTag}");
+                }
+            }
+
+            // Get children count (= number of parameters)
+            if (!DbgHelpNative.SymGetTypeInfo(_hProcess, modBase, funcTypeId,
+                DbgHelpNative.TI_GET_CHILDRENCOUNT, buf))
+            {
+                LogMessage?.Invoke($"  FuncType fallback: TI_GET_CHILDRENCOUNT failed err={Marshal.GetLastWin32Error()}");
+                return result;
+            }
+            int childCount = Marshal.ReadInt32(buf);
+            LogMessage?.Invoke($"  FuncType fallback: childCount={childCount}");
+            if (childCount <= 0) return result;
+
+            LogMessage?.Invoke($"  FunctionType: typeId={funcTypeId} childCount={childCount}");
+
+            // Allocate TI_FINDCHILDREN_PARAMS: { ULONG Count, ULONG Start, ULONG ChildId[Count] }
+            int paramsSize = 8 + 4 * childCount; // 2 ULONGs header + Count ULONGs
+            IntPtr findBuf = Marshal.AllocHGlobal(paramsSize);
+            try
+            {
+                Marshal.WriteInt32(findBuf, 0, childCount); // Count
+                Marshal.WriteInt32(findBuf, 4, 0);          // Start
+
+                if (!DbgHelpNative.SymGetTypeInfo(_hProcess, modBase, funcTypeId,
+                    DbgHelpNative.TI_FINDCHILDREN, findBuf))
+                {
+                    LogMessage?.Invoke($"  FunctionType: TI_FINDCHILDREN failed err={Marshal.GetLastWin32Error()}");
+                    return result;
+                }
+
+                // Each child is a FunctionArgType — get its underlying type
+                for (int i = 0; i < childCount; i++)
+                {
+                    uint childTypeId = (uint)Marshal.ReadInt32(findBuf, 8 + 4 * i);
+
+                    // FunctionArgType → TI_GET_TYPE gives the actual parameter type
+                    uint paramTypeId = childTypeId;
+                    if (DbgHelpNative.SymGetTypeInfo(_hProcess, modBase, childTypeId,
+                        DbgHelpNative.TI_GET_SYMTAG, buf))
+                    {
+                        uint childTag = (uint)Marshal.ReadInt32(buf);
+                        if (childTag == DbgHelpNative.SymTagFunctionArgType)
+                        {
+                            if (DbgHelpNative.SymGetTypeInfo(_hProcess, modBase, childTypeId,
+                                DbgHelpNative.TI_GET_TYPE, buf))
+                                paramTypeId = (uint)Marshal.ReadInt32(buf);
+                        }
+                    }
+
+                    string? typeName = ResolveTypeNameFromIndex(modBase, paramTypeId, 0);
+                    // Generate placeholder name since public PDB has no param names
+                    string paramName = $"a{i + 1}";
+                    result.Add((paramName, typeName ?? "int64_t"));
+                }
+            }
+            finally { Marshal.FreeHGlobal(findBuf); }
+        }
+        finally { Marshal.FreeHGlobal(buf); }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Recursively resolve a PDB type index to a human-readable type name.
+    /// Handles typedefs (HWND), pointers (PVOID), UDTs (structs), base types (int), etc.
+    /// </summary>
+    private string? ResolveTypeNameFromIndex(ulong modBase, uint typeIndex, int depth)
+    {
+        if (depth > 10 || typeIndex == 0) return null;
+
+        // Get the tag (what kind of type is this?)
+        IntPtr tagBuf = Marshal.AllocHGlobal(4);
+        uint symTag;
+        try
+        {
+            if (!DbgHelpNative.SymGetTypeInfo(_hProcess, modBase, typeIndex,
+                DbgHelpNative.TI_GET_SYMTAG, tagBuf))
+            {
+                int err = Marshal.GetLastWin32Error();
+                if (depth == 0)
+                    LogMessage?.Invoke($"  ResolveType: TI_GET_SYMTAG FAILED typeIdx={typeIndex} err={err}");
+                return null;
+            }
+            symTag = (uint)Marshal.ReadInt32(tagBuf);
+            if (depth == 0)
+                LogMessage?.Invoke($"  ResolveType: typeIdx={typeIndex} tag={symTag}");
+        }
+        finally { Marshal.FreeHGlobal(tagBuf); }
+
+        switch (symTag)
+        {
+            case DbgHelpNative.SymTagTypedef:
+            {
+                // Typedef — get the typedef name (e.g., "HWND", "LPARAM", "BOOL")
+                string? name = GetTypeSymName(modBase, typeIndex);
+                if (name != null) return name;
+                // Fallback: chase underlying type
+                uint underType = GetUnderlyingTypeIndex(modBase, typeIndex);
+                return ResolveTypeNameFromIndex(modBase, underType, depth + 1);
+            }
+
+            case DbgHelpNative.SymTagPointerType:
+            {
+                // Pointer — resolve pointee and append "*"
+                uint pointeeType = GetUnderlyingTypeIndex(modBase, typeIndex);
+                string? pointee = ResolveTypeNameFromIndex(modBase, pointeeType, depth + 1);
+                if (pointee == null) return null;
+                string ptrType = pointee + "*";
+                // Map Windows handle pseudo-struct pointers to proper typedefs
+                return HandleTypeMap.TryGetValue(ptrType, out string? handleName) ? handleName : ptrType;
+            }
+
+            case DbgHelpNative.SymTagBaseType:
+            {
+                // Basic type — map to C type name
+                return ResolveBaseType(modBase, typeIndex);
+            }
+
+            case DbgHelpNative.SymTagUDT:
+            case DbgHelpNative.SymTagEnum:
+            {
+                // Struct/union/enum — get name
+                return GetTypeSymName(modBase, typeIndex);
+            }
+
+            case DbgHelpNative.SymTagArrayType:
+            {
+                uint elemType = GetUnderlyingTypeIndex(modBase, typeIndex);
+                string? elem = ResolveTypeNameFromIndex(modBase, elemType, depth + 1);
+                return elem != null ? elem + "[]" : null;
+            }
+
+            case DbgHelpNative.SymTagFunctionType:
+                return null; // function pointers are too complex to represent simply
+
+            default:
+                return null;
+        }
+    }
+
+    private string? GetTypeSymName(ulong modBase, uint typeIndex)
+    {
+        IntPtr nameBuf = Marshal.AllocHGlobal(8); // pointer-sized
+        try
+        {
+            if (!DbgHelpNative.SymGetTypeInfo(_hProcess, modBase, typeIndex,
+                DbgHelpNative.TI_GET_SYMNAME, nameBuf))
+                return null;
+
+            IntPtr namePtr = Marshal.ReadIntPtr(nameBuf);
+            if (namePtr == IntPtr.Zero) return null;
+
+            string? name = Marshal.PtrToStringUni(namePtr);
+            DbgHelpNative.LocalFree(namePtr); // TI_GET_SYMNAME allocates with LocalAlloc
+            return string.IsNullOrEmpty(name) ? null : name;
+        }
+        finally { Marshal.FreeHGlobal(nameBuf); }
+    }
+
+    private uint GetUnderlyingTypeIndex(ulong modBase, uint typeIndex)
+    {
+        IntPtr buf = Marshal.AllocHGlobal(4);
+        try
+        {
+            if (!DbgHelpNative.SymGetTypeInfo(_hProcess, modBase, typeIndex,
+                DbgHelpNative.TI_GET_TYPE, buf))
+                return 0;
+            return (uint)Marshal.ReadInt32(buf);
+        }
+        finally { Marshal.FreeHGlobal(buf); }
+    }
+
+    private string? ResolveBaseType(ulong modBase, uint typeIndex)
+    {
+        IntPtr btBuf = Marshal.AllocHGlobal(4);
+        IntPtr lenBuf = Marshal.AllocHGlobal(8);
+        try
+        {
+            if (!DbgHelpNative.SymGetTypeInfo(_hProcess, modBase, typeIndex,
+                DbgHelpNative.TI_GET_BASETYPE, btBuf))
+                return null;
+            uint bt = (uint)Marshal.ReadInt32(btBuf);
+
+            DbgHelpNative.SymGetTypeInfo(_hProcess, modBase, typeIndex,
+                DbgHelpNative.TI_GET_LENGTH, lenBuf);
+            ulong len = (ulong)Marshal.ReadInt64(lenBuf);
+
+            return bt switch
+            {
+                DbgHelpNative.btVoid => "void",
+                DbgHelpNative.btChar => "char",
+                DbgHelpNative.btWChar => "wchar_t",
+                DbgHelpNative.btBool => "BOOL",
+                DbgHelpNative.btInt => len switch
+                {
+                    1 => "int8_t",
+                    2 => "short",
+                    4 => "int",
+                    8 => "int64_t",
+                    _ => $"int{len * 8}_t"
+                },
+                DbgHelpNative.btUInt => len switch
+                {
+                    1 => "uint8_t",
+                    2 => "uint16_t",
+                    4 => "uint32_t",
+                    8 => "uint64_t",
+                    _ => $"uint{len * 8}_t"
+                },
+                DbgHelpNative.btFloat => len == 4 ? "float" : "double",
+                DbgHelpNative.btLong => len == 4 ? "LONG" : "int64_t",
+                DbgHelpNative.btULong => len == 4 ? "ULONG" : "uint64_t",
+                DbgHelpNative.btHresult => "HRESULT",
+                _ => null
+            };
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(btBuf);
+            Marshal.FreeHGlobal(lenBuf);
+        }
+    }
+
     public void ClearCache() => _symbolCache.Clear();
 
     public void Reset()

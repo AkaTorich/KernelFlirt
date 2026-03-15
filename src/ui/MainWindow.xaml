@@ -4,6 +4,7 @@
         xmlns:vm="clr-namespace:KernelFlirt.UI.ViewModels"
         xmlns:conv="clr-namespace:KernelFlirt.UI.Converters"
         xmlns:ctrl="clr-namespace:KernelFlirt.UI.Controls"
+        xmlns:ae="http://icsharpcode.net/sharpdevelop/avalonedit"
         Title="KernelFlirt - Kernel Debugger"
         Width="1400" Height="900"
         WindowStartupLocation="CenterScreen"
@@ -747,20 +748,16 @@
                                        Visibility="{Binding IsDecompiling, Converter={StaticResource BoolVisConv}}" />
                         </StackPanel>
                     </Border>
-                    <RichTextBox x:Name="DecompilerOutput"
-                                 IsReadOnly="True"
-                                 FontFamily="Consolas" FontSize="13"
-                                 Background="{StaticResource BgBrush}"
-                                 Foreground="{StaticResource FgBrush}"
-                                 BorderBrush="{StaticResource BorderBrush}"
-                                 VerticalScrollBarVisibility="Auto"
-                                 HorizontalScrollBarVisibility="Auto">
-                        <RichTextBox.ContextMenu>
-                            <ContextMenu>
-                                <MenuItem Header="Copy All" Click="OnDecompilerCopyAll" />
-                            </ContextMenu>
-                        </RichTextBox.ContextMenu>
-                    </RichTextBox>
+                    <ae:TextEditor x:Name="DecompilerOutput"
+                                   IsReadOnly="True"
+                                   FontFamily="Consolas" FontSize="13"
+                                   Background="{StaticResource BgBrush}"
+                                   Foreground="{StaticResource FgBrush}"
+                                   BorderBrush="{StaticResource BorderBrush}"
+                                   VerticalScrollBarVisibility="Auto"
+                                   HorizontalScrollBarVisibility="Auto"
+                                   ShowLineNumbers="True"
+                                   WordWrap="False" />
                 </DockPanel>
             </TabItem>
 
