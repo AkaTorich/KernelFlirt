@@ -65,6 +65,7 @@ public class ThemidaPanel : ScrollViewer
         TextGuarded,                // PAGE_NOACCESS on .text — waiting for execute access = OEP
         TextStepRearm,              // Single-stepping past a read/write AV, will re-arm PAGE_NOACCESS
         OepStepThrough,             // Execute AV suppressed, waiting for SingleStep to break at OEP
+        IatTracing,                 // Runtime IAT tracing — single-stepping through .themida wrappers
         Done
     }
 
@@ -96,6 +97,17 @@ public class ThemidaPanel : ScrollViewer
     // IAT fix results
     private List<IatFixEntry> _iatFixes = new();
     private record IatFixEntry(ulong IatSlotAddress, ulong OriginalValue, ulong ResolvedApi, string DllName, string ApiName);
+
+    // Runtime IAT tracer state
+    private Queue<(ulong SlotAddress, ulong WrapperAddress, string DllName)> _iatTraceQueue = new();
+    private ulong _iatTraceCurrentSlot;
+    private ulong _iatTraceCurrentWrapper;
+    private string _iatTraceCurrentDll = "";
+    private ulong _iatTraceOriginalRip;
+    private int _iatTraceStepCount;
+    private const int IAT_TRACE_MAX_STEPS = 500_000;
+    private uint? _iatTraceHwBpHandle;
+    private List<(ulong BaseAddress, ulong End, string Name)>? _iatTraceModuleRanges;
 
     // Settings
     public CheckBox ChkAutoUnpack { get; }
@@ -878,21 +890,41 @@ public class ThemidaPanel : ScrollViewer
             }
         }
 
+        // Read checkbox state from UI thread
+        bool doStolenBytes = false, doIatFix = false;
+        Dispatcher.Invoke(() =>
+        {
+            doStolenBytes = ChkRestoreStolenBytes.IsChecked == true;
+            doIatFix = ChkFixIat.IsChecked == true;
+        });
+
         // Stolen bytes
-        if (ChkRestoreStolenBytes.IsChecked == true && code != null)
+        if (doStolenBytes && code != null)
         {
             _stolenBytesSize = DetectAndRestoreStolenBytes(pid, oepAddr, code);
         }
 
         // Auto IAT fix
-        if (ChkFixIat.IsChecked == true)
+        if (doIatFix)
         {
             _api.Log.Info("[Themida] Auto-fixing IAT...");
             FixIatInternal(pid);
         }
 
-        _phase = UnpackPhase.Done;
+        // If runtime IAT tracing was started, it will call FinishOepNotification() when done.
+        // Otherwise, finish immediately.
+        if (_phase == UnpackPhase.IatTracing)
+            return; // async — will complete via OnDebugEventFilter
 
+        _phase = UnpackPhase.Done;
+        FinishOepNotification();
+    }
+
+    /// <summary>
+    /// Complete OEP notification — called directly or after async IAT tracing finishes.
+    /// </summary>
+    private void FinishOepNotification()
+    {
         string status = $"★ UNPACKED!\nOEP: 0x{_discoveredOep:X}\nPE Base: 0x{_unpackedPeBase:X}";
         if (_stolenBytesSize > 0) status += $"\nStolen bytes: {_stolenBytesSize} restored";
         else if (_stolenBytesSize < 0) status += "\nStolen bytes: entry virtualized";
@@ -914,7 +946,9 @@ public class ThemidaPanel : ScrollViewer
 
     private void OnBeforeRun()
     {
-        if (ChkAutoUnpack.IsChecked != true) return;
+        bool autoUnpack = false;
+        Dispatcher.Invoke(() => autoUnpack = ChkAutoUnpack.IsChecked == true);
+        if (!autoUnpack) return;
         if (!_api.IsBreakState || _api.TargetPid == 0) return;
         if (_phase != UnpackPhase.Idle) return;
         if (_originalTextBase != 0)
@@ -1036,6 +1070,111 @@ public class ThemidaPanel : ScrollViewer
             }
 
             return true; // continue silently
+        }
+
+        // ══════ Runtime IAT tracing: single-step / HW BP through .themida wrappers ══════
+        if (_phase == UnpackPhase.IatTracing)
+        {
+            bool isHwBp = evt.Type == PluginDebugEventType.HwBreakpoint;
+            bool isSingleStep = evt.Type == PluginDebugEventType.SingleStep;
+
+            if (!isHwBp && !isSingleStep)
+                return false; // not our event
+
+            uint tid = evt.ThreadId;
+
+            // Check if we hit the jmp rax breakpoint
+            if (isHwBp && rip == _bootJmpRaxAddr)
+            {
+                // Read RAX — contains the resolved real API address
+                var regs = _api.Memory.ReadRegisters(pid, tid);
+                ulong rax = GetReg(regs, _is64 ? "RAX" : "EAX");
+
+                if (rax != 0 && _iatTraceModuleRanges != null &&
+                    IsRealApiAddress(rax, _iatTraceModuleRanges))
+                {
+                    // Resolved! Write real address to IAT slot and record
+                    string apiName = _api.Symbols.ResolveAddress(rax) ?? $"0x{rax:X}";
+                    string dllName = _iatTraceCurrentDll;
+
+                    // Try to get DLL name from resolved symbol (e.g. "kernel32!CreateFileW")
+                    if (apiName.Contains('!'))
+                    {
+                        var parts = apiName.Split('!', 2);
+                        dllName = parts[0];
+                        apiName = parts[1];
+                    }
+                    else
+                    {
+                        var mod = _iatTraceModuleRanges.FirstOrDefault(m => rax >= m.BaseAddress && rax < m.End);
+                        if (mod.Name != null) dllName = mod.Name;
+                    }
+
+                    byte[] fix = _is64 ? BitConverter.GetBytes(rax) : BitConverter.GetBytes((uint)rax);
+                    _api.Memory.WriteMemory(pid, _iatTraceCurrentSlot, fix);
+                    _iatFixes.Add(new IatFixEntry(_iatTraceCurrentSlot, _iatTraceCurrentWrapper, rax, dllName, apiName));
+
+                    if (_iatFixes.Count <= 20 || _iatFixes.Count % 50 == 0)
+                        _api.Log.Info($"[IAT Trace] #{_iatFixes.Count}: {dllName}!{apiName} (0x{rax:X}) [{_iatTraceStepCount} steps]");
+                }
+                else
+                {
+                    _api.Log.Warning($"[IAT Trace] jmp rax hit but RAX=0x{rax:X} is not a valid API — skipping slot 0x{_iatTraceCurrentSlot:X}");
+                }
+
+                // Move to next wrapper
+                TraceNextIatSlot(pid, tid);
+                return true;
+            }
+
+            // Single-step mode (fallback or HW BP not set)
+            if (isSingleStep)
+            {
+                _iatTraceStepCount++;
+
+                // Check if RIP is now in a real DLL module
+                if (_iatTraceModuleRanges != null && IsRealApiAddress(rip, _iatTraceModuleRanges))
+                {
+                    // Found the API!
+                    string apiName = _api.Symbols.ResolveAddress(rip) ?? $"0x{rip:X}";
+                    string dllName = _iatTraceCurrentDll;
+                    if (apiName.Contains('!'))
+                    {
+                        var parts = apiName.Split('!', 2);
+                        dllName = parts[0];
+                        apiName = parts[1];
+                    }
+                    else
+                    {
+                        var mod = _iatTraceModuleRanges.FirstOrDefault(m => rip >= m.BaseAddress && rip < m.End);
+                        if (mod.Name != null) dllName = mod.Name;
+                    }
+
+                    byte[] fix = _is64 ? BitConverter.GetBytes(rip) : BitConverter.GetBytes((uint)rip);
+                    _api.Memory.WriteMemory(pid, _iatTraceCurrentSlot, fix);
+                    _iatFixes.Add(new IatFixEntry(_iatTraceCurrentSlot, _iatTraceCurrentWrapper, rip, dllName, apiName));
+
+                    if (_iatFixes.Count <= 20 || _iatFixes.Count % 50 == 0)
+                        _api.Log.Info($"[IAT Trace] #{_iatFixes.Count}: {dllName}!{apiName} [{_iatTraceStepCount} steps]");
+
+                    TraceNextIatSlot(pid, tid);
+                    return true;
+                }
+
+                // Check step limit
+                if (_iatTraceStepCount >= IAT_TRACE_MAX_STEPS)
+                {
+                    _api.Log.Warning($"[IAT Trace] Exceeded {IAT_TRACE_MAX_STEPS} steps for slot 0x{_iatTraceCurrentSlot:X} — skipping");
+                    TraceNextIatSlot(pid, tid);
+                    return true;
+                }
+
+                // Continue single-stepping
+                _api.SingleStep();
+                return true;
+            }
+
+            return true; // swallow unexpected events during tracing
         }
 
         // ══════ Legacy phases (DecompDetecting, WaitingForApiCall) ══════
@@ -1338,7 +1477,7 @@ public class ThemidaPanel : ScrollViewer
         var importData = _api.Memory.ReadMemory(pid, peBase + importRva, 0x2000);
         if (importData == null) return;
 
-        int totalFixed = 0, totalRedirected = 0;
+        int totalRedirected = 0;
 
         for (int i = 0; i + 20 <= importData.Length; i += 20)
         {
@@ -1378,40 +1517,137 @@ public class ThemidaPanel : ScrollViewer
                 if (!isLegit)
                 {
                     totalRedirected++;
-                    ulong resolved = TraceThemidaWrapper(pid, iatEntry, moduleRanges);
-                    if (resolved != 0)
-                    {
-                        string apiName = _api.Symbols.ResolveAddress(resolved) ?? $"0x{resolved:X}";
-                        ulong slot = peBase + firstThunk + (ulong)j;
-                        byte[] fix = is64 ? BitConverter.GetBytes(resolved) : BitConverter.GetBytes((uint)resolved);
-                        if (_api.Memory.WriteMemory(pid, slot, fix))
-                        {
-                            _iatFixes.Add(new IatFixEntry(slot, iatEntry, resolved, dllName, apiName));
-                            totalFixed++;
-                        }
-                    }
+                    ulong slot = peBase + firstThunk + (ulong)j;
+                    _iatTraceQueue.Enqueue((slot, iatEntry, dllName));
                 }
             }
         }
 
         // Also brute-force scan .rdata for additional redirected pointers
         // (Themida API-wrapping puts extra thunks outside import directory)
-        int bfFixed = ScanAndFixIatBruteForce(pid, peBase, is64, moduleRanges);
-        totalFixed += bfFixed;
+        ScanAndFixIatBruteForce(pid, peBase, is64, moduleRanges);
 
-        if (totalRedirected > 0 || bfFixed > 0)
+        if (_iatTraceQueue.Count > 0 && _bootJmpRaxAddr != 0)
         {
-            _api.Log.Warning($"[IAT] {totalRedirected} redirected in import dir, {totalFixed} total fixed (incl. brute-force)");
-            foreach (var fix in _iatFixes.Take(15))
+            _api.Log.Warning($"[IAT] {_iatTraceQueue.Count} Themida-wrapped imports found — starting runtime trace via jmp rax at 0x{_bootJmpRaxAddr:X}");
+            _iatTraceModuleRanges = moduleRanges;
+            StartIatRuntimeTrace(pid);
+            return; // will continue asynchronously via OnDebugEventFilter
+        }
+
+        if (_iatTraceQueue.Count > 0)
+        {
+            _api.Log.Warning($"[IAT] {_iatTraceQueue.Count} Themida-wrapped imports but no jmp rax found — cannot runtime trace");
+            _iatTraceQueue.Clear();
+        }
+
+        FinishIatFix();
+    }
+
+    /// <summary>
+    /// Start runtime IAT tracing: set HW BP on jmp rax, redirect RIP to first wrapper.
+    /// </summary>
+    private void StartIatRuntimeTrace(uint pid)
+    {
+        uint tid = _api.SelectedThreadId;
+
+        // Save original RIP to restore when done
+        var regs = _api.Memory.ReadRegisters(pid, tid);
+        _iatTraceOriginalRip = GetReg(regs, _is64 ? "RIP" : "EIP");
+
+        // Set HW execute breakpoint on jmp rax in .boot
+        _iatTraceHwBpHandle = _api.Breakpoints.SetBreakpoint(pid, tid, _bootJmpRaxAddr,
+            PluginBreakpointType.Hardware, 1);
+        if (_iatTraceHwBpHandle == null)
+        {
+            _api.Log.Error("[IAT Trace] Failed to set HW breakpoint on jmp rax — falling back to single-step mode");
+        }
+
+        _phase = UnpackPhase.IatTracing;
+        TraceNextIatSlot(pid, tid);
+    }
+
+    /// <summary>
+    /// Start tracing the next IAT wrapper in the queue.
+    /// </summary>
+    private void TraceNextIatSlot(uint pid, uint tid)
+    {
+        if (_iatTraceQueue.Count == 0)
+        {
+            // All done — finish up
+            FinishIatRuntimeTrace(pid, tid);
+            return;
+        }
+
+        var (slot, wrapper, dll) = _iatTraceQueue.Dequeue();
+        _iatTraceCurrentSlot = slot;
+        _iatTraceCurrentWrapper = wrapper;
+        _iatTraceCurrentDll = dll;
+        _iatTraceStepCount = 0;
+
+        // Redirect RIP to the wrapper address
+        _api.Memory.WriteRip(pid, tid, wrapper);
+
+        if (_iatTraceHwBpHandle != null)
+        {
+            // HW BP mode — just continue, will hit jmp rax
+            _api.Continue();
+        }
+        else
+        {
+            // Fallback: single-step mode
+            _api.SingleStep();
+        }
+    }
+
+    /// <summary>
+    /// Finish runtime IAT tracing — restore state, report results.
+    /// </summary>
+    private void FinishIatRuntimeTrace(uint pid, uint tid)
+    {
+        // Remove HW breakpoint
+        if (_iatTraceHwBpHandle != null)
+        {
+            _api.Breakpoints.RemoveBreakpoint(_iatTraceHwBpHandle.Value);
+            _iatTraceHwBpHandle = null;
+        }
+
+        // Restore original RIP
+        if (_iatTraceOriginalRip != 0)
+            _api.Memory.WriteRip(pid, tid, _iatTraceOriginalRip);
+
+        _iatTraceModuleRanges = null;
+        _phase = UnpackPhase.Done;
+        FinishIatFix();
+
+        // Complete the OEP flow (status, UI refresh) that was deferred
+        FinishOepNotification();
+    }
+
+    /// <summary>
+    /// Report IAT fix results.
+    /// </summary>
+    private void FinishIatFix()
+    {
+        if (_iatFixes.Count > 0)
+        {
+            _api.Log.Warning($"[IAT] ★ {_iatFixes.Count} imports resolved");
+            foreach (var fix in _iatFixes.Take(20))
                 _api.Log.Info($"  {fix.DllName}!{fix.ApiName} → 0x{fix.ResolvedApi:X}");
-            if (_iatFixes.Count > 15)
-                _api.Log.Info($"  ... and {_iatFixes.Count - 15} more");
+            if (_iatFixes.Count > 20)
+                _api.Log.Info($"  ... and {_iatFixes.Count - 20} more");
         }
         else
         {
             _api.Log.Info("[IAT] All imports clean.");
         }
     }
+
+    /// <summary>
+    /// Check if target is a real API (in a DLL module, NOT in Themida/boot sections of the exe).
+    /// </summary>
+    private bool IsRealApiAddress(ulong target, List<(ulong BaseAddress, ulong End, string Name)> modules)
+        => IsInModule(target, modules) && !IsThemidaAddress(target);
 
     private ulong TraceThemidaWrapper(uint pid, ulong addr,
         List<(ulong BaseAddress, ulong End, string Name)> modules)
@@ -1431,7 +1667,7 @@ public class ThemidaPanel : ScrollViewer
             {
                 int rel = BitConverter.ToInt32(code, 1);
                 ulong target = current + 5 + (ulong)(long)rel;
-                if (IsInModule(target, modules)) return target;
+                if (IsRealApiAddress(target, modules)) return target;
                 current = target; continue;
             }
 
@@ -1452,7 +1688,7 @@ public class ThemidaPanel : ScrollViewer
                 if (p != null && p.Length == _ptrSize)
                 {
                     ulong target = _is64 ? BitConverter.ToUInt64(p) : BitConverter.ToUInt32(p);
-                    if (IsInModule(target, modules)) return target;
+                    if (IsRealApiAddress(target, modules)) return target;
                     current = target; continue;
                 }
                 return 0;
@@ -1466,7 +1702,7 @@ public class ThemidaPanel : ScrollViewer
             {
                 int rel = BitConverter.ToInt32(code, 1);
                 ulong target = current + 5 + (ulong)(long)rel;
-                if (IsInModule(target, modules)) return target;
+                if (IsRealApiAddress(target, modules)) return target;
                 current = target; continue;
             }
 
@@ -1475,7 +1711,7 @@ public class ThemidaPanel : ScrollViewer
                 code[10] == 0xFF && code[11] == 0xE0)
             {
                 ulong target = BitConverter.ToUInt64(code, 2);
-                if (IsInModule(target, modules)) return target;
+                if (IsRealApiAddress(target, modules)) return target;
                 current = target; continue;
             }
 
@@ -1484,7 +1720,7 @@ public class ThemidaPanel : ScrollViewer
                 code[10] == 0xFF && code[11] == 0xE3)
             {
                 ulong target = BitConverter.ToUInt64(code, 2);
-                if (IsInModule(target, modules)) return target;
+                if (IsRealApiAddress(target, modules)) return target;
                 current = target; continue;
             }
 
@@ -1493,7 +1729,7 @@ public class ThemidaPanel : ScrollViewer
                 code[5] == 0xFF && code[6] == 0xE0)
             {
                 ulong target = BitConverter.ToUInt32(code, 1);
-                if (IsInModule(target, modules)) return target;
+                if (IsRealApiAddress(target, modules)) return target;
                 current = target; continue;
             }
 
@@ -1501,7 +1737,7 @@ public class ThemidaPanel : ScrollViewer
             if (code[0] == 0x68 && code.Length >= 6 && code[5] == 0xC3)
             {
                 ulong target = BitConverter.ToUInt32(code, 1);
-                if (IsInModule(target, modules)) return target;
+                if (IsRealApiAddress(target, modules)) return target;
                 current = target; continue;
             }
 
@@ -1513,7 +1749,7 @@ public class ThemidaPanel : ScrollViewer
                 if (p is { Length: 4 })
                 {
                     ulong target = BitConverter.ToUInt32(p);
-                    if (IsInModule(target, modules)) return target;
+                    if (IsRealApiAddress(target, modules)) return target;
                 }
                 return 0;
             }
@@ -1545,11 +1781,11 @@ public class ThemidaPanel : ScrollViewer
         int fixedCount = 0;
         foreach (var sect in _sections)
         {
-            string nl = sect.Name.ToLowerInvariant();
+            string nl = sect.Name.Trim().ToLowerInvariant();
             // Scan data sections that might contain IAT
-            bool isDataSect = nl is ".rdata" or ".idata" or "________";
-            // For unnamed sections, check if it's a readable non-executable section
-            if (!isDataSect && sect.Name.TrimEnd('_') == "")
+            bool isDataSect = nl is ".rdata" or ".idata" or "________" or "";
+            // For any section with blank/unknown name, check characteristics
+            if (!isDataSect)
             {
                 bool isReadable = (sect.Characteristics & 0x40000000) != 0;
                 bool isExecutable = (sect.Characteristics & 0x20000000) != 0;
@@ -1570,26 +1806,22 @@ public class ThemidaPanel : ScrollViewer
                 if (IsInModule(ptr, moduleRanges) && !IsThemidaAddress(ptr)) continue;
                 if (ptr >= peBase && ptr < peBase + _originalImageSize && !IsThemidaAddress(ptr)) continue;
 
-                // Check if we already fixed this slot
+                // Check if we already fixed or queued this slot
                 ulong slotAddr = scanBase + (ulong)i;
                 if (_iatFixes.Any(f => f.IatSlotAddress == slotAddr)) continue;
+                if (_iatTraceQueue.Any(q => q.SlotAddress == slotAddr)) continue;
 
-                ulong resolved = TraceThemidaWrapper(pid, ptr, moduleRanges);
-                if (resolved != 0)
+                // Queue for runtime tracing instead of static trace
+                if (IsThemidaAddress(ptr))
                 {
-                    byte[] fix = is64 ? BitConverter.GetBytes(resolved) : BitConverter.GetBytes((uint)resolved);
-                    if (_api.Memory.WriteMemory(pid, slotAddr, fix))
-                    {
-                        string apiName = _api.Symbols.ResolveAddress(resolved) ?? $"0x{resolved:X}";
-                        _iatFixes.Add(new IatFixEntry(slotAddr, ptr, resolved, "?", apiName));
-                        fixedCount++;
-                    }
+                    _iatTraceQueue.Enqueue((slotAddr, ptr, "?"));
+                    fixedCount++;
                 }
             }
         }
 
         if (fixedCount > 0)
-            _api.Log.Info($"[IAT] Brute-force: {fixedCount} additional imports fixed");
+            _api.Log.Info($"[IAT] Brute-force: {fixedCount} additional Themida wrappers queued for runtime trace");
 
         return fixedCount;
     }
@@ -1707,6 +1939,55 @@ public class ThemidaPanel : ScrollViewer
         // Update section count
         Array.Copy(BitConverter.GetBytes((ushort)actual), 0, image, (int)lfanew + 6, 2);
 
+        // Restore section names and characteristics (Themida renames all to spaces)
+        // Like Magicmida: .text=R|X, .rdata=R, .data=R|W, .rsrc=R, others=R
+        for (int i = 0; i < actual; i++)
+        {
+            int soff = sectStart + i * 40;
+            if (soff + 40 > image.Length) break;
+            uint sRva = BitConverter.ToUInt32(image, soff + 12);
+            uint sChars = BitConverter.ToUInt32(image, soff + 36);
+            bool isExec = (sChars & 0x20000000) != 0; // IMAGE_SCN_MEM_EXECUTE
+            bool isWrite = (sChars & 0x80000000) != 0; // IMAGE_SCN_MEM_WRITE
+            bool hasCode = (sChars & 0x20) != 0;       // IMAGE_SCN_CNT_CODE
+
+            // Check current name — if it's all spaces or blank, rename
+            bool isBlank = true;
+            for (int c = 0; c < 8 && soff + c < image.Length; c++)
+                if (image[soff + c] != 0x20 && image[soff + c] != 0) { isBlank = false; break; }
+
+            if (isBlank)
+            {
+                string newName;
+                uint newChars;
+                if (isExec || hasCode)
+                {
+                    newName = ".text";
+                    newChars = 0x60000020; // R|X|CODE — remove WRITE
+                }
+                else if (isWrite)
+                {
+                    newName = ".data";
+                    newChars = 0xC0000040; // R|W|IDATA
+                }
+                else if (i == 0)
+                {
+                    newName = ".text";
+                    newChars = 0x60000020;
+                }
+                else
+                {
+                    newName = ".rdata";
+                    newChars = 0x40000040; // R|IDATA
+                }
+
+                byte[] nameBytes = new byte[8];
+                Encoding.ASCII.GetBytes(newName, 0, newName.Length, nameBytes, 0);
+                Array.Copy(nameBytes, 0, image, soff, 8);
+                Array.Copy(BitConverter.GetBytes(newChars), 0, image, soff + 36, 4);
+            }
+        }
+
         // Fix header fields
         Array.Copy(BitConverter.GetBytes(totalSize), 0, image, optOff + 56, 4); // SizeOfImage
         if (_is64)
@@ -1779,13 +2060,12 @@ public class ThemidaPanel : ScrollViewer
                 Array.Copy(_restoredStolenBytes, 0, image, oepOff, _restoredStolenBytes.Length);
         }
 
-        // Apply IAT fixes
+        // Apply IAT fixes (may append .import section, growing the image)
         if (ChkAutoFixDump.IsChecked == true)
-            ApplyIatFixesToImage(image, peBase);
-
-        // Trim to totalSize
-        if (totalSize < (uint)image.Length)
+            ApplyIatFixesToImage(ref image, peBase);
+        else if (totalSize < (uint)image.Length)
         {
+            // Only trim if we didn't rebuild imports (which grows the image)
             var trimmed = new byte[totalSize];
             Array.Copy(image, trimmed, totalSize);
             image = trimmed;
@@ -1891,31 +2171,348 @@ public class ThemidaPanel : ScrollViewer
         }
 
         if (ChkAutoFixDump.IsChecked == true)
-            ApplyIatFixesToImage(image, peBase);
+            ApplyIatFixesToImage(ref image, peBase);
 
         SaveDumpFile(image);
     }
 
-    private void ApplyIatFixesToImage(byte[] image, ulong peBase)
+    /// <summary>
+    /// Rebuild import table like Magicmida: create a new .import section with proper
+    /// import descriptors and hint/name entries. Replace IAT slots with RVAs to hint/name
+    /// so the OS loader can resolve them at load time.
+    /// </summary>
+    private void ApplyIatFixesToImage(ref byte[] image, ulong peBase)
     {
-        int applied = 0;
-        foreach (var fix in _iatFixes)
+        uint pid = _api.TargetPid;
+        var modules = _api.Symbols.GetModules();
+        var moduleRanges = modules.Select(m => (m.BaseAddress, End: m.BaseAddress + m.Size, m.Name)).ToList();
+
+        // Zero out all pointer-sized values in data sections that point to removed
+        // .themida/.boot sections. These are Themida IAT wrapper addresses that become
+        // dangling pointers after section removal, and confuse the PE loader.
+        int zeroedCount = 0;
+        foreach (var sect in _sections)
         {
-            if (fix.IatSlotAddress >= peBase && fix.IatSlotAddress < peBase + (ulong)image.Length)
+            string sn = sect.Name.Trim().ToLowerInvariant();
+            if (sn is ".themida" or "themida" or ".winlice" or "winlice" or ".boot" or "boot") continue;
+            bool isExec = (sect.Characteristics & 0x20000000) != 0;
+            if (isExec) continue; // skip code sections
+
+            uint scanBase = sect.Rva;
+            uint scanSize = Math.Min(sect.VirtualSize, 0x100000);
+            if (scanBase + scanSize > (uint)image.Length) scanSize = (uint)image.Length - scanBase;
+
+            for (uint i = 0; i + (uint)_ptrSize <= scanSize; i += (uint)_ptrSize)
             {
-                uint off = (uint)(fix.IatSlotAddress - peBase);
-                if (off + _ptrSize <= (uint)image.Length)
+                ulong val = _is64
+                    ? BitConverter.ToUInt64(image, (int)(scanBase + i))
+                    : BitConverter.ToUInt32(image, (int)(scanBase + i));
+                if (val == 0) continue;
+
+                bool inThemida = _themidaSectionBase != 0 && val >= _themidaSectionBase &&
+                                 val < _themidaSectionBase + _themidaSectionSize;
+                bool inBoot = _bootSectionBase != 0 && val >= _bootSectionBase &&
+                              val < _bootSectionBase + _bootSectionSize;
+                if (inThemida || inBoot)
                 {
-                    byte[] fixBytes = _is64
-                        ? BitConverter.GetBytes(fix.ResolvedApi)
-                        : BitConverter.GetBytes((uint)fix.ResolvedApi);
-                    Array.Copy(fixBytes, 0, image, off, _ptrSize);
-                    applied++;
+                    Array.Clear(image, (int)(scanBase + i), _ptrSize);
+                    zeroedCount++;
                 }
             }
         }
-        if (applied > 0)
-            _api.Log.Info($"[Dump] Applied {applied} IAT fixes");
+        if (zeroedCount > 0)
+            _api.Log.Info($"[Dump] Zeroed {zeroedCount} dangling .themida/.boot pointers in data sections");
+
+        // Collect ALL IAT entries from memory — both fixed and legitimate.
+        // We need to scan the sections that contain IAT pointers and resolve
+        // every runtime address to DLL!Function.
+        var allImports = new List<(ulong SlotRva, string DllName, string FuncName, bool IsOrdinal, ushort Ordinal)>();
+
+        // First: add everything from _iatFixes
+        foreach (var fix in _iatFixes)
+        {
+            if (fix.IatSlotAddress < peBase || fix.IatSlotAddress >= peBase + (ulong)image.Length) continue;
+            uint slotRva = (uint)(fix.IatSlotAddress - peBase);
+            string dllName = fix.DllName;
+            string funcName = fix.ApiName;
+
+            // ApiName may be "kernel32.dll!CreateFileW" format
+            if (funcName.Contains('!'))
+            {
+                var parts = funcName.Split('!', 2);
+                dllName = parts[0];
+                funcName = parts[1];
+            }
+            else if (dllName == "?" || string.IsNullOrEmpty(dllName))
+            {
+                // Try to find module from resolved address
+                var mod = moduleRanges.FirstOrDefault(m => fix.ResolvedApi >= m.BaseAddress && fix.ResolvedApi < m.End);
+                dllName = mod.Name ?? "unknown.dll";
+                if (!dllName.Contains('.')) dllName += ".dll";
+            }
+
+            // Check for ordinal (e.g. "Ordinal#123" or "#123")
+            bool isOrdinal = false;
+            ushort ordinal = 0;
+            if (funcName.StartsWith("Ordinal#") || funcName.StartsWith("#"))
+            {
+                string numStr = funcName.StartsWith("Ordinal#") ? funcName[8..] : funcName[1..];
+                if (ushort.TryParse(numStr, out ordinal))
+                    isOrdinal = true;
+            }
+
+            allImports.Add((slotRva, dllName.ToLowerInvariant(), funcName, isOrdinal, ordinal));
+        }
+
+        // Also scan for legitimate IAT entries that weren't in _iatFixes
+        // (these are already resolved API addresses that weren't Themida-wrapped)
+        foreach (var sect in _sections)
+        {
+            string nl = sect.Name.Trim().ToLowerInvariant();
+            bool isDataSect = nl is ".rdata" or ".idata" or "________" or "";
+            if (!isDataSect)
+            {
+                bool isReadable = (sect.Characteristics & 0x40000000) != 0;
+                bool isExecutable = (sect.Characteristics & 0x20000000) != 0;
+                if (isReadable && !isExecutable) isDataSect = true;
+            }
+            if (!isDataSect) continue;
+
+            uint scanBase = sect.Rva;
+            uint scanSize = Math.Min(sect.VirtualSize, 0x20000);
+            if (scanBase + scanSize > image.Length) scanSize = (uint)(image.Length - scanBase);
+
+            for (int i = 0; i + _ptrSize <= (int)scanSize; i += _ptrSize)
+            {
+                uint slotRva = scanBase + (uint)i;
+                // Skip if already in allImports
+                if (allImports.Any(a => a.SlotRva == slotRva)) continue;
+
+                ulong ptr = _is64
+                    ? BitConverter.ToUInt64(image, (int)slotRva)
+                    : BitConverter.ToUInt32(image, (int)slotRva);
+                if (ptr == 0 || ptr < 0x10000) continue;
+                if (_is64 && ptr > 0x7FFFFFFFFFFF) continue;
+
+                // Skip pointers into the target exe itself (internal data, not API imports)
+                if (ptr >= _originalImageBase && ptr < _originalImageBase + _originalImageSize) continue;
+
+                // Check if it's in a loaded module (= legitimate API address already in memory dump)
+                var mod = moduleRanges.FirstOrDefault(m => ptr >= m.BaseAddress && ptr < m.End);
+                if (mod.Name == null) continue;
+
+                // Resolve the address to a function name
+                string? resolved = _api.Symbols.ResolveAddress(ptr);
+                if (resolved == null) continue;
+
+                string dllName, funcName;
+                if (resolved.Contains('!'))
+                {
+                    var parts = resolved.Split('!', 2);
+                    dllName = parts[0].ToLowerInvariant();
+                    funcName = parts[1];
+                }
+                else
+                {
+                    dllName = mod.Name.ToLowerInvariant();
+                    funcName = resolved;
+                }
+
+                if (funcName.StartsWith("0x")) continue; // unresolved
+
+                bool isOrdinal = false;
+                ushort ordinal = 0;
+                if (funcName.StartsWith("Ordinal#") || funcName.StartsWith("#"))
+                {
+                    string numStr = funcName.StartsWith("Ordinal#") ? funcName[8..] : funcName[1..];
+                    if (ushort.TryParse(numStr, out ordinal))
+                        isOrdinal = true;
+                }
+
+                allImports.Add((slotRva, dllName, funcName, isOrdinal, ordinal));
+            }
+        }
+
+        if (allImports.Count == 0)
+        {
+            _api.Log.Warning("[Dump] No imports to rebuild");
+            return;
+        }
+
+        _api.Log.Info($"[Dump] Rebuilding import table with {allImports.Count} entries...");
+
+        // Group by DLL, preserving order of first appearance
+        var dllGroups = allImports
+            .GroupBy(i => i.DllName)
+            .Select(g => (DllName: g.Key, Imports: g.OrderBy(i => i.SlotRva).ToList()))
+            .ToList();
+
+        // Find contiguous IAT blocks per DLL (import descriptor needs FirstThunk = start of block)
+        // Split DLL groups into sub-groups where slots are contiguous
+        var thunks = new List<(string DllName, List<(ulong SlotRva, string FuncName, bool IsOrdinal, ushort Ordinal)> Entries)>();
+        foreach (var grp in dllGroups)
+        {
+            var current = new List<(ulong SlotRva, string FuncName, bool IsOrdinal, ushort Ordinal)>();
+            ulong lastSlot = 0;
+            foreach (var imp in grp.Imports)
+            {
+                if (current.Count > 0 && imp.SlotRva != lastSlot + (ulong)_ptrSize)
+                {
+                    // Gap — start new thunk block
+                    thunks.Add((grp.DllName, current));
+                    current = new();
+                }
+                current.Add((imp.SlotRva, imp.FuncName, imp.IsOrdinal, imp.Ordinal));
+                lastSlot = imp.SlotRva;
+            }
+            if (current.Count > 0)
+                thunks.Add((grp.DllName, current));
+        }
+
+        // Build the .import section data
+        // Layout: [Import Descriptors (thunks.Count+1)] [INT arrays] [DLL name strings + hint/name entries]
+        int descSize = (thunks.Count + 1) * 20; // IMAGE_IMPORT_DESCRIPTOR is 20 bytes, +1 for null terminator
+        int intArraysSize = thunks.Sum(t => (t.Entries.Count + 1) * _ptrSize); // +1 for null terminator each
+        int stringsEstimate = thunks.Sum(t => t.DllName.Length + 1 + t.Entries.Sum(e => e.FuncName.Length + 3)); // hint(2) + name + null
+        int sectionSize = ((descSize + intArraysSize + stringsEstimate + 0x200) + 0xFFF) & ~0xFFF;
+
+        // The new section goes right after current image
+        uint importSectRva = (uint)((image.Length + 0xFFF) & ~0xFFF);
+        var sectData = new byte[sectionSize];
+
+        int descOff = 0;
+        int intOff = descSize;
+        int strOff = descSize + intArraysSize;
+
+        for (int t = 0; t < thunks.Count; t++)
+        {
+            var thunk = thunks[t];
+
+            // Write DLL name string
+            uint dllNameRva = importSectRva + (uint)strOff;
+            byte[] dllNameBytes = Encoding.ASCII.GetBytes(thunk.DllName);
+            Array.Copy(dllNameBytes, 0, sectData, strOff, dllNameBytes.Length);
+            strOff += dllNameBytes.Length + 1; // null terminated
+
+            // Write import descriptor
+            uint oftRva = importSectRva + (uint)intOff; // OriginalFirstThunk → INT array
+            uint ftRva = (uint)thunk.Entries[0].SlotRva; // FirstThunk → actual IAT in image
+
+            // OriginalFirstThunk (INT) RVA
+            Array.Copy(BitConverter.GetBytes(oftRva), 0, sectData, descOff + 0, 4);
+            // TimeDateStamp = 0
+            // ForwarderChain = 0
+            // Name RVA
+            Array.Copy(BitConverter.GetBytes(dllNameRva), 0, sectData, descOff + 12, 4);
+            // FirstThunk (IAT) RVA
+            Array.Copy(BitConverter.GetBytes(ftRva), 0, sectData, descOff + 16, 4);
+            descOff += 20;
+
+            // Write INT entries and hint/name strings; also fix IAT slots in image
+            for (int e = 0; e < thunk.Entries.Count; e++)
+            {
+                var entry = thunk.Entries[e];
+
+                if (entry.IsOrdinal)
+                {
+                    // Ordinal import
+                    ulong ordVal = _is64
+                        ? 0x8000000000000000UL | entry.Ordinal
+                        : 0x80000000UL | entry.Ordinal;
+                    byte[] ordBytes = _is64 ? BitConverter.GetBytes(ordVal) : BitConverter.GetBytes((uint)ordVal);
+                    Array.Copy(ordBytes, 0, sectData, intOff, _ptrSize);
+                    // Also write to IAT slot in image
+                    if (entry.SlotRva + (ulong)_ptrSize <= (ulong)image.Length)
+                        Array.Copy(ordBytes, 0, image, (int)entry.SlotRva, _ptrSize);
+                }
+                else
+                {
+                    // Hint/Name import — write hint(2 bytes) + name string
+                    uint hintNameRva = importSectRva + (uint)strOff;
+                    // Hint = 0 (we don't know the real hint, loader will figure it out)
+                    strOff += 2;
+                    byte[] nameBytes = Encoding.ASCII.GetBytes(entry.FuncName);
+                    Array.Copy(nameBytes, 0, sectData, strOff, nameBytes.Length);
+                    strOff += nameBytes.Length + 1; // null terminated
+
+                    // INT entry = RVA to hint/name
+                    byte[] rvaBytes = _is64
+                        ? BitConverter.GetBytes((ulong)hintNameRva)
+                        : BitConverter.GetBytes((uint)hintNameRva);
+                    Array.Copy(rvaBytes, 0, sectData, intOff, _ptrSize);
+
+                    // IAT slot in image = same RVA (loader will overwrite with resolved address)
+                    if (entry.SlotRva + (ulong)_ptrSize <= (ulong)image.Length)
+                        Array.Copy(rvaBytes, 0, image, (int)entry.SlotRva, _ptrSize);
+                }
+
+                intOff += _ptrSize;
+            }
+            // Null terminator for INT array
+            intOff += _ptrSize;
+        }
+        // Last import descriptor is all-zeros (already zeroed)
+
+        // Resize section data to actual used size (page-aligned)
+        int actualUsed = ((strOff + 0xFFF) & ~0xFFF);
+        if (actualUsed > sectData.Length)
+        {
+            var bigger = new byte[actualUsed];
+            Array.Copy(sectData, bigger, sectData.Length);
+            sectData = bigger;
+        }
+
+        // Append import section to image
+        var newImage = new byte[importSectRva + actualUsed];
+        Array.Copy(image, 0, newImage, 0, image.Length);
+        Array.Copy(sectData, 0, newImage, importSectRva, Math.Min(actualUsed, sectData.Length));
+
+        // Update PE headers in newImage
+        uint lfanew = BitConverter.ToUInt32(newImage, 0x3C);
+        int optOff2 = (int)lfanew + 24;
+        ushort numSections = BitConverter.ToUInt16(newImage, (int)lfanew + 6);
+        ushort optSize = BitConverter.ToUInt16(newImage, (int)lfanew + 0x14);
+        int sectStart = (int)lfanew + 4 + 20 + optSize;
+
+        // Add .import section header
+        int newSectOff = sectStart + numSections * 40;
+        if (newSectOff + 40 <= 0x1000) // must fit in header
+        {
+            byte[] sectName = Encoding.ASCII.GetBytes(".import\0");
+            Array.Copy(sectName, 0, newImage, newSectOff, 8);
+            Array.Copy(BitConverter.GetBytes((uint)actualUsed), 0, newImage, newSectOff + 8, 4);  // VirtualSize
+            Array.Copy(BitConverter.GetBytes(importSectRva), 0, newImage, newSectOff + 12, 4);    // VirtualAddress
+            Array.Copy(BitConverter.GetBytes((uint)actualUsed), 0, newImage, newSectOff + 16, 4); // SizeOfRawData
+            Array.Copy(BitConverter.GetBytes(importSectRva), 0, newImage, newSectOff + 20, 4);    // PointerToRawData
+            uint sectChars = 0x40000000 | 0x00000040; // IMAGE_SCN_MEM_READ | IMAGE_SCN_CNT_INITIALIZED_DATA
+            Array.Copy(BitConverter.GetBytes(sectChars), 0, newImage, newSectOff + 36, 4);
+            numSections++;
+            Array.Copy(BitConverter.GetBytes(numSections), 0, newImage, (int)lfanew + 6, 2);
+        }
+
+        // Update SizeOfImage
+        uint newSizeOfImage = importSectRva + (uint)actualUsed;
+        Array.Copy(BitConverter.GetBytes(newSizeOfImage), 0, newImage, optOff2 + 56, 4);
+
+        // Update Import DataDirectory (DD[1])
+        int ddBase = optOff2 + (_is64 ? 112 : 96);
+        Array.Copy(BitConverter.GetBytes(importSectRva), 0, newImage, ddBase + 8, 4);                              // Import RVA
+        Array.Copy(BitConverter.GetBytes((uint)(thunks.Count * 20)), 0, newImage, ddBase + 12, 4);                 // Import Size
+
+        // Update IAT DataDirectory (DD[12]) — covers all IAT slots
+        uint iatStart = allImports.Min(i => (uint)i.SlotRva);
+        uint iatEnd = allImports.Max(i => (uint)i.SlotRva) + (uint)_ptrSize;
+        Array.Copy(BitConverter.GetBytes(iatStart), 0, newImage, ddBase + 12 * 8, 4);       // IAT RVA
+        Array.Copy(BitConverter.GetBytes(iatEnd - iatStart), 0, newImage, ddBase + 12 * 8 + 4, 4); // IAT Size
+
+        // Copy newImage back to image reference — caller needs the result
+        // Since we can't reassign ref, we resize image array in place
+        Array.Resize(ref image, newImage.Length);
+        Array.Copy(newImage, image, newImage.Length);
+
+        _api.Log.Info($"[Dump] Rebuilt import table: {thunks.Count} descriptors, {allImports.Count} imports, new .import section at RVA 0x{importSectRva:X}");
+        foreach (var grp in dllGroups.Take(10))
+            _api.Log.Info($"  {grp.DllName}: {grp.Imports.Count} imports");
     }
 
     private byte[] ReadImageChunked(uint pid, ulong baseAddr, uint totalSize)
