@@ -1,4 +1,9 @@
+// Themida Unpacker v5 — full Magicmida port for KernelFlirt
+// Ported from MagicmidaCSharp: OEP via PAGE_NOACCESS, IAT trace via ContinueMode=4,
+// full Dumper with import directory rebuild and forward resolution.
+
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -7,6 +12,10 @@ using KernelFlirt.SDK;
 using Iced.Intel;
 
 namespace ThemidaPlugin;
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Plugin entry point
+// ════════════════════════════════════════════════════════════════════════════
 
 public class ThemidaPlugin : IKernelFlirtPlugin
 {
@@ -30,6 +39,10 @@ public class ThemidaPlugin : IKernelFlirtPlugin
     public void Shutdown() { }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+//  Main panel — state machine, OEP detection, IAT tracing
+// ════════════════════════════════════════════════════════════════════════════
+
 public class ThemidaPanel : ScrollViewer
 {
     private readonly IDebuggerApi _api;
@@ -44,13 +57,16 @@ public class ThemidaPanel : ScrollViewer
     private ushort _majorLinkerVersion;
     private ulong _entryPointRva;
 
-    // Sections
-    private ulong _textBase, _textEnd;     // .text (first executable section)
-    private ulong _baseOfData;             // start of data (end of code)
-    private ulong _tmBase, _tmEnd;         // .themida / .winlice combined range
-    private ulong _bootBase, _bootEnd;     // .boot section
-    private List<SectionInfo> _sections = new();
-    private record SectionInfo(string Name, uint Rva, uint VirtualSize, uint Chars);
+    // Sections — from PE header
+    private ulong _textBase;        // first code section VA
+    private uint _textRva;          // first code section RVA
+    private uint _textVSize;        // first code section virtual size
+    private ulong _baseOfData;      // textBase + SizeOfCode (end of code region)
+    private ulong _tmBase, _tmEnd;  // .themida/.winlice combined range (for trace predicate)
+    private bool _isVmOep;
+    private List<PeSect> _sections = new();
+    private List<ulong> _guardAddrs = new(); // addresses accessed during guard phase (from Magicmida FGuardAddrs)
+    internal record PeSect(string Name, uint Rva, uint VirtualSize, uint Chars);
 
     // ── State machine ──
     private enum Phase { Idle, TextGuarded, TextStepRearm, OepStepThrough, IatTracing, Done }
@@ -62,15 +78,22 @@ public class ThemidaPanel : ScrollViewer
     private ulong _firstTextExecAddr;
     private ulong _oepAddr;
 
-    // IAT tracing
+    // IAT tracing (replaces Magicmida Tracer + TraceImports)
+    private RemoteDumper? _dumper;
     private ulong _iatBase;
-    private int _iatCount;              // number of pointer-sized slots
-    private ulong[] _iatData = [];      // local copy of IAT
-    private int _iatIdx;                // current slot being traced
-    private int _iatResolvedCount;
-    private int _iatFailedCount;
+    private int _iatCount;
+    private ulong[] _iatData = [];
+    private int _iatIdx;
+    private int _iatResolvedCount, _iatFailedCount;
     private ulong _savedRip, _savedRsp;
     private List<uint> _suspendedTids = new();
+    private bool _didSetExitProcess;
+
+    // TraceIsAtAPI state (Magicmida)
+    private ulong _sleepApi, _lstrlenApi;
+    private ulong _traceStartSP;
+    private bool _traceInVM;
+    private ulong _tracedAPI;
 
     // UI
     private TextBlock _statusText;
@@ -119,7 +142,7 @@ public class ThemidaPanel : ScrollViewer
     }
 
     // ════════════════════════════════════════════════════════════════
-    //  Detection
+    //  Detection — scan PE for .themida/.boot sections
     // ════════════════════════════════════════════════════════════════
 
     public void DetectProtector()
@@ -151,9 +174,13 @@ public class ThemidaPanel : ScrollViewer
         _majorLinkerVersion = hdr[(int)lfanew + 0x1A];
         _entryPointRva = BitConverter.ToUInt32(hdr, (int)lfanew + 0x28);
 
+        // SizeOfCode from optional header
+        uint sizeOfCode = BitConverter.ToUInt32(hdr, (int)lfanew + 0x1C);
+
         int sectOff = (int)lfanew + 4 + 20 + optSize;
         _sections.Clear();
-        _textBase = 0; _tmBase = 0; _bootBase = 0; _baseOfData = 0;
+        _textBase = 0; _tmBase = 0; _tmEnd = 0; _baseOfData = 0;
+        _textRva = 0; _textVSize = 0;
         bool foundTm = false;
 
         var sb = new StringBuilder();
@@ -168,7 +195,7 @@ public class ThemidaPanel : ScrollViewer
             uint rva = BitConverter.ToUInt32(hdr, o + 12);
             uint vsz = BitConverter.ToUInt32(hdr, o + 8);
             uint ch = BitConverter.ToUInt32(hdr, o + 36);
-            _sections.Add(new SectionInfo(name, rva, vsz, ch));
+            _sections.Add(new PeSect(name, rva, vsz, ch));
 
             string nl = name.ToLowerInvariant().Trim();
             ulong sBase = _imageBase + rva;
@@ -183,17 +210,19 @@ public class ThemidaPanel : ScrollViewer
             else if (nl is ".boot" or "boot")
             {
                 foundTm = true;
-                _bootBase = sBase; _bootEnd = sEnd;
-                // Include .boot in TM range for trace
                 if (_tmBase == 0) { _tmBase = sBase; _tmEnd = sEnd; }
                 else { _tmBase = Math.Min(_tmBase, sBase); _tmEnd = Math.Max(_tmEnd, sEnd); }
             }
-            else if (_textBase == 0 && (ch & 0x20000000) != 0) // first CODE section
+
+            // First code section = .text
+            if (_textBase == 0 && (ch & 0x20000000) != 0 &&
+                nl is not (".themida" or "themida" or ".winlice" or "winlice" or ".boot" or "boot"))
             {
                 _textBase = sBase;
-                _textEnd = sEnd;
-                // BaseOfData = textRVA + code size (heuristic: next section)
-                _baseOfData = sEnd;
+                _textRva = rva;
+                _textVSize = vsz;
+                // BaseOfData from Magicmida: sect[0].VirtualAddress + SizeOfCode
+                _baseOfData = _imageBase + rva + sizeOfCode;
             }
 
             string perm = ((ch & 0x20000000) != 0 ? "X" : "") +
@@ -202,41 +231,31 @@ public class ThemidaPanel : ScrollViewer
             sb.AppendLine($"  [{i}] {name,-10} 0x{rva:X8} sz=0x{vsz:X8} {perm}");
         }
 
-        // Refine _baseOfData: first non-executable section after .text
-        for (int i = 0; i < _sections.Count; i++)
-        {
-            ulong sBase = _imageBase + _sections[i].Rva;
-            if (sBase > _textBase && (_sections[i].Chars & 0x20000000) == 0)
-            {
-                _baseOfData = sBase;
-                break;
-            }
-        }
-
-        // Check EP is outside .text (packed)
-        ulong epAddr = _imageBase + _entryPointRva;
-        bool epInText = epAddr >= _textBase && epAddr < _textEnd;
-
         _api.Log.Info(sb.ToString());
 
         if (!foundTm)
         {
-            _api.Log.Warning("No .themida/.boot sections found — not Themida protected.");
+            _api.Log.Warning("No .themida/.boot sections found.");
             _detected = false;
             SetStatus("Not Themida");
             return;
         }
 
-        if (epInText)
-            _api.Log.Warning("EP is inside .text — binary may not be packed (or already unpacked).");
+        // Resolve Sleep/lstrlen addresses for anti-trace skip
+        _sleepApi = _api.Symbols.ResolveNameToAddress("kernel32!Sleep");
+        _lstrlenApi = _api.Symbols.ResolveNameToAddress("kernel32!lstrlenA");
+        if (_sleepApi == 0) _sleepApi = _api.Symbols.ResolveNameToAddress("kernel32.dll!Sleep");
+        if (_lstrlenApi == 0) _lstrlenApi = _api.Symbols.ResolveNameToAddress("kernel32.dll!lstrlenA");
 
         _detected = true;
-        _api.Log.Warning($"Themida detected! .text=0x{_textBase:X}-0x{_textEnd:X}, TM range=0x{_tmBase:X}-0x{_tmEnd:X}");
-        SetStatus($"Detected. .text=0x{_textBase:X}, TM=0x{_tmBase:X}");
+        _guardAddrs.Clear();
+        _isVmOep = false;
+        _api.Log.Warning($"Themida detected! .text=0x{_textBase:X} (sz=0x{_textVSize:X}), TM=0x{_tmBase:X}-0x{_tmEnd:X}");
+        SetStatus($"Detected. .text=0x{_textBase:X}");
     }
 
     // ════════════════════════════════════════════════════════════════
-    //  Unpacking start/stop
+    //  Unpacking
     // ════════════════════════════════════════════════════════════════
 
     public void StartUnpacking()
@@ -245,32 +264,32 @@ public class ThemidaPanel : ScrollViewer
         if (_phase != Phase.Idle && _phase != Phase.Done) { _api.Log.Warning("Already unpacking."); return; }
 
         uint pid = _api.TargetPid;
+        uint guardSize = (uint)(_baseOfData - _textBase);
+        if (guardSize == 0 || guardSize > 0x10000000) guardSize = _textVSize;
 
-        // Guard .text with PAGE_NOACCESS
-        var (ok, oldProt) = _api.Memory.ProtectMemory(pid, _textBase, (uint)(_textEnd - _textBase), 0x01);
+        var (ok, oldProt) = _api.Memory.ProtectMemory(pid, _textBase, guardSize, 0x01 /* PAGE_NOACCESS */);
         if (!ok) { _api.Log.Error("Failed to set PAGE_NOACCESS on .text"); return; }
         _guardOldProt = oldProt;
         _guardHitCount = 0;
         _firstTextExecAddr = 0;
+        _guardAddrs.Clear();
 
         _phase = Phase.TextGuarded;
-        _api.Log.Warning("[Unpack] PAGE_NOACCESS on .text — press F9 to run.");
-        SetStatus("Guarding .text — press F9");
+        _api.Log.Warning("[Unpack] PAGE_NOACCESS on .text — press F9.");
+        SetStatus("Guarding .text — F9");
     }
 
     public void StopUnpacking()
     {
         if (_phase == Phase.Idle) return;
-
         uint pid = _api.TargetPid;
 
-        // Restore .text
+        uint guardSize = (uint)(_baseOfData - _textBase);
+        if (guardSize == 0 || guardSize > 0x10000000) guardSize = _textVSize;
         if (_guardOldProt != 0)
-            _api.Memory.ProtectMemory(pid, _textBase, (uint)(_textEnd - _textBase), _guardOldProt);
+            _api.Memory.ProtectMemory(pid, _textBase, guardSize, _guardOldProt);
 
-        // Resume suspended threads
-        foreach (var tid in _suspendedTids)
-            _api.Process.ResumeThread(tid);
+        foreach (var tid in _suspendedTids) _api.Process.ResumeThread(tid);
         _suspendedTids.Clear();
 
         _phase = Phase.Idle;
@@ -280,9 +299,15 @@ public class ThemidaPanel : ScrollViewer
 
     private void OnBeforeRun()
     {
-        // Auto-start if not yet started
         if (_phase == Phase.Idle && _detected)
             StartUnpacking();
+    }
+
+    private uint GuardSize()
+    {
+        uint sz = (uint)(_baseOfData - _textBase);
+        if (sz == 0 || sz > 0x10000000) sz = _textVSize;
+        return sz;
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -300,24 +325,32 @@ public class ThemidaPanel : ScrollViewer
         if (_phase == Phase.TextGuarded && evt.Type == PluginDebugEventType.AccessViolation)
         {
             ulong fault = evt.FaultAddress;
-            if (fault < _textBase || fault >= _textEnd) return false; // not our AV
+            ulong guardEnd = _textBase + GuardSize();
+            if (fault < _textBase || fault >= guardEnd) return false;
 
             _guardHitCount++;
-            uint access = evt.AccessType; // 0=read, 1=write, 8=execute
+            uint access = evt.AccessType;
 
             if (access == 8) // EXECUTE → OEP!
             {
                 _firstTextExecAddr = fault;
-                _api.Log.Warning($"[OEP] Execute in .text at 0x{fault:X} (after {_guardHitCount} hits)");
-
-                // Restore protection, suppress AV + TF → next event = SingleStep at OEP
-                _api.Memory.ProtectMemory(pid, _textBase, (uint)(_textEnd - _textBase), _guardOldProt);
+                _api.Log.Warning($"[OEP] Execute .text 0x{fault:X} (#{_guardHitCount})");
+                _api.Memory.ProtectMemory(pid, _textBase, GuardSize(), _guardOldProt);
                 _phase = Phase.OepStepThrough;
-                evt.ContinueMode = 3; // HANDLED
+                evt.ContinueMode = 3; // HANDLED: suppress AV + set TF
                 return true;
             }
 
-            // Read/write — Themida decrypting .text
+            // Read/write access — Themida decrypting .text or library reading
+            bool ripInImage = rip >= _imageBase && rip < _imageBoundary;
+            bool ripInTm = IsInTmRange(rip);
+
+            if (ripInTm)
+            {
+                // Themida code accessing .text — track the accessed address (Magicmida FGuardAddrs)
+                _guardAddrs.Add(fault);
+            }
+
             if (_guardHitCount <= 5 || _guardHitCount % 1000 == 0)
             {
                 string at = access == 0 ? "read" : "write";
@@ -327,87 +360,72 @@ public class ThemidaPanel : ScrollViewer
             if (_guardHitCount > 500000)
             {
                 _api.Log.Error("[Guard] 500K hits — aborting.");
-                _api.Memory.ProtectMemory(pid, _textBase, (uint)(_textEnd - _textBase), _guardOldProt);
+                _api.Memory.ProtectMemory(pid, _textBase, GuardSize(), _guardOldProt);
                 _phase = Phase.Idle;
                 return false;
             }
 
-            // Restore protection temporarily, suppress AV + TF → re-arm on SingleStep
-            _api.Memory.ProtectMemory(pid, _textBase, (uint)(_textEnd - _textBase), _guardOldProt);
+            _api.Memory.ProtectMemory(pid, _textBase, GuardSize(), _guardOldProt);
             _phase = Phase.TextStepRearm;
             evt.ContinueMode = 3; // HANDLED
             return true;
         }
 
-        // ── TextStepRearm: re-arm PAGE_NOACCESS after stepping past read/write ──
+        // ── TextStepRearm: re-arm PAGE_NOACCESS ──
         if (_phase == Phase.TextStepRearm && evt.Type == PluginDebugEventType.SingleStep)
         {
-            _api.Memory.ProtectMemory(pid, _textBase, (uint)(_textEnd - _textBase), 0x01);
+            _api.Memory.ProtectMemory(pid, _textBase, GuardSize(), 0x01);
             _phase = Phase.TextGuarded;
 
-            // Check if RIP landed in .text (unlikely but handle it)
-            if (rip >= _textBase && rip < _textEnd)
+            if (rip >= _textBase && rip < _textBase + GuardSize())
             {
                 _firstTextExecAddr = rip;
-                _api.Memory.ProtectMemory(pid, _textBase, (uint)(_textEnd - _textBase), _guardOldProt);
-                HandleOepFound(pid, rip, evt);
-                return false; // break at OEP
+                _api.Memory.ProtectMemory(pid, _textBase, GuardSize(), _guardOldProt);
+                return HandleOepFound(pid, rip, evt);
             }
-
-            return true; // silent continue
+            return true;
         }
 
-        // ── OepStepThrough: AV suppressed, now at first .text instruction ──
+        // ── OepStepThrough: SingleStep at first .text instruction ──
         if (_phase == Phase.OepStepThrough && evt.Type == PluginDebugEventType.SingleStep)
-        {
-            HandleOepFound(pid, rip, evt);
+            return HandleOepFound(pid, rip, evt);
 
-            // If IAT tracing started, keep running
-            if (_phase == Phase.IatTracing)
-            {
-                return true;
-            }
-            return false; // break at OEP
-        }
-
-        // ── IatTracing: driver-side trace reports ──
+        // ── IatTracing: driver-side trace result ──
         if (_phase == Phase.IatTracing)
         {
             if (evt.Type == PluginDebugEventType.SingleStep)
             {
                 HandleTraceResult(pid, rip, evt);
-                return true; // keep going
-            }
-            // Unexpected event during tracing — log and continue
-            if (evt.Type == PluginDebugEventType.AccessViolation ||
-                evt.Type == PluginDebugEventType.Breakpoint)
-            {
-                _api.Log.Info($"[Trace] Unexpected {evt.Type} at 0x{rip:X}, continuing");
-                evt.ContinueMode = 0;
                 return true;
             }
+            // Unexpected events during tracing
+            evt.ContinueMode = 0;
+            return true;
         }
 
         return false;
     }
 
     // ════════════════════════════════════════════════════════════════
-    //  OEP found
+    //  OEP found — Magicmida ProcessGuardedAccess execute path
     // ════════════════════════════════════════════════════════════════
 
-    private void HandleOepFound(uint pid, ulong rip, PluginDebugEvent evt)
+    private bool HandleOepFound(uint pid, ulong rip, PluginDebugEvent evt)
     {
-        // Check for virtualized OEP (Magicmida: first byte is jmp into .themida)
+        // Check virtualized OEP (Magicmida CheckVirtualizedOEP)
         var oepCode = _api.Memory.ReadMemory(pid, rip, 16);
         if (oepCode != null && oepCode.Length >= 5 && oepCode[0] == 0xE9)
         {
             int disp = BitConverter.ToInt32(oepCode, 1);
-            ulong target = rip + 5 + (ulong)(long)disp;
+            ulong target = (ulong)((long)rip + 5 + disp);
             if (IsInTmRange(target))
-                _api.Log.Warning($"[OEP] Virtualized OEP: jmp 0x{target:X} (into .themida)");
+            {
+                _isVmOep = true;
+                _api.Log.Warning($"[OEP] Virtualized: jmp 0x{target:X} (.themida)");
+            }
         }
 
-        // Check return address for MSVC virtualized OEP
+        // Check return addr for MSVC virtualized OEP (Magicmida TryFindCorrectOEP)
         var regs = _api.Memory.ReadRegisters(pid, evt.ThreadId);
         ulong rsp = GetReg(regs, _is64 ? "RSP" : "ESP");
         if (rsp != 0)
@@ -418,7 +436,7 @@ public class ThemidaPanel : ScrollViewer
                 ulong retAddr = _is64 ? BitConverter.ToUInt64(retData) : BitConverter.ToUInt32(retData);
                 if (IsInTmRange(retAddr))
                 {
-                    _api.Log.Info($"[OEP] Return address 0x{retAddr:X} is in .themida → checking MSVC OEP");
+                    _api.Log.Info($"[OEP] Return addr 0x{retAddr:X} in .themida → MSVC OEP search");
                     ulong realOep = TryFindMsvcOep(pid, _firstTextExecAddr);
                     if (realOep != 0)
                     {
@@ -435,23 +453,27 @@ public class ThemidaPanel : ScrollViewer
         _api.UI.NavigateDisassembly(_oepAddr);
         SetStatus($"OEP = 0x{_oepAddr:X}");
 
-        // Auto-fix IAT?
         bool autoIat = false;
         try { Application.Current?.Dispatcher.Invoke(() => autoIat = _chkAutoIat.IsChecked == true); }
         catch { autoIat = true; }
 
         if (autoIat)
+        {
             StartIatTrace(pid, evt);
-        else
-            _phase = Phase.Done;
+            if (_phase == Phase.IatTracing) return true;
+        }
+
+        _phase = Phase.Done;
+        return false; // break at OEP
     }
 
+    // Magicmida TryFindCorrectOEP — MSVC pattern: E8 call __security_init_cookie + E9 jmp __scrt_startup
     private ulong TryFindMsvcOep(uint pid, ulong hitAddr)
     {
         if (_majorLinkerVersion is not (9 or 10 or 11 or 12 or 14)) return 0;
 
-        uint len = (uint)(_baseOfData > _textBase ? _baseOfData - _textBase : _textEnd - _textBase);
-        if (len > 0x200000) len = 0x200000;
+        uint len = (uint)(_baseOfData - _textBase);
+        if (len == 0 || len > 0x200000) len = Math.Min(_textVSize, 0x200000);
 
         var text = _api.Memory.ReadMemory(pid, _textBase, len);
         if (text == null) return 0;
@@ -466,79 +488,500 @@ public class ThemidaPanel : ScrollViewer
                     return _textBase + (ulong)i;
             }
         }
+
+        // Magicmida fallback: two consecutive guard addresses
+        if (_guardAddrs.Count >= 2 &&
+            _guardAddrs[_guardAddrs.Count - 1] == _guardAddrs[_guardAddrs.Count - 2] + 1)
+        {
+            return _guardAddrs[_guardAddrs.Count - 2];
+        }
+
         return 0;
     }
 
     // ════════════════════════════════════════════════════════════════
-    //  IAT scanning — find IAT start via code references
+    //  IAT — full Magicmida DetermineIATAddress + TraceImports
     // ════════════════════════════════════════════════════════════════
 
-    private ulong FindIatAddress(uint pid)
+    private void StartIatTrace(uint pid, PluginDebugEvent evt)
     {
-        // Read .text code
-        uint codeSize = (uint)(_baseOfData > _textBase ? _baseOfData - _textBase : _textEnd - _textBase);
-        if (codeSize > 0x400000) codeSize = 0x400000;
+        // Create dumper for IsAPIAddress checks
+        _dumper = new RemoteDumper(_api, pid, _imageBase, _imageBoundary, _oepAddr, _is64);
 
-        var code = _api.Memory.ReadMemory(pid, _textBase, codeSize);
-        if (code == null) { _api.Log.Error("Cannot read .text for IAT scan"); return 0; }
+        // Find IAT address (Magicmida DetermineIATAddress)
+        ulong iatAddr = DetermineIATAddress(pid);
+        if (iatAddr == 0)
+        {
+            _api.Log.Error("[IAT] Cannot find IAT. Break at OEP.");
+            _phase = Phase.Done;
+            return;
+        }
 
-        // Scan from OEP for call/jmp [rip+disp] (x64) or call/jmp [addr] (x86)
-        ulong iatRef = FindCallOrJmpPtr(code, _textBase, codeSize, _oepAddr, pid);
+        _iatBase = iatAddr;
+        _api.Log.Warning($"[IAT] IAT at 0x{_iatBase:X}");
+
+        // Read IAT (Magicmida TraceImports)
+        int maxSlots = RemoteDumper.MAX_IAT_SLOTS;
+        int readSize = maxSlots * _ptrSize;
+        var raw = _api.Memory.ReadMemory(pid, _iatBase, (uint)readSize);
+        if (raw == null) { _api.Log.Error("Cannot read IAT"); _phase = Phase.Done; return; }
+
+        _iatData = new ulong[maxSlots];
+        for (int i = 0; i < maxSlots; i++)
+        {
+            int off = i * _ptrSize;
+            if (off + _ptrSize > raw.Length) break;
+            _iatData[i] = _is64 ? BitConverter.ToUInt64(raw, off) : BitConverter.ToUInt32(raw, off);
+        }
+        _iatCount = maxSlots;
+
+        // Count wrapped entries
+        int wrappedCount = 0;
+        uint trashCount = 0;
+        int effectiveCount = 0;
+        for (int i = 0; i < _iatCount; i++)
+        {
+            if (IsInTmRange(_iatData[i]))
+            {
+                wrappedCount++;
+                trashCount = 0;
+                effectiveCount = i + 1;
+            }
+            else if (_iatData[i] == 0 || !_dumper.IsAPIAddress(_iatData[i]))
+            {
+                trashCount++;
+                if (trashCount > 64) { effectiveCount = i; break; }
+            }
+            else
+            {
+                trashCount = 0;
+                effectiveCount = i + 1;
+            }
+        }
+        _iatCount = effectiveCount;
+
+        _api.Log.Warning($"[IAT] {_iatCount} slots, {wrappedCount} wrapped");
+
+        if (wrappedCount == 0)
+        {
+            _api.Log.Info("[IAT] No wrapped imports — IAT is clean.");
+            FinishIatTrace(pid);
+            return;
+        }
+
+        // Save state
+        var regsNow = _api.Memory.ReadRegisters(pid, evt.ThreadId);
+        _savedRip = _oepAddr;
+        _savedRsp = GetReg(regsNow, _is64 ? "RSP" : "ESP");
+        _traceStartSP = _savedRsp;
+
+        // Suspend other threads (Magicmida tracer suspends spurious threads)
+        _suspendedTids.Clear();
+        var threads = _api.Process.EnumThreads(pid);
+        foreach (var t in threads)
+        {
+            if (t.ThreadId != _api.SelectedThreadId)
+            {
+                _api.Process.SuspendThread(t.ThreadId);
+                _suspendedTids.Add(t.ThreadId);
+            }
+        }
+
+        _iatIdx = -1;
+        _iatResolvedCount = 0;
+        _iatFailedCount = 0;
+        _didSetExitProcess = false;
+        _phase = Phase.IatTracing;
+
+        if (!AdvanceToNextWrapper(evt))
+        {
+            WriteIatBack(pid);
+            FinishIatTrace(pid);
+        }
+    }
+
+    private bool AdvanceToNextWrapper(PluginDebugEvent evt)
+    {
+        _iatIdx++;
+        while (_iatIdx < _iatCount)
+        {
+            if (IsInTmRange(_iatData[_iatIdx]))
+                break;
+            _iatIdx++;
+        }
+        if (_iatIdx >= _iatCount) return false;
+
+        ulong wrapperAddr = _iatData[_iatIdx];
+
+        if (_iatResolvedCount < 10 || _iatResolvedCount % 50 == 0)
+            _api.Log.Info($"[IAT] Trace [{_iatIdx}] wrapper 0x{wrapperAddr:X}...");
+
+        // ContinueMode=4: driver-side trace. Stay in TM range, exit = API found.
+        evt.NewRip = wrapperAddr;
+        evt.NewRsp = _savedRsp;
+        evt.ContinueMode = 4; // KF_CONTINUE_TRACE
+        evt.TraceRangeBase = _tmBase;
+        evt.TraceRangeEnd = _tmEnd;
+        evt.TraceMaxSteps = 500000;
+
+        return true;
+    }
+
+    private void HandleTraceResult(uint pid, ulong rip, PluginDebugEvent evt)
+    {
+        ulong slotAddr = _iatBase + (ulong)(_iatIdx * _ptrSize);
+
+        // Check TraceIsAtAPI logic (Magicmida)
+        bool exited = !IsInTmRange(rip);
+
+        if (!exited)
+        {
+            // Still in TM range — limit reached. Check for VM stuck (lock cmpxchg pattern)
+            var insnData = _api.Memory.ReadMemory(pid, rip, 4);
+            if (insnData != null && insnData.Length == 4 &&
+                insnData[0] == 0xF0 && insnData[1] == 0x0F && insnData[2] == 0xB1 && insnData[3] == 0x0C)
+            {
+                _traceInVM = true;
+                _api.Log.Info($"[IAT] [{_iatIdx}] Themida VM detected (lock cmpxchg)");
+            }
+            else
+            {
+                _api.Log.Info($"[IAT] [{_iatIdx}] Trace limit at 0x{rip:X}");
+            }
+
+            // VM fallback: set to ExitProcess (Magicmida)
+            if (_traceInVM)
+            {
+                if (!_didSetExitProcess)
+                {
+                    _didSetExitProcess = true;
+                    ulong exitProc = _api.Symbols.ResolveNameToAddress("kernel32!ExitProcess");
+                    if (exitProc == 0) exitProc = _api.Symbols.ResolveNameToAddress("kernel32.dll!ExitProcess");
+                    if (exitProc != 0)
+                    {
+                        _iatData[_iatIdx] = exitProc;
+                        _api.Log.Info("[IAT] Setting API to ExitProcess (VM fallback)");
+                    }
+                }
+                else
+                    _api.Log.Warning($"[IAT] Unable to resolve [{_iatIdx}] (VM)");
+            }
+
+            _traceInVM = false;
+            AdvanceOrFinish(pid, evt);
+            return;
+        }
+
+        // RIP exited TM range. Check anti-trace APIs (Magicmida TraceIsAtAPI)
+        // Sleep/lstrlen called by wrapper as anti-trace
+        if (rip == _sleepApi || rip == _lstrlenApi)
+        {
+            _api.Log.Info($"[IAT] Skipping anti-trace API at 0x{rip:X}");
+            // Skip: read return address, redirect
+            var retData = _api.Memory.ReadMemory(pid, _savedRsp, (uint)_ptrSize);
+            // Can't easily pop stack remotely — just re-launch trace from same wrapper
+            // The driver trace exited because it hit the API. Re-trace won't help.
+            // Mark as unresolved and continue.
+            _iatFailedCount++;
+            AdvanceOrFinish(pid, evt);
+            return;
+        }
+
+        // Validate result (Magicmida checks)
+        bool isApi = rip >= 0x10000 &&
+                     !(rip >= _imageBase && rip < _imageBoundary);
+
+        if (isApi)
+        {
+            _iatData[_iatIdx] = rip;
+            _iatResolvedCount++;
+
+            if (_iatResolvedCount <= 10 || _iatResolvedCount % 20 == 0)
+            {
+                string name = _api.Symbols.ResolveAddress(rip) ?? $"0x{rip:X}";
+                _api.Log.Info($"[IAT] #{_iatResolvedCount} [0x{slotAddr:X}] → {name}");
+            }
+        }
+        else
+        {
+            _iatFailedCount++;
+            if (rip < 0x10000 || (rip >= _imageBase && rip < _imageBoundary))
+            {
+                _api.Log.Warning($"[IAT] [{_iatIdx}] → 0x{rip:X} (bad result, aborting trace)");
+                WriteIatBack(pid);
+                FinishIatTrace(pid);
+                evt.ContinueMode = 0;
+                evt.NewRip = _savedRip;
+                evt.NewRsp = _savedRsp;
+                return;
+            }
+        }
+
+        AdvanceOrFinish(pid, evt);
+    }
+
+    private void AdvanceOrFinish(uint pid, PluginDebugEvent evt)
+    {
+        if (!AdvanceToNextWrapper(evt))
+        {
+            WriteIatBack(pid);
+            FinishIatTrace(pid);
+            evt.ContinueMode = 0;
+            evt.NewRip = _savedRip;
+            evt.NewRsp = _savedRsp;
+        }
+    }
+
+    private void WriteIatBack(uint pid)
+    {
+        // Write resolved IAT back to process (Magicmida TraceImports ending)
+        _api.Memory.ProtectMemory(pid, _iatBase, (uint)(_iatCount * _ptrSize), 0x04 /* PAGE_READWRITE */);
+        for (int i = 0; i < _iatCount; i++)
+        {
+            byte[] val = _is64 ? BitConverter.GetBytes(_iatData[i]) : BitConverter.GetBytes((uint)_iatData[i]);
+            _api.Memory.WriteMemory(pid, _iatBase + (ulong)(i * _ptrSize), val);
+        }
+    }
+
+    private void FinishIatTrace(uint pid)
+    {
+        _api.Memory.WriteRipAndRsp(_api.SelectedThreadId, _savedRip, _savedRsp);
+
+        foreach (var tid in _suspendedTids) _api.Process.ResumeThread(tid);
+        _suspendedTids.Clear();
+
+        _api.Log.Warning($"[IAT] Done: {_iatResolvedCount} resolved, {_iatFailedCount} failed.");
+        SetStatus($"IAT: {_iatResolvedCount} resolved. OEP=0x{_oepAddr:X}");
+
+        _phase = Phase.Done;
+        _api.UI.NavigateDisassembly(_oepAddr);
+
+        bool autoDump = false;
+        try { Application.Current?.Dispatcher.Invoke(() => autoDump = _chkAutoDump.IsChecked == true); }
+        catch { }
+
+        if (autoDump) DumpPe();
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  DetermineIATAddress — full Magicmida port
+    // ════════════════════════════════════════════════════════════════
+
+    private ulong DetermineIATAddress(uint pid)
+    {
+        ulong codeSize = _baseOfData - _textBase;
+        if (codeSize == 0 || codeSize > 0x10000000)
+            codeSize = _textVSize;
+
+        // Find data section for ScanForPointer fallback
+        ulong dataBase = _baseOfData;
+        ulong dataSize = 0;
+        foreach (var s in _sections)
+        {
+            ulong sBase = _imageBase + s.Rva;
+            if (sBase >= _baseOfData && (s.Chars & 0x20000000) == 0)
+            {
+                dataSize = s.VirtualSize - (_baseOfData - sBase);
+                break;
+            }
+        }
+
+        var codeDump = _api.Memory.ReadMemory(pid, _textBase, (uint)codeSize);
+        if (codeDump == null) { _api.Log.Error("[IAT] Cannot read .text"); return 0; }
+
+        ulong iatRef = 0;
+        uint numInstr = 0;
+
+        if (!_isVmOep)
+        {
+            iatRef = FindCallOrJmpPtr(codeDump, _textBase, codeSize, _oepAddr, ref numInstr, false, pid);
+        }
+        else
+        {
+            // Check Delphi marker (Magicmida)
+            bool isDelphi = false;
+            if (codeDump.Length > 12)
+            {
+                uint marker = BitConverter.ToUInt32(codeDump, _is64 ? 10 : 6);
+                uint marker2 = BitConverter.ToUInt32(codeDump, 6);
+                if (marker == 0x6C6F6F42 || marker2 == 0x65747942) // "Bool" / "Byte"
+                {
+                    isDelphi = true;
+                    uint dOff = FindDelphiCall(codeDump);
+                    if (dOff > 0)
+                        iatRef = FindCallOrJmpPtr(codeDump, _textBase, codeSize, _textBase + dOff, ref numInstr, true, pid);
+                }
+            }
+            if (!isDelphi)
+                iatRef = FindCallOrJmpPtr(codeDump, _textBase, codeSize, _textBase, ref numInstr, true, pid);
+        }
 
         if (iatRef == 0)
         {
-            // Fallback: scan all data sections for pointers into .themida
-            _api.Log.Info("[IAT] No code reference found, scanning data sections for TM pointers");
-            iatRef = ScanDataForTmPointers(pid);
-        }
-
-        if (iatRef == 0) return 0;
-        _api.Log.Info($"[IAT] First ref: 0x{iatRef:X}");
-
-        // Walk backwards to find IAT start
-        return FindIatStart(pid, iatRef);
-    }
-
-    private ulong FindCallOrJmpPtr(byte[] code, ulong textBase, uint codeSize, ulong startAddr, uint pid)
-    {
-        // Use Iced disassembler to find call/jmp [mem] instructions
-        int offset = (int)(startAddr - textBase);
-        if (offset < 0 || offset >= code.Length) offset = 0;
-
-        var reader = new ByteArrayCodeReader(code, offset, code.Length - offset);
-        var decoder = Iced.Intel.Decoder.Create(_is64 ? 64 : 32, reader, startAddr);
-        int instrCount = 0;
-
-        while (decoder.IP < textBase + codeSize && instrCount < 500)
-        {
-            var instr = decoder.Decode();
-            if (instr.IsInvalid) break;
-            instrCount++;
-
-            // Looking for: FF 15 xx xx xx xx (call [rip+disp]) or FF 25 xx xx xx xx (jmp [rip+disp])
-            if ((instr.Mnemonic == Mnemonic.Call || instr.Mnemonic == Mnemonic.Jmp) &&
-                instr.Op0Kind == OpKind.Memory)
+            _api.Log.Info("[IAT] No code ref found, trying guard addrs");
+            if (_guardAddrs.Count > 0)
             {
-                ulong memAddr = instr.IPRelativeMemoryAddress;
-                if (memAddr == 0 && instr.MemoryDisplacement64 != 0)
-                    memAddr = instr.MemoryDisplacement64;
+                // Read call/jmp at first guarded address
+                var site = _api.Memory.ReadMemory(pid, _guardAddrs[0], 6);
+                if (site != null && site.Length >= 6)
+                {
+                    ulong target = 0;
+                    if (site[0] == 0xE8 || site[0] == 0xE9)
+                        target = (ulong)((long)BitConverter.ToInt32(site, 1) + (long)_guardAddrs[0] + 5);
+                    else if (site[1] == 0xE8 || site[1] == 0xE9)
+                        target = (ulong)((long)BitConverter.ToInt32(site, 2) + (long)_guardAddrs[0] + 6);
 
-                if (memAddr == 0) continue;
-
-                // Read what the pointer points to
-                var ptrData = _api.Memory.ReadMemory(pid, memAddr, (uint)_ptrSize);
-                if (ptrData == null) continue;
-                ulong target = _is64 ? BitConverter.ToUInt64(ptrData) : BitConverter.ToUInt32(ptrData);
-
-                // If it points outside .text (to a DLL or .themida) — this is an IAT ref
-                if (target > textBase + codeSize || target < textBase)
-                    return memAddr;
+                    if (target != 0)
+                    {
+                        _api.Log.Info($"[IAT] Guard[0] 0x{_guardAddrs[0]:X} → target 0x{target:X}");
+                        iatRef = ScanForPointer(pid, target, _textBase, codeSize, dataBase, dataSize, false);
+                    }
+                }
             }
 
-            // Stop at ret (function boundary)
-            if (instr.Mnemonic == Mnemonic.Ret)
-                break;
+            if (iatRef == 0)
+            {
+                // Last resort: scan data sections for TM pointers
+                iatRef = ScanDataForTmPointers(pid);
+            }
         }
+
+        if (iatRef == 0) { _api.Log.Error("[IAT] No IAT reference found."); return 0; }
+        _api.Log.Info($"[IAT] First ref: 0x{iatRef:X}");
+
+        // Walk backward to find IAT start (Magicmida)
+        int maxSlots = RemoteDumper.MAX_IAT_SLOTS;
+        int readBack = (maxSlots - 1) * _ptrSize;
+        ulong readStart = iatRef > (ulong)readBack ? iatRef - (ulong)readBack : _imageBase;
+        uint readSize = (uint)(iatRef - readStart) + (uint)(_ptrSize * 64);
+
+        var data = _api.Memory.ReadMemory(pid, readStart, readSize);
+        if (data == null) return iatRef;
+
+        ulong result = 0;
+        int refIdx = (int)(iatRef - readStart);
+        int consec0 = 0;
+
+        for (int off = refIdx - _ptrSize; off >= 0; off -= _ptrSize)
+        {
+            ulong val = _is64 ? BitConverter.ToUInt64(data, off) : BitConverter.ToUInt32(data, off);
+            ulong seekAddr = readStart + (ulong)off;
+
+            if (val == 0)
+            {
+                consec0++;
+                if (consec0 > 64) break;
+            }
+            else if (_dumper!.IsAPIAddress(val) || IsInTmRange(val))
+            {
+                result = seekAddr;
+                consec0 = 0;
+            }
+            else
+            {
+                _api.Log.Info($"[IAT] End walkback at 0x{seekAddr:X}, ptr=0x{val:X}");
+                break;
+            }
+        }
+
+        return result != 0 ? result : iatRef;
+    }
+
+    // Magicmida FindCallOrJmpPtr — disassemble from address, find call/jmp [rip+disp]
+    private ulong FindCallOrJmpPtr(byte[] code, ulong textBase, ulong codeSize,
+        ulong address, ref uint numInstr, bool ignoreMethodBoundary, uint pid)
+    {
+        int offset = (int)(address - textBase);
+        if (offset < 0 || offset >= code.Length) return 0;
+
+        while (offset >= 0 && offset < code.Length - 15 &&
+               (numInstr < 200 || (ignoreMethodBoundary && address < textBase + codeSize)))
+        {
+            int remaining = code.Length - offset;
+            int len = Math.Min(remaining, 15);
+            var instrBytes = new byte[len];
+            Array.Copy(code, offset, instrBytes, 0, len);
+
+            var reader = new ByteArrayCodeReader(instrBytes);
+            var decoder = Iced.Intel.Decoder.Create(_is64 ? 64 : 32, reader, address);
+            var instr = decoder.Decode();
+            if (instr.IsInvalid) { offset++; address++; continue; }
+
+            // Check for call/jmp [mem] (indirect through pointer — IAT reference)
+            if ((instr.FlowControl == FlowControl.IndirectCall || instr.FlowControl == FlowControl.IndirectBranch) &&
+                instr.Op0Kind == OpKind.Memory)
+            {
+                ulong memAddr = instr.IsIPRelativeMemoryOperand ? instr.IPRelativeMemoryAddress : instr.MemoryDisplacement64;
+                if (memAddr != 0)
+                {
+                    var ptrData = _api.Memory.ReadMemory(pid, memAddr, (uint)_ptrSize);
+                    if (ptrData != null)
+                    {
+                        ulong target = _is64 ? BitConverter.ToUInt64(ptrData) : BitConverter.ToUInt32(ptrData);
+                        // If pointer target is outside .text → IAT ref
+                        if (target > textBase + codeSize || target < textBase)
+                            return memAddr;
+                    }
+                }
+            }
+
+            // Follow calls (Magicmida recursive)
+            if (instr.FlowControl == FlowControl.Call && !ignoreMethodBoundary)
+            {
+                if (instr.Op0Kind is OpKind.NearBranch16 or OpKind.NearBranch32 or OpKind.NearBranch64)
+                {
+                    ulong brTarget = instr.NearBranchTarget;
+                    if (brTarget > textBase + codeSize) break;
+                    var r = FindCallOrJmpPtr(code, textBase, codeSize, brTarget, ref numInstr, false, pid);
+                    if (r != 0) return r;
+                }
+            }
+
+            if (instr.FlowControl == FlowControl.Return && !ignoreMethodBoundary) break;
+
+            numInstr++;
+            int ilen = instr.Length > 0 ? instr.Length : 1;
+            offset += ilen;
+            address += (ulong)ilen;
+        }
+        return 0;
+    }
+
+    // Magicmida FindDelphiCall — find 3rd jmp [addr] (FF 25)
+    private static uint FindDelphiCall(byte[] code)
+    {
+        int counter = 0;
+        for (int i = 0; i < code.Length - 6; i++)
+        {
+            if (code[i] == 0xFF && code[i + 1] == 0x25)
+            {
+                counter++;
+                if (counter == 3) return (uint)i;
+            }
+        }
+        return 0;
+    }
+
+    // Magicmida ScanForPointer
+    private ulong ScanForPointer(uint pid, ulong toFind, ulong textBase, ulong codeSize,
+        ulong dataBase, ulong dataSize, bool scanCode)
+    {
+        ulong startAddr = scanCode ? textBase : dataBase;
+        ulong scanSize = scanCode ? codeSize : dataSize;
+        if (scanSize == 0 || scanSize > 0x200000) return 0;
+
+        var data = _api.Memory.ReadMemory(pid, startAddr, (uint)scanSize);
+        if (data == null) return 0;
+
+        for (int i = 0; i + _ptrSize <= data.Length; i += _ptrSize)
+        {
+            ulong val = _is64 ? BitConverter.ToUInt64(data, i) : BitConverter.ToUInt32(data, i);
+            if (val == toFind)
+                return startAddr + (ulong)i;
+        }
+
+        if (!scanCode)
+            return ScanForPointer(pid, toFind, textBase, codeSize, 0, 0, true);
         return 0;
     }
 
@@ -546,8 +989,7 @@ public class ThemidaPanel : ScrollViewer
     {
         foreach (var sect in _sections)
         {
-            bool isExec = (sect.Chars & 0x20000000) != 0;
-            if (isExec) continue;
+            if ((sect.Chars & 0x20000000) != 0) continue;
             string nl = sect.Name.Trim().ToLowerInvariant();
             if (nl is ".themida" or ".boot" or "themida" or "boot") continue;
 
@@ -565,280 +1007,22 @@ public class ThemidaPanel : ScrollViewer
         return 0;
     }
 
-    private ulong FindIatStart(uint pid, ulong iatRef)
-    {
-        // Read backwards from iatRef looking for valid IAT entries
-        const int maxSlots = 5120;
-        int readBack = maxSlots * _ptrSize;
-        ulong readStart = iatRef > (ulong)readBack ? iatRef - (ulong)readBack : _imageBase;
-
-        var data = _api.Memory.ReadMemory(pid, readStart, (uint)(iatRef - readStart + (ulong)(_ptrSize * 64)));
-        if (data == null) return iatRef;
-
-        // Walk backward from iatRef
-        ulong result = iatRef;
-        int refOff = (int)(iatRef - readStart);
-        int consec0 = 0;
-
-        for (int i = refOff - _ptrSize; i >= 0; i -= _ptrSize)
-        {
-            ulong val = _is64 ? BitConverter.ToUInt64(data, i) : BitConverter.ToUInt32(data, i);
-
-            if (val == 0)
-            {
-                consec0++;
-                if (consec0 > 64) break;
-            }
-            else if (IsInTmRange(val) || IsApiAddress(pid, val))
-            {
-                result = readStart + (ulong)i;
-                consec0 = 0;
-            }
-            else
-            {
-                break;
-            }
-        }
-
-        return result;
-    }
-
-    private bool IsApiAddress(uint pid, ulong addr)
-    {
-        // Quick check: is it in a loaded DLL (not in main image)?
-        if (addr >= _imageBase && addr < _imageBoundary) return false;
-        if (addr < 0x10000) return false;
-
-        // Check if it's in any loaded module
-        var modules = _api.Symbols.GetModules();
-        foreach (var m in modules)
-        {
-            if (m.BaseAddress == _imageBase) continue;
-            if (addr >= m.BaseAddress && addr < m.BaseAddress + m.Size)
-                return true;
-        }
-        return false;
-    }
-
     // ════════════════════════════════════════════════════════════════
-    //  IAT tracing via ContinueMode=4 (driver-side trace)
-    // ════════════════════════════════════════════════════════════════
-
-    private void StartIatTrace(uint pid, PluginDebugEvent evt)
-    {
-        // Find IAT
-        ulong iatAddr = FindIatAddress(pid);
-        if (iatAddr == 0)
-        {
-            _api.Log.Error("[IAT] Cannot find IAT address. Use manual Fix IAT.");
-            _phase = Phase.Done;
-            return;
-        }
-
-        _iatBase = iatAddr;
-        _api.Log.Warning($"[IAT] IAT at 0x{_iatBase:X}");
-
-        // Read IAT
-        const int maxSlots = 5120;
-        int readSize = maxSlots * _ptrSize;
-        var raw = _api.Memory.ReadMemory(pid, _iatBase, (uint)readSize);
-        if (raw == null) { _api.Log.Error("Cannot read IAT"); _phase = Phase.Done; return; }
-
-        // Parse IAT into array, find end
-        _iatData = new ulong[maxSlots];
-        _iatCount = 0;
-        int consec0 = 0;
-
-        for (int i = 0; i < maxSlots; i++)
-        {
-            int off = i * _ptrSize;
-            if (off + _ptrSize > raw.Length) break;
-            ulong val = _is64 ? BitConverter.ToUInt64(raw, off) : BitConverter.ToUInt32(raw, off);
-            _iatData[i] = val;
-
-            if (val == 0)
-            {
-                consec0++;
-                if (consec0 > 64) break;
-                _iatCount = i + 1;
-            }
-            else
-            {
-                consec0 = 0;
-                _iatCount = i + 1;
-            }
-        }
-
-        // Count wrapped entries
-        int wrappedCount = 0;
-        for (int i = 0; i < _iatCount; i++)
-            if (IsInTmRange(_iatData[i])) wrappedCount++;
-
-        _api.Log.Warning($"[IAT] {_iatCount} slots, {wrappedCount} wrapped in .themida");
-
-        if (wrappedCount == 0)
-        {
-            _api.Log.Info("[IAT] No wrapped imports — IAT is clean.");
-            _phase = Phase.Done;
-            FinishUnpacking(pid);
-            return;
-        }
-
-        // Save state for IAT tracing
-        var regs = _api.Memory.ReadRegisters(pid, evt.ThreadId);
-        _savedRip = _oepAddr;
-        _savedRsp = GetReg(regs, _is64 ? "RSP" : "ESP");
-
-        // Suspend other threads
-        _suspendedTids.Clear();
-        var threads = _api.Process.EnumThreads(pid);
-        foreach (var t in threads)
-        {
-            if (t.ThreadId != _api.SelectedThreadId)
-            {
-                _api.Process.SuspendThread(t.ThreadId);
-                _suspendedTids.Add(t.ThreadId);
-            }
-        }
-        _api.Log.Info($"[IAT] Suspended {_suspendedTids.Count} threads");
-
-        // Start tracing
-        _iatIdx = -1;
-        _iatResolvedCount = 0;
-        _iatFailedCount = 0;
-        _phase = Phase.IatTracing;
-
-        // Advance to first wrapped entry and launch trace
-        if (!AdvanceToNextWrapper(evt))
-        {
-            FinishIatTrace(pid);
-            return;
-        }
-    }
-
-    private bool AdvanceToNextWrapper(PluginDebugEvent evt)
-    {
-        _iatIdx++;
-        while (_iatIdx < _iatCount)
-        {
-            if (IsInTmRange(_iatData[_iatIdx]))
-                break;
-            _iatIdx++;
-        }
-
-        if (_iatIdx >= _iatCount) return false; // all done
-
-        ulong wrapperAddr = _iatData[_iatIdx];
-
-        // Set RIP to wrapper, use ContinueMode=4 (TRACE) with TM range
-        evt.NewRip = wrapperAddr;
-        evt.NewRsp = _savedRsp;
-        evt.ContinueMode = 4; // KF_CONTINUE_TRACE
-        evt.TraceRangeBase = _tmBase;
-        evt.TraceRangeEnd = _tmEnd;
-        evt.TraceMaxSteps = 500000;
-
-        if (_iatResolvedCount < 5 || _iatResolvedCount % 50 == 0)
-            _api.Log.Info($"[IAT] Tracing slot {_iatIdx} wrapper 0x{wrapperAddr:X}...");
-
-        return true;
-    }
-
-    private void HandleTraceResult(uint pid, ulong rip, PluginDebugEvent evt)
-    {
-        ulong slotAddr = _iatBase + (ulong)(_iatIdx * _ptrSize);
-
-        // RIP exited TM range → should be at real API
-        bool isApi = !IsInTmRange(rip) &&
-                     !(rip >= _imageBase && rip < _imageBoundary) &&
-                     rip >= 0x10000;
-
-        if (isApi)
-        {
-            // Write resolved address to IAT slot
-            byte[] fix = _is64 ? BitConverter.GetBytes(rip) : BitConverter.GetBytes((uint)rip);
-            _api.Memory.WriteMemory(pid, slotAddr, fix);
-            _iatData[_iatIdx] = rip;
-            _iatResolvedCount++;
-
-            if (_iatResolvedCount <= 10 || _iatResolvedCount % 20 == 0)
-            {
-                string name = _api.Symbols.ResolveAddress(rip) ?? $"0x{rip:X}";
-                _api.Log.Info($"[IAT] #{_iatResolvedCount} [0x{slotAddr:X}] → {name}");
-            }
-        }
-        else
-        {
-            _iatFailedCount++;
-            _api.Log.Info($"[IAT] Slot {_iatIdx} → 0x{rip:X} (not API, skip)");
-        }
-
-        // Next wrapper
-        if (!AdvanceToNextWrapper(evt))
-        {
-            FinishIatTrace(pid);
-            // Break at OEP
-            evt.ContinueMode = 0;
-            evt.NewRip = _savedRip;
-            evt.NewRsp = _savedRsp;
-        }
-    }
-
-    private void FinishIatTrace(uint pid)
-    {
-        // Restore context
-        _api.Memory.WriteRipAndRsp(_api.SelectedThreadId, _savedRip, _savedRsp);
-
-        // Resume threads
-        foreach (var tid in _suspendedTids)
-            _api.Process.ResumeThread(tid);
-        _suspendedTids.Clear();
-
-        _api.Log.Warning($"[IAT] Done: {_iatResolvedCount} resolved, {_iatFailedCount} failed.");
-        SetStatus($"IAT fixed: {_iatResolvedCount} resolved. OEP=0x{_oepAddr:X}");
-
-        FinishUnpacking(pid);
-    }
-
-    private void FinishUnpacking(uint pid)
-    {
-        _phase = Phase.Done;
-
-        // Refresh UI
-        _api.UI.NavigateDisassembly(_oepAddr);
-
-        bool autoDump = false;
-        try { Application.Current?.Dispatcher.Invoke(() => autoDump = _chkAutoDump.IsChecked == true); }
-        catch { }
-
-        if (autoDump)
-            DumpPe();
-        else
-            _api.Log.Warning($"[Done] OEP=0x{_oepAddr:X}. Use 'Dump PE' to save.");
-    }
-
-    // ════════════════════════════════════════════════════════════════
-    //  Manual IAT fix (from button)
+    //  Manual IAT fix
     // ════════════════════════════════════════════════════════════════
 
     private void ManualFixIat()
     {
         if (!_api.IsConnected || !_api.IsBreakState)
         { _api.Log.Warning("Must be in Break state."); return; }
+        if (_oepAddr == 0) { _api.Log.Warning("OEP not found."); return; }
 
-        if (_oepAddr == 0)
-        { _api.Log.Warning("OEP not found yet. Run unpacking first."); return; }
-
-        _api.Log.Info("[IAT] Manual IAT fix — will scan and resolve on next F9.");
-
-        // We need to be in a debug event to use ContinueMode=4.
-        // Queue the IAT fix for next OnDebugEventFilter call.
         _phase = Phase.OepStepThrough;
-        _api.SingleStep(); // trigger a SingleStep event → OepStepThrough handler starts IAT
+        _api.SingleStep();
     }
 
     // ════════════════════════════════════════════════════════════════
-    //  PE dump
+    //  PE dump — full Magicmida Dumper.Process() + DumpToFile
     // ════════════════════════════════════════════════════════════════
 
     public void DumpPe()
@@ -847,71 +1031,16 @@ public class ThemidaPanel : ScrollViewer
         { _api.Log.Warning("Must be in Break state."); return; }
 
         uint pid = _api.TargetPid;
-        if (_imageBase == 0) { _api.Log.Warning("Detect protector first."); return; }
+        if (_imageBase == 0) { _api.Log.Warning("Detect first."); return; }
 
-        // Read entire image
-        var pe = _api.Memory.ReadMemory(pid, _imageBase, _imageSize);
-        if (pe == null) { _api.Log.Error("Cannot read PE image."); return; }
+        if (_dumper == null)
+            _dumper = new RemoteDumper(_api, pid, _imageBase, _imageBoundary, _oepAddr, _is64);
 
-        // Fix EP to OEP
-        uint lfanew = BitConverter.ToUInt32(pe, 0x3C);
-        uint oepRva = (uint)(_oepAddr > 0 ? _oepAddr - _imageBase : _entryPointRva);
-        byte[] oepBytes = BitConverter.GetBytes(oepRva);
-        Array.Copy(oepBytes, 0, pe, (int)lfanew + 0x28, 4);
+        _dumper.IAT = _iatBase;
+        var dumpResult = _dumper.ProcessAndDump(pid, _iatBase, _iatCount, _iatData, _sections);
 
-        // Disable ASLR
-        int dllCharsOff = (int)lfanew + 0x18 + (_is64 ? 0x46 : 0x2E); // DllCharacteristics
-        if (dllCharsOff + 2 <= pe.Length)
-        {
-            ushort dllChars = BitConverter.ToUInt16(pe, dllCharsOff);
-            if ((dllChars & 0x40) != 0) // IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE
-            {
-                dllChars &= unchecked((ushort)~0x40);
-                Array.Copy(BitConverter.GetBytes(dllChars), 0, pe, dllCharsOff, 2);
-                _api.Log.Info("[Dump] ASLR disabled.");
-            }
-        }
+        if (dumpResult == null) { _api.Log.Error("[Dump] Failed."); return; }
 
-        // Fix IAT directory if we have IAT data
-        if (_iatBase != 0 && _iatCount > 0)
-        {
-            uint iatRva = (uint)(_iatBase - _imageBase);
-            uint iatSize = (uint)(_iatCount * _ptrSize);
-
-            // Write resolved IAT into dump
-            for (int i = 0; i < _iatCount; i++)
-            {
-                int off = (int)(iatRva + (uint)(i * _ptrSize));
-                if (off + _ptrSize > pe.Length) break;
-                if (_is64)
-                    Array.Copy(BitConverter.GetBytes(_iatData[i]), 0, pe, off, 8);
-                else
-                    Array.Copy(BitConverter.GetBytes((uint)_iatData[i]), 0, pe, off, 4);
-            }
-
-            // Update IAT data directory
-            int ddBase = (int)lfanew + 0x18 + (_is64 ? 0x78 : 0x60); // DataDirectory[0]
-            int iatDirOff = ddBase + 12 * 8; // IAT = directory index 12
-            if (iatDirOff + 8 <= pe.Length)
-            {
-                Array.Copy(BitConverter.GetBytes(iatRva), 0, pe, iatDirOff, 4);
-                Array.Copy(BitConverter.GetBytes(iatSize), 0, pe, iatDirOff + 4, 4);
-            }
-        }
-
-        // Fix section permissions — make all sections RWX (simplifies running)
-        int sectStart = (int)lfanew + 4 + 20 + BitConverter.ToUInt16(pe, (int)lfanew + 0x14);
-        ushort numSect = BitConverter.ToUInt16(pe, (int)lfanew + 6);
-        for (int i = 0; i < numSect; i++)
-        {
-            int off = sectStart + i * 40 + 36; // Characteristics
-            if (off + 4 > pe.Length) break;
-            uint chars = BitConverter.ToUInt32(pe, off);
-            chars |= 0xE0000000; // RWX
-            Array.Copy(BitConverter.GetBytes(chars), 0, pe, off, 4);
-        }
-
-        // Save dialog
         Application.Current?.Dispatcher.Invoke(() =>
         {
             var dlg = new Microsoft.Win32.SaveFileDialog
@@ -923,14 +1052,11 @@ public class ThemidaPanel : ScrollViewer
             {
                 try
                 {
-                    File.WriteAllBytes(dlg.FileName, pe);
-                    _api.Log.Warning($"[Dump] Saved to {dlg.FileName} ({pe.Length} bytes, OEP RVA=0x{oepRva:X})");
+                    File.WriteAllBytes(dlg.FileName, dumpResult);
+                    _api.Log.Warning($"[Dump] Saved {dlg.FileName} ({dumpResult.Length} bytes)");
                     SetStatus($"Dumped: {dlg.FileName}");
                 }
-                catch (Exception ex)
-                {
-                    _api.Log.Error($"[Dump] Save failed: {ex.Message}");
-                }
+                catch (Exception ex) { _api.Log.Error($"[Dump] {ex.Message}"); }
             }
         });
     }
@@ -950,21 +1076,16 @@ public class ThemidaPanel : ScrollViewer
         catch { }
     }
 
-    // ── UI helpers ──
+    private static CheckBox MakeCb(string text, bool on, Brush fg) => new()
+    { Content = text, IsChecked = on, Foreground = fg, Margin = new Thickness(0, 2, 0, 2) };
 
-    private static CheckBox MakeCb(string text, bool isChecked, Brush fg) => new()
-    {
-        Content = text, IsChecked = isChecked, Foreground = fg,
-        Margin = new Thickness(0, 2, 0, 2)
-    };
-
-    private static GroupBox Grp(string header, UIElement[] items, Brush fg)
+    private static GroupBox Grp(string hdr, UIElement[] items, Brush fg)
     {
         var sp = new StackPanel();
         foreach (var item in items) sp.Children.Add(item);
         return new GroupBox
         {
-            Header = new TextBlock { Text = header, Foreground = fg, FontWeight = FontWeights.SemiBold },
+            Header = new TextBlock { Text = hdr, Foreground = fg, FontWeight = FontWeights.SemiBold },
             Content = sp, Margin = new Thickness(0, 5, 0, 5),
             BorderBrush = Brushes.Gray, Foreground = fg
         };
@@ -972,12 +1093,533 @@ public class ThemidaPanel : ScrollViewer
 
     private static void Btn(WrapPanel panel, string text, Action click)
     {
-        var b = new Button
-        {
-            Content = text, Padding = new Thickness(12, 4, 12, 4),
-            Margin = new Thickness(0, 0, 6, 0)
-        };
+        var b = new Button { Content = text, Padding = new Thickness(12, 4, 12, 4), Margin = new Thickness(0, 0, 6, 0) };
         b.Click += (_, _) => click();
         panel.Children.Add(b);
     }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  RemoteDumper — port of Magicmida Dumper.cs
+//  Module snapshot, export table parsing, forward resolution, import rebuild
+// ════════════════════════════════════════════════════════════════════════════
+
+internal class RemoteModule
+{
+    public ulong Base;
+    public ulong End;
+    public string Name = "";
+    public Dictionary<ulong, string>? ExportTbl;
+}
+
+internal class ImportThunk
+{
+    public RemoteModule Module;
+    public string Name;
+    public List<int> IATOffsets = new();
+    public ImportThunk(RemoteModule m) { Module = m; Name = m.Name; }
+}
+
+internal class RemoteDumper
+{
+    public const int MAX_IAT_SLOTS = 5120;
+
+    private readonly IDebuggerApi _api;
+    private readonly uint _pid;
+    private readonly ulong _imageBase, _imageBoundary, _oep;
+    private readonly bool _is64;
+    private readonly int _ptrSize;
+
+    private List<RemoteModule>? _allModules;
+    public ulong IAT { get; set; }
+
+    // Forward tables (built from local DLLs — same arch)
+    private Dictionary<ulong, ulong> _forwards = new();
+    private Dictionary<ulong, ulong> _forwardsKernelbase = new();
+
+    public RemoteDumper(IDebuggerApi api, uint pid, ulong imageBase, ulong imageBoundary, ulong oep, bool is64)
+    {
+        _api = api;
+        _pid = pid;
+        _imageBase = imageBase;
+        _imageBoundary = imageBoundary;
+        _oep = oep;
+        _is64 = is64;
+        _ptrSize = is64 ? 8 : 4;
+
+        CollectForwards();
+    }
+
+    // ── Forward resolution (Magicmida CollectNTFwd) ──
+    // Uses local DLLs since host is same architecture. Maps forwarded addresses back to exporting DLL.
+    private unsafe void CollectForwards()
+    {
+        try
+        {
+            CollectForwardsFrom(_forwards, "kernel32.dll");
+            CollectForwardsFrom(_forwards, "ole32.dll");
+            CollectForwardsFrom(_forwards, "advapi32.dll");
+            CollectForwardsFrom(_forwardsKernelbase, "kernelbase.dll");
+        }
+        catch { } // Non-critical — forward resolution is best-effort
+    }
+
+    private unsafe void CollectForwardsFrom(Dictionary<ulong, ulong> fwds, string dllName)
+    {
+        var hMod = NativeMethods.LoadLibraryW(dllName);
+        if (hMod == IntPtr.Zero) return;
+
+        try
+        {
+            byte* modBase = (byte*)hMod;
+            int lfanew = *(int*)(modBase + 0x3C);
+            // Skip to export directory
+            int ddOffset = _is64 ? lfanew + 4 + 20 + 0x70 : lfanew + 4 + 20 + 0x60;
+            uint expRva = *(uint*)(modBase + ddOffset);
+            uint expSize = *(uint*)(modBase + ddOffset + 4);
+            if (expRva == 0 || expSize == 0) return;
+
+            byte* expDir = modBase + expRva;
+            uint numFuncs = *(uint*)(expDir + 20);
+            uint* addrFuncs = (uint*)(modBase + *(uint*)(expDir + 28));
+
+            for (uint i = 0; i < numFuncs; i++)
+            {
+                byte* fwdPtr = modBase + addrFuncs[i];
+                // Check if it's a forward (string within export directory range)
+                if (fwdPtr >= expDir && fwdPtr < expDir + expSize)
+                {
+                    string fwdStr = Marshal.PtrToStringAnsi((IntPtr)fwdPtr) ?? "";
+                    int dot = fwdStr.IndexOf('.');
+                    if (dot > 0 && dot < 15 && fwdStr.Length >= 10 && fwdStr.Length <= 90 && !fwdStr.Contains(".#"))
+                    {
+                        string modName = fwdStr.Substring(0, dot);
+                        string procName = fwdStr.Substring(dot + 1);
+                        var hTarget = NativeMethods.GetModuleHandleA(modName);
+                        if (hTarget == IntPtr.Zero) hTarget = NativeMethods.LoadLibraryW(modName + ".dll");
+                        if (hTarget != IntPtr.Zero)
+                        {
+                            var procAddr = NativeMethods.GetProcAddress(hTarget, procName);
+                            if (procAddr != IntPtr.Zero)
+                            {
+                                // Map: resolved_in_target → original_in_exporter
+                                fwds[(ulong)(long)procAddr] = (ulong)(long)hMod + addrFuncs[i];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        catch { }
+    }
+
+    // ── Module snapshot and export table parsing ──
+
+    private void TakeModuleSnapshot()
+    {
+        _allModules = new List<RemoteModule>();
+        var modules = _api.Symbols.GetModules();
+        foreach (var m in modules)
+        {
+            if (m.BaseAddress == _imageBase) continue;
+            _allModules.Add(new RemoteModule
+            {
+                Base = m.BaseAddress,
+                End = m.BaseAddress + m.Size,
+                Name = m.Name.ToLowerInvariant()
+            });
+        }
+    }
+
+    public bool IsAPIAddress(ulong address)
+    {
+        if (_allModules == null) TakeModuleSnapshot();
+        foreach (var rm in _allModules!)
+        {
+            if (address >= rm.Base && address < rm.End)
+            {
+                if (rm.ExportTbl == null) GatherExports(rm);
+                return rm.ExportTbl!.ContainsKey(address);
+            }
+        }
+        return false;
+    }
+
+    private string? LookupExportName(ulong address)
+    {
+        if (_allModules == null) TakeModuleSnapshot();
+        foreach (var rm in _allModules!)
+        {
+            if (address >= rm.Base && address < rm.End)
+            {
+                if (rm.ExportTbl == null) GatherExports(rm);
+                return rm.ExportTbl!.TryGetValue(address, out var name) ? name : null;
+            }
+        }
+        return null;
+    }
+
+    private RemoteModule? FindModule(ulong address)
+    {
+        if (_allModules == null) TakeModuleSnapshot();
+        foreach (var rm in _allModules!)
+            if (address >= rm.Base && address < rm.End) return rm;
+        return null;
+    }
+
+    // Parse export table from remote process memory (Magicmida GatherModuleExportsFromRemoteProcess)
+    private void GatherExports(RemoteModule m)
+    {
+        m.ExportTbl = new Dictionary<ulong, string>();
+
+        var head = _api.Memory.ReadMemory(_pid, m.Base, 0x1000);
+        if (head == null || head.Length < 0x40) return;
+
+        uint lfanew = BitConverter.ToUInt32(head, 0x3C);
+        if (lfanew + 0x18 > head.Length) return;
+
+        ushort magic = BitConverter.ToUInt16(head, (int)lfanew + 0x18);
+        bool pe64 = magic == 0x20B;
+
+        int ddBase = (int)lfanew + 0x18 + (pe64 ? 0x70 : 0x60);
+        if (ddBase + 8 > head.Length) return;
+
+        uint expRva = BitConverter.ToUInt32(head, ddBase);
+        uint expSize = BitConverter.ToUInt32(head, ddBase + 4);
+        if (expRva == 0 || expSize == 0) return;
+
+        var expBuf = _api.Memory.ReadMemory(_pid, m.Base + expRva, expSize);
+        if (expBuf == null || expBuf.Length < 40) return;
+
+        uint numFuncs = BitConverter.ToUInt32(expBuf, 20);
+        uint numNames = BitConverter.ToUInt32(expBuf, 24);
+        uint addrOfFuncs = BitConverter.ToUInt32(expBuf, 28) - expRva;
+        uint addrOfNames = BitConverter.ToUInt32(expBuf, 32) - expRva;
+        uint addrOfOrdinals = BitConverter.ToUInt32(expBuf, 36) - expRva;
+        uint baseOrdinal = BitConverter.ToUInt32(expBuf, 16);
+
+        if (addrOfFuncs + numFuncs * 4 > expBuf.Length) return;
+        if (addrOfNames + numNames * 4 > expBuf.Length) return;
+        if (addrOfOrdinals + numNames * 2 > expBuf.Length) return;
+
+        var named = new bool[numFuncs];
+        for (int i = 0; i < numNames; i++)
+        {
+            ushort ordIdx = BitConverter.ToUInt16(expBuf, (int)addrOfOrdinals + i * 2);
+            if (ordIdx >= numFuncs) continue;
+            named[ordIdx] = true;
+
+            uint funcRva = BitConverter.ToUInt32(expBuf, (int)addrOfFuncs + ordIdx * 4);
+            uint nameRva = BitConverter.ToUInt32(expBuf, (int)addrOfNames + i * 4);
+            uint nameOff = nameRva - expRva;
+
+            string funcName = "";
+            if (nameOff < expBuf.Length)
+            {
+                int end = (int)nameOff;
+                while (end < expBuf.Length && expBuf[end] != 0) end++;
+                funcName = Encoding.ASCII.GetString(expBuf, (int)nameOff, end - (int)nameOff);
+            }
+
+            m.ExportTbl[m.Base + funcRva] = funcName;
+        }
+
+        for (int i = 0; i < numFuncs; i++)
+        {
+            if (!named[i])
+            {
+                uint funcRva = BitConverter.ToUInt32(expBuf, (int)addrOfFuncs + i * 4);
+                m.ExportTbl[m.Base + funcRva] = "#" + (baseOrdinal + (uint)i);
+            }
+        }
+    }
+
+    // ── Process and Dump (Magicmida Dumper.Process + DumpToFile) ──
+
+    public byte[]? ProcessAndDump(uint pid, ulong iat, int iatCount, ulong[] iatData,
+        List<ThemidaPanel.PeSect> sections)
+    {
+        if (iat == 0 || iatCount == 0) return SimpleDump(pid);
+
+        // Read full image
+        var pe = _api.Memory.ReadMemory(pid, _imageBase, (uint)(_imageBoundary - _imageBase));
+        if (pe == null) return null;
+
+        uint lfanew = BitConverter.ToUInt32(pe, 0x3C);
+
+        // Sanitize sections: PointerToRawData = VirtualAddress, SizeOfRawData = VirtualSize (Magicmida Sanitize)
+        ushort numSect = BitConverter.ToUInt16(pe, (int)lfanew + 6);
+        ushort optSize = BitConverter.ToUInt16(pe, (int)lfanew + 0x14);
+        int sectStart = (int)lfanew + 4 + 20 + optSize;
+        for (int i = 0; i < numSect; i++)
+        {
+            int o = sectStart + i * 40;
+            if (o + 40 > pe.Length) break;
+            uint rva = BitConverter.ToUInt32(pe, o + 12);
+            uint vsz = BitConverter.ToUInt32(pe, o + 8);
+            // PointerToRawData = VirtualAddress
+            Array.Copy(BitConverter.GetBytes(rva), 0, pe, o + 20, 4);
+            // SizeOfRawData = VirtualSize
+            Array.Copy(BitConverter.GetBytes(vsz), 0, pe, o + 16, 4);
+        }
+        // SizeOfHeaders = first section's RVA
+        if (numSect > 0)
+        {
+            uint firstRva = BitConverter.ToUInt32(pe, sectStart + 12);
+            int headersOff = (int)lfanew + 0x18 + (_is64 ? 0x3C : 0x2C); // SizeOfHeaders in optional header
+            Array.Copy(BitConverter.GetBytes(firstRva), 0, pe, headersOff, 4);
+        }
+
+        // Write resolved IAT
+        uint iatRva = (uint)(iat - _imageBase);
+        for (int i = 0; i < iatCount; i++)
+        {
+            int off = (int)iatRva + i * _ptrSize;
+            if (off + _ptrSize > pe.Length) break;
+            if (_is64)
+                Array.Copy(BitConverter.GetBytes(iatData[i]), 0, pe, off, 8);
+            else
+                Array.Copy(BitConverter.GetBytes((uint)iatData[i]), 0, pe, off, 4);
+        }
+
+        // Determine IAT size
+        uint iatSize = 0;
+        for (int i = iatCount - 1; i >= 0; i--)
+        {
+            if (IsAPIAddress(iatData[i]))
+            {
+                iatSize = (uint)((i + 1) * _ptrSize);
+                break;
+            }
+        }
+        if (iatSize == 0) iatSize = (uint)(iatCount * _ptrSize);
+
+        // Apply forward resolution to IAT in dump
+        for (int i = 0; i < iatCount; i++)
+        {
+            ulong val = iatData[i];
+            ulong resolved = val;
+            if (_forwards.TryGetValue(val, out var fwd)) resolved = fwd;
+            else if (_forwardsKernelbase.TryGetValue(val, out fwd)) resolved = fwd;
+
+            if (resolved != val)
+            {
+                int off = (int)iatRva + i * _ptrSize;
+                if (off + _ptrSize <= pe.Length)
+                {
+                    if (_is64) Array.Copy(BitConverter.GetBytes(resolved), 0, pe, off, 8);
+                    else Array.Copy(BitConverter.GetBytes((uint)resolved), 0, pe, off, 4);
+                }
+            }
+        }
+
+        // Build import directory (Magicmida Dumper.Process)
+        if (_allModules == null) TakeModuleSnapshot();
+
+        var thunks = new List<ImportThunk>();
+        bool needNewThunk = false;
+
+        for (int i = 0; i < iatCount; i++)
+        {
+            int off = (int)iatRva + i * _ptrSize;
+            if (off + _ptrSize > pe.Length) break;
+            ulong val = _is64 ? BitConverter.ToUInt64(pe, off) : BitConverter.ToUInt32(pe, off);
+            if (val == 0) { needNewThunk = true; continue; }
+
+            var rm = FindModule(val);
+            if (rm != null)
+            {
+                if (rm.ExportTbl == null) GatherExports(rm);
+                if (rm.ExportTbl!.ContainsKey(val))
+                {
+                    if (thunks.Count == 0 || thunks[^1].Name != rm.Name || needNewThunk)
+                    {
+                        thunks.Add(new ImportThunk(rm));
+                        needNewThunk = false;
+                    }
+                    thunks[^1].IATOffsets.Add(i * _ptrSize);
+                }
+                else needNewThunk = true;
+            }
+            else needNewThunk = true;
+        }
+
+        // Build .import section data
+        int descSize = 20; // sizeof(IMAGE_IMPORT_DESCRIPTOR)
+        int strOffset = (thunks.Count + 1) * descSize;
+        var importData = new byte[0x2000];
+        int descOff = 0;
+
+        // We'll place import section right after the image in the dump
+        uint importSectRva = (uint)pe.Length;
+        // Align to section alignment
+        ushort magic = BitConverter.ToUInt16(pe, (int)lfanew + 0x18);
+        int sectAlignOff = (int)lfanew + 0x18 + (magic == 0x20B ? 0x20 : 0x20);
+        uint sectAlign = BitConverter.ToUInt32(pe, sectAlignOff);
+        if (sectAlign > 0)
+        {
+            uint rem = importSectRva % sectAlign;
+            if (rem > 0) importSectRva += sectAlign - rem;
+        }
+
+        for (int ti = 0; ti < thunks.Count; ti++)
+        {
+            var thunk = thunks[ti];
+            var rm = thunk.Module;
+
+            // IMAGE_IMPORT_DESCRIPTOR: FirstThunk (offset 16), Name (offset 12)
+            uint firstThunk = iatRva + (uint)thunk.IATOffsets[0];
+            uint nameRva = importSectRva + (uint)strOffset;
+
+            Array.Copy(BitConverter.GetBytes(firstThunk), 0, importData, descOff + 16, 4);
+            Array.Copy(BitConverter.GetBytes(nameRva), 0, importData, descOff + 12, 4);
+            descOff += descSize;
+
+            var nameBytes = Encoding.ASCII.GetBytes(thunk.Name);
+            if (strOffset + nameBytes.Length + 1 < importData.Length)
+                Array.Copy(nameBytes, 0, importData, strOffset, nameBytes.Length);
+            strOffset += nameBytes.Length + 1;
+
+            foreach (int iatOff in thunk.IATOffsets)
+            {
+                int peOff = (int)iatRva + iatOff;
+                if (peOff + _ptrSize > pe.Length) continue;
+                ulong funcAddr = _is64 ? BitConverter.ToUInt64(pe, peOff) : BitConverter.ToUInt32(pe, peOff);
+
+                string? funcName = rm.ExportTbl!.TryGetValue(funcAddr, out var n) ? n : null;
+                if (funcName == null) continue;
+
+                if (funcName.StartsWith("#"))
+                {
+                    // Ordinal import
+                    ulong ordFlag = _is64 ? 0x8000000000000000UL : 0x80000000UL;
+                    ulong ordVal = ordFlag | uint.Parse(funcName.Substring(1));
+                    if (_is64) Array.Copy(BitConverter.GetBytes(ordVal), 0, pe, peOff, 8);
+                    else Array.Copy(BitConverter.GetBytes((uint)ordVal), 0, pe, peOff, 4);
+                    continue;
+                }
+
+                // Name import: write RVA to hint/name entry
+                strOffset += 2; // hint
+                uint hintNameRva = importSectRva + (uint)(strOffset - 2);
+                if (_is64) Array.Copy(BitConverter.GetBytes((ulong)hintNameRva), 0, pe, peOff, 8);
+                else Array.Copy(BitConverter.GetBytes(hintNameRva), 0, pe, peOff, 4);
+
+                var fnBytes = Encoding.ASCII.GetBytes(funcName);
+                if (strOffset + fnBytes.Length + 1 < importData.Length)
+                    Array.Copy(fnBytes, 0, importData, strOffset, fnBytes.Length);
+                strOffset += fnBytes.Length + 1;
+
+                if (strOffset > importData.Length - 0x100)
+                    Array.Resize(ref importData, importData.Length + 0x1000);
+            }
+        }
+
+        uint importSectSize = (uint)strOffset;
+        if (sectAlign > 0) { uint r = importSectSize % sectAlign; if (r > 0) importSectSize += sectAlign - r; }
+
+        // Fix PE headers
+        // EP
+        Array.Copy(BitConverter.GetBytes((uint)(_oep - _imageBase)), 0, pe, (int)lfanew + 0x28, 4);
+
+        // Disable ASLR
+        int dllCharsOff = (int)lfanew + 0x18 + (_is64 ? 0x46 : 0x2E);
+        if (dllCharsOff + 2 <= pe.Length)
+        {
+            ushort dc = BitConverter.ToUInt16(pe, dllCharsOff);
+            if ((dc & 0x40) != 0)
+            {
+                dc &= unchecked((ushort)~0x40);
+                Array.Copy(BitConverter.GetBytes(dc), 0, pe, dllCharsOff, 2);
+            }
+        }
+
+        // IAT data directory
+        int ddBaseOff = (int)lfanew + 0x18 + (_is64 ? 0x70 : 0x60);
+        int iatDirOff = ddBaseOff + 12 * 8;
+        if (iatDirOff + 8 <= pe.Length)
+        {
+            Array.Copy(BitConverter.GetBytes(iatRva), 0, pe, iatDirOff, 4);
+            Array.Copy(BitConverter.GetBytes(iatSize + (uint)_ptrSize), 0, pe, iatDirOff + 4, 4);
+        }
+
+        // Import data directory
+        int importDirOff = ddBaseOff + 1 * 8;
+        if (importDirOff + 8 <= pe.Length)
+        {
+            Array.Copy(BitConverter.GetBytes(importSectRva), 0, pe, importDirOff, 4);
+            Array.Copy(BitConverter.GetBytes((uint)(thunks.Count * descSize)), 0, pe, importDirOff + 4, 4);
+        }
+
+        // Update SizeOfImage
+        int sizeOfImageOff = (int)lfanew + 0x18 + (_is64 ? 0x38 : 0x38);
+        uint newSizeOfImage = importSectRva + importSectSize;
+        Array.Copy(BitConverter.GetBytes(newSizeOfImage), 0, pe, sizeOfImageOff, 4);
+
+        // Add .import section header
+        int newSectOff = sectStart + numSect * 40;
+        if (newSectOff + 40 <= pe.Length)
+        {
+            var impName = Encoding.ASCII.GetBytes(".import\0");
+            Array.Copy(impName, 0, pe, newSectOff, 8);
+            Array.Copy(BitConverter.GetBytes(importSectSize), 0, pe, newSectOff + 8, 4); // VirtualSize
+            Array.Copy(BitConverter.GetBytes(importSectRva), 0, pe, newSectOff + 12, 4); // VirtualAddress
+            Array.Copy(BitConverter.GetBytes(importSectSize), 0, pe, newSectOff + 16, 4); // SizeOfRawData
+            Array.Copy(BitConverter.GetBytes(importSectRva), 0, pe, newSectOff + 20, 4); // PointerToRawData
+            Array.Copy(BitConverter.GetBytes(0xC0000040U), 0, pe, newSectOff + 36, 4); // Characteristics: R|IDATA
+
+            // Increment NumberOfSections
+            BitConverter.GetBytes((ushort)(numSect + 1)).CopyTo(pe, (int)lfanew + 6);
+        }
+
+        // Combine PE + import section
+        var result = new byte[pe.Length + (int)importSectSize];
+        Array.Copy(pe, result, pe.Length);
+        // Pad between pe.Length and importSectRva
+        int padSize = (int)importSectRva - pe.Length;
+        // Import data starts at importSectRva offset in the file
+        Array.Copy(importData, 0, result, (int)importSectRva, Math.Min(strOffset, importData.Length));
+
+        _api.Log.Info($"[Dump] {thunks.Count} import thunks, .import at RVA 0x{importSectRva:X}");
+        return result;
+    }
+
+    private byte[]? SimpleDump(uint pid)
+    {
+        var pe = _api.Memory.ReadMemory(pid, _imageBase, (uint)(_imageBoundary - _imageBase));
+        if (pe == null) return null;
+
+        uint lfanew = BitConverter.ToUInt32(pe, 0x3C);
+        uint oepRva = (uint)(_oep - _imageBase);
+        Array.Copy(BitConverter.GetBytes(oepRva), 0, pe, (int)lfanew + 0x28, 4);
+
+        int dllCharsOff = (int)lfanew + 0x18 + (_is64 ? 0x46 : 0x2E);
+        if (dllCharsOff + 2 <= pe.Length)
+        {
+            ushort dc = BitConverter.ToUInt16(pe, dllCharsOff);
+            dc &= unchecked((ushort)~0x40);
+            Array.Copy(BitConverter.GetBytes(dc), 0, pe, dllCharsOff, 2);
+        }
+
+        return pe;
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  P/Invoke for local forward collection
+// ════════════════════════════════════════════════════════════════════════════
+
+internal static class NativeMethods
+{
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern IntPtr LoadLibraryW(string lpFileName);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool FreeLibrary(IntPtr hModule);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Ansi, SetLastError = true)]
+    public static extern IntPtr GetProcAddress(IntPtr hModule, string lpProcName);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Ansi, SetLastError = true)]
+    public static extern IntPtr GetModuleHandleA(string lpModuleName);
 }
