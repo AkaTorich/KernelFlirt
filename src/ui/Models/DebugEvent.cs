@@ -28,6 +28,7 @@ public class DebugEvent
     public bool IsKernelMode { get; set; }
     public uint ExceptionCode { get; set; }
     public ulong FaultAddress { get; set; }
+    public uint AccessType { get; set; }    // For AV: 0=read, 1=write, 8=execute
     public DebugEventRegisters? Registers { get; set; }
 
     public string TypeName => Type switch

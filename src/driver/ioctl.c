@@ -14,6 +14,7 @@ extern NTSTATUS KfWriteMemory(PIRP Irp, PIO_STACK_LOCATION IoStack);
 extern NTSTATUS KfSetBreakpoint(PIRP Irp, PIO_STACK_LOCATION IoStack);
 extern NTSTATUS KfRemoveBreakpoint(PIRP Irp, PIO_STACK_LOCATION IoStack);
 extern NTSTATUS KfSingleStep(PIRP Irp, PIO_STACK_LOCATION IoStack);
+extern NTSTATUS KfProtectMemory(PIRP Irp, PIO_STACK_LOCATION IoStack);
 extern NTSTATUS KfReadRegisters(PIRP Irp, PIO_STACK_LOCATION IoStack);
 extern NTSTATUS KfWriteRegisters(PIRP Irp, PIO_STACK_LOCATION IoStack);
 extern NTSTATUS KfEnumModules(PIRP Irp, PIO_STACK_LOCATION IoStack);
@@ -89,6 +90,10 @@ KfDispatchIoctl(
 
     case IOCTL_KF_SINGLE_STEP:
         status = KfSingleStep(Irp, ioStack);
+        break;
+
+    case IOCTL_KF_PROTECT_MEMORY:
+        status = KfProtectMemory(Irp, ioStack);
         break;
 
     case IOCTL_KF_READ_REGISTERS:

@@ -62,6 +62,9 @@ public class ThemidaPanel : ScrollViewer
         DecompDetecting,            // Phase 1: confirm decompressor is writing to .text
         DecompRunning,              // Phase 2: guard on last page, waiting for decomp to finish
         WaitingForApiCall,          // Phase 3: HW BPs on API functions, check return addr in .text
+        TextGuarded,                // PAGE_NOACCESS on .text — waiting for execute access = OEP
+        TextStepRearm,              // Single-stepping past a read/write AV, will re-arm PAGE_NOACCESS
+        OepStepThrough,             // Execute AV suppressed, waiting for SingleStep to break at OEP
         Done
     }
 
@@ -74,8 +77,8 @@ public class ThemidaPanel : ScrollViewer
     private Dictionary<ulong, string> _apiBreakpoints = new(); // addr → API name
     private int _memBpHitCount;
     private int _apiHitCount;     // Phase 3 API hit counter
-    private byte[]? _encryptedTextSnapshot; // first 16 bytes of .text when encrypted
-    private volatile bool _textDecrypted = false; // set by poll thread when .text changes
+    private byte[]? _encryptedTextSnapshot; // used by legacy WaitingForApiCall phase
+    private volatile bool _textDecrypted = false; // used by legacy WaitingForApiCall phase
     private ulong _discoveredOep;
     private ulong _unpackedPeBase;
     private int _stolenBytesSize;
@@ -84,6 +87,11 @@ public class ThemidaPanel : ScrollViewer
     private List<SectionEntry> _sections = new();
 
     private record SectionEntry(string Name, uint Rva, uint VirtualSize, uint Characteristics);
+
+    // PAGE_NOACCESS guard state
+    private uint _guardOldProtection;  // original .text protection (to restore on OEP)
+    private int _guardHitCount;        // total AV hits during guarding
+    private ulong _firstTextExecAddr;  // first execute-access address in .text (Magicmida uses this)
 
     // IAT fix results
     private List<IatFixEntry> _iatFixes = new();
@@ -429,36 +437,42 @@ public class ThemidaPanel : ScrollViewer
         foreach (var m in _api.Symbols.GetModules())
             _knownModuleBases.Add(m.BaseAddress);
 
-        // Save encrypted .text snapshot (to detect when decryption finishes)
-        _encryptedTextSnapshot = _api.Memory.ReadMemory(_api.TargetPid, _originalTextBase, 16);
-        _textDecrypted = false;
+        // Strategy: PAGE_NOACCESS on .text section (Magicmida approach).
+        // Any access to .text causes ACCESS_VIOLATION.
+        // ExceptionInformation[0] tells us: 0=read, 1=write, 8=execute.
+        // Read/write = Themida unpacking → single-step past, re-arm guard.
+        // Execute = code running in .text = OEP found!
+        uint pid = _api.TargetPid;
+        _guardHitCount = 0;
+        _firstTextExecAddr = 0;
 
-        // Strategy: Themida virtualizes OEP, so we can't BP on native OEP.
-        // Instead, set SW BPs on CRT-specific APIs BEFORE Run.
-        // Themida VM doesn't call these during unpacking, but CRT does after unpack.
-        // When BP fires AND .text is decrypted → unpacked code is running → break.
-        SetSwBpsOnApis(_api.TargetPid);
-
-        if (_apiBreakpoints.Count > 0)
+        // Set PAGE_NOACCESS on .text section
+        var (ok, oldProt) = _api.Memory.ProtectMemory(pid, _originalTextBase, _originalTextSize, 0x01 /* PAGE_NOACCESS */);
+        if (!ok)
         {
-            _phase = UnpackPhase.WaitingForApiCall;
-            _apiHitCount = 0;
-            _api.Log.Info($"[Unpack] {_apiBreakpoints.Count} SW BPs on CRT APIs (set before Run).");
-            _api.Log.Info("[Unpack] Press Run (F9). Will auto-break when unpacked CRT calls an API.");
-            SetStatus($"SW BPs on {_apiBreakpoints.Count} APIs\nPress Run (F9)");
+            _api.Log.Error("[Unpack] Failed to set PAGE_NOACCESS on .text!");
+            SetStatus("Failed to set PAGE_NOACCESS");
+            return;
+        }
 
-            // Background poll to detect .text decryption (sets _textDecrypted flag)
-            System.Threading.Tasks.Task.Run(() => PollForDecryptedText());
-        }
-        else
-        {
-            _api.Log.Warning("[Unpack] Failed to set API BPs.");
-            SetStatus("Failed to set API BPs");
-        }
+        _guardOldProtection = oldProt;
+        _phase = UnpackPhase.TextGuarded;
+        _api.Log.Info($"[Unpack] PAGE_NOACCESS set on .text (0x{_originalTextBase:X}, 0x{_originalTextSize:X} bytes)");
+        _api.Log.Info($"[Unpack] Old protection: 0x{oldProt:X}. Press Run (F9).");
+        _api.Log.Info("[Unpack] Will detect OEP via execute-access AV (AccessType=8).");
+        SetStatus("PAGE_NOACCESS on .text\nPress Run (F9)");
     }
 
     public void StopUnpacking()
     {
+        // Restore .text protection if we were guarding
+        if ((_phase == UnpackPhase.TextGuarded || _phase == UnpackPhase.TextStepRearm) &&
+            _guardOldProtection != 0 && _originalTextBase != 0)
+        {
+            _api.Memory.ProtectMemory(_api.TargetPid, _originalTextBase, _originalTextSize, _guardOldProtection);
+            _api.Log.Info("[Unpack] Restored .text protection.");
+        }
+
         CleanupAllBps();
         _phase = UnpackPhase.Idle;
 
@@ -918,36 +932,130 @@ public class ThemidaPanel : ScrollViewer
         uint pid = evt.ProcessId;
         ulong rip = evt.Address;
 
+        // ══════ PAGE_NOACCESS guard: handle AV on .text ══════
+        if (_phase == UnpackPhase.TextGuarded &&
+            evt.Type == PluginDebugEventType.AccessViolation)
+        {
+            ulong faultAddr = evt.FaultAddress;
+            bool faultInText = faultAddr >= _originalTextBase &&
+                               faultAddr < _originalTextBase + _originalTextSize;
+
+            if (!faultInText)
+                return false; // AV not on .text — let normal handler deal with it
+
+            _guardHitCount++;
+            uint accessType = evt.AccessType; // 0=read, 1=write, 8=execute
+
+            if (accessType == 8) // EXECUTE — code is running in .text = OEP!
+            {
+                _api.Log.Warning($"[Unpack] ★ Execute access in .text at 0x{faultAddr:X}! ({_guardHitCount} guard hits)");
+                _firstTextExecAddr = faultAddr;
+
+                // Restore original .text protection so instruction can execute
+                _api.Memory.ProtectMemory(pid, _originalTextBase, _originalTextSize, _guardOldProtection);
+
+                // Suppress AV + set TF → on next SingleStep we'll break at OEP
+                _phase = UnpackPhase.OepStepThrough;
+                evt.ContinueMode = 3; // KF_CONTINUE_HANDLED
+                return true; // Don't break yet — wait for SingleStep
+            }
+
+            // Read (0) or Write (1) — Themida VM is reading/writing .text (decryption)
+            if (_guardHitCount <= 5 || _guardHitCount % 500 == 0)
+            {
+                string accessStr = accessType == 0 ? "read" : accessType == 1 ? "write" : $"type{accessType}";
+                _api.Log.Info($"[Unpack] .text {accessStr} at 0x{faultAddr:X} from RIP=0x{rip:X} (#{_guardHitCount})");
+            }
+
+            if (_guardHitCount > 500000)
+            {
+                _api.Log.Warning("[Unpack] 500K guard hits — aborting.");
+                _api.Memory.ProtectMemory(pid, _originalTextBase, _originalTextSize, _guardOldProtection);
+                _phase = UnpackPhase.Idle;
+                return false;
+            }
+
+            // Temporarily restore .text protection so instruction can execute
+            _api.Memory.ProtectMemory(pid, _originalTextBase, _originalTextSize, _guardOldProtection);
+
+            // Continue with HANDLED mode: suppresses AV + sets TF (single-step)
+            // On next SingleStep event we'll re-arm PAGE_NOACCESS
+            _phase = UnpackPhase.TextStepRearm;
+            evt.ContinueMode = 3; // KF_CONTINUE_HANDLED
+            return true; // Plugin handled — don't break in UI
+        }
+
+        // ══════ OEP step-through: AV was suppressed, now at first instruction ══════
+        if (_phase == UnpackPhase.OepStepThrough &&
+            evt.Type == PluginDebugEventType.SingleStep)
+        {
+            _api.Log.Warning($"[Unpack] ★ OEP reached at 0x{rip:X} (after execute AV at 0x{_firstTextExecAddr:X})");
+
+            // Check if this is virtualized OEP
+            var regs = _api.Memory.ReadRegisters(pid, evt.ThreadId);
+            ulong rsp = GetReg(regs, _is64 ? "RSP" : "ESP");
+            if (rsp != 0)
+            {
+                var retData = _api.Memory.ReadMemory(pid, rsp, (uint)_ptrSize);
+                if (retData != null)
+                {
+                    ulong retAddr = _is64 ? BitConverter.ToUInt64(retData) : BitConverter.ToUInt32(retData);
+                    if (_themidaSectionBase != 0 && retAddr >= _themidaSectionBase &&
+                        retAddr < _themidaSectionBase + _themidaSectionSize)
+                    {
+                        _api.Log.Warning($"[Unpack] Return addr 0x{retAddr:X} is in .themida → OEP is virtualized");
+                        ulong realOep = TryFindMsvcOep(pid, _firstTextExecAddr);
+                        if (realOep != 0)
+                        {
+                            _api.Log.Warning($"[Unpack] Found real MSVC OEP at 0x{realOep:X}");
+                            rip = realOep;
+                        }
+                    }
+                }
+            }
+
+            OnOepFound(pid, rip);
+            return false; // Break in UI at OEP
+        }
+
+        // ══════ Single-step re-arm: re-set PAGE_NOACCESS after stepping past ══════
+        if (_phase == UnpackPhase.TextStepRearm &&
+            evt.Type == PluginDebugEventType.SingleStep)
+        {
+            // Re-arm PAGE_NOACCESS on .text
+            _api.Memory.ProtectMemory(pid, _originalTextBase, _originalTextSize, 0x01 /* PAGE_NOACCESS */);
+            _phase = UnpackPhase.TextGuarded;
+
+            // Check if RIP is now in .text (shouldn't happen normally, but just in case)
+            if (rip >= _originalTextBase && rip < _originalTextBase + _originalTextSize)
+            {
+                _api.Log.Warning($"[Unpack] ★ RIP entered .text at 0x{rip:X} after step!");
+                _api.Memory.ProtectMemory(pid, _originalTextBase, _originalTextSize, _guardOldProtection);
+                OnOepFound(pid, rip);
+                return false;
+            }
+
+            return true; // continue silently
+        }
+
+        // ══════ Legacy phases (DecompDetecting, WaitingForApiCall) ══════
+
         // Check if RIP is in .text — execution entered unpacked code = OEP!
         bool ripInText = rip >= _originalTextBase && rip < _originalTextBase + _originalTextSize;
 
-        if (ripInText)
+        if (ripInText && _phase != UnpackPhase.TextGuarded && _phase != UnpackPhase.TextStepRearm)
         {
-            _api.Log.Warning($"[Stealth] ★ Execution entered .text at 0x{rip:X}! (total {_memBpHitCount} guard hits)");
+            _api.Log.Warning($"[Stealth] ★ Execution entered .text at 0x{rip:X}!");
             OnOepFound(pid, rip);
-            return false; // Break at OEP
+            return false;
         }
 
-        // ══════ PAGE_GUARD on .text: re-arm and continue ══════
-        // RIP is NOT in .text (checked above), so this is a read/write access by
-        // the Themida VM (decompressor/decryptor). Just re-arm the guard and continue.
-        // When RIP finally IS in .text, the check above catches it as OEP.
         if (_phase == UnpackPhase.DecompDetecting)
         {
             _memBpHitCount++;
-
-            // Re-arm PAGE_GUARD on .text page 0
             CleanupAllBps();
             var h = _api.Breakpoints.SetBreakpoint(pid, 0, _originalTextBase, PluginBreakpointType.Memory);
             if (h.HasValue) _memBpHandles.Add(h.Value);
-
-            // Every 100 hits, check if .text has been decrypted (bytes changed from snapshot)
-            if (_memBpHitCount % 100 == 0 && _encryptedTextSnapshot != null)
-            {
-                var current = _api.Memory.ReadMemory(pid, _originalTextBase, 16);
-                if (current != null && !current.SequenceEqual(_encryptedTextSnapshot))
-                    _api.Log.Info($"[Stealth] .text decryption detected after {_memBpHitCount} guard hits");
-            }
 
             if (_memBpHitCount > 100000)
             {
@@ -956,50 +1064,26 @@ public class ThemidaPanel : ScrollViewer
                 _phase = UnpackPhase.Idle;
                 return false;
             }
-
-            return true; // continue silently
+            return true;
         }
 
-        // ══════ SW BPs on CRT APIs (GetCommandLineW, GetStartupInfoW) ══════
-        // BPs are set BEFORE Run. During Themida unpacking they shouldn't fire
-        // (Themida VM doesn't call these CRT-specific APIs).
-        // When they fire AND .text is decrypted → unpacked program is running → break.
         if (_phase == UnpackPhase.WaitingForApiCall)
         {
             _apiHitCount++;
-
             bool isOurApiBp = _apiBreakpoints.ContainsKey(rip);
-            string apiName = isOurApiBp ? _apiBreakpoints[rip] : "unknown";
+            if (!isOurApiBp) return false;
 
-            if (!isOurApiBp)
-                return false; // Not our BP
-
+            string apiName = _apiBreakpoints[rip];
             if (!_textDecrypted)
             {
-                // .text still encrypted = Themida still unpacking. Shouldn't happen
-                // with CRT-only APIs, but just in case — continue.
                 if (_apiHitCount <= 3)
                     _api.Log.Info($"[Unpack] API hit during unpacking: {apiName} (continuing)");
                 return true;
             }
 
-            // .text is decrypted AND CRT API was called → program is running!
-            _api.Log.Warning($"[Unpack] ★ {apiName} called after .text decryption! Program is running.");
-
-            // Read return address for context
-            var regs = _api.Memory.ReadRegisters(pid, evt.ThreadId);
-            ulong rsp = GetReg(regs, _is64 ? "RSP" : "ESP");
-            ulong retAddr = 0;
-            if (rsp != 0)
-            {
-                var retData = _api.Memory.ReadMemory(pid, rsp, (uint)_ptrSize);
-                if (retData != null)
-                    retAddr = _is64 ? BitConverter.ToUInt64(retData) : BitConverter.ToUInt32(retData);
-            }
-
-            _api.Log.Info($"[Unpack] Return address: 0x{retAddr:X}");
+            _api.Log.Warning($"[Unpack] ★ {apiName} called after .text decryption!");
             CleanupAllBps();
-            OnOepFound(pid, rip); // Break here — closest we can get with virtualized OEP
+            OnOepFound(pid, rip);
             return false;
         }
 
@@ -1289,6 +1373,8 @@ public class ThemidaPanel : ScrollViewer
                 }
 
                 bool isLegit = moduleRanges.Any(m => iatEntry >= m.BaseAddress && iatEntry < m.End);
+                // Themida wraps APIs via thunks in .themida section — these look "in-module" but are protection code
+                if (isLegit && IsThemidaAddress(iatEntry)) isLegit = false;
                 if (!isLegit)
                 {
                     totalRedirected++;
@@ -1481,8 +1567,8 @@ public class ThemidaPanel : ScrollViewer
             {
                 ulong ptr = is64 ? BitConverter.ToUInt64(data, i) : BitConverter.ToUInt32(data, i);
                 if (ptr == 0 || ptr < 0x10000 || ptr > 0x7FFFFFFFFFFF) continue;
-                if (IsInModule(ptr, moduleRanges)) continue;
-                if (ptr >= peBase && ptr < peBase + _originalImageSize) continue;
+                if (IsInModule(ptr, moduleRanges) && !IsThemidaAddress(ptr)) continue;
+                if (ptr >= peBase && ptr < peBase + _originalImageSize && !IsThemidaAddress(ptr)) continue;
 
                 // Check if we already fixed this slot
                 ulong slotAddr = scanBase + (ulong)i;
@@ -1510,6 +1596,22 @@ public class ThemidaPanel : ScrollViewer
 
     private static bool IsInModule(ulong addr, List<(ulong BaseAddress, ulong End, string Name)> modules)
         => modules.Any(m => addr >= m.BaseAddress && addr < m.End);
+
+    /// <summary>
+    /// Check if address is in Themida/WinLicense or .boot section (not real code).
+    /// These addresses look like they're "in the exe" but actually point to
+    /// protection code that will be stripped from the dump.
+    /// </summary>
+    private bool IsThemidaAddress(ulong addr)
+    {
+        if (_themidaSectionBase != 0 && addr >= _themidaSectionBase &&
+            addr < _themidaSectionBase + _themidaSectionSize)
+            return true;
+        if (_bootSectionBase != 0 && addr >= _bootSectionBase &&
+            addr < _bootSectionBase + _bootSectionSize)
+            return true;
+        return false;
+    }
 
     private string ReadAsciiString(uint pid, ulong addr)
     {
@@ -1612,6 +1714,47 @@ public class ThemidaPanel : ScrollViewer
         else
             Array.Copy(BitConverter.GetBytes((uint)peBase), 0, image, optOff + 28, 4); // ImageBase (PE32)
         Array.Copy(BitConverter.GetBytes(0u), 0, image, optOff + 64, 4);        // Checksum = 0
+
+        // Zero Exception directory (DD[3]) — points to removed .themida section, causes crash
+        int ddBase = optOff + (_is64 ? 112 : 96); // start of DataDirectory array
+        int exceptDdOff = ddBase + 3 * 8;          // each DD entry is 8 bytes (RVA + Size)
+        if (exceptDdOff + 8 <= image.Length)
+        {
+            Array.Copy(BitConverter.GetBytes(0u), 0, image, exceptDdOff, 4);     // RVA = 0
+            Array.Copy(BitConverter.GetBytes(0u), 0, image, exceptDdOff + 4, 4); // Size = 0
+        }
+
+        // Zero Debug directory (DD[6]) — may point to removed section
+        int debugDdOff = ddBase + 6 * 8;
+        if (debugDdOff + 8 <= image.Length)
+        {
+            Array.Copy(BitConverter.GetBytes(0u), 0, image, debugDdOff, 4);
+            Array.Copy(BitConverter.GetBytes(0u), 0, image, debugDdOff + 4, 4);
+        }
+
+        // Zero TLS directory (DD[9]) — Themida hooks TLS callbacks
+        int tlsDdOff = ddBase + 9 * 8;
+        if (tlsDdOff + 8 <= image.Length)
+        {
+            Array.Copy(BitConverter.GetBytes(0u), 0, image, tlsDdOff, 4);
+            Array.Copy(BitConverter.GetBytes(0u), 0, image, tlsDdOff + 4, 4);
+        }
+
+        // Zero Load Config directory (DD[10]) — Guard CF/XF pointers point to removed sections
+        int loadCfgDdOff = ddBase + 10 * 8;
+        if (loadCfgDdOff + 8 <= image.Length)
+        {
+            Array.Copy(BitConverter.GetBytes(0u), 0, image, loadCfgDdOff, 4);
+            Array.Copy(BitConverter.GetBytes(0u), 0, image, loadCfgDdOff + 4, 4);
+        }
+
+        // Zero Bound Import directory (DD[11])
+        int boundDdOff = ddBase + 11 * 8;
+        if (boundDdOff + 8 <= image.Length)
+        {
+            Array.Copy(BitConverter.GetBytes(0u), 0, image, boundDdOff, 4);
+            Array.Copy(BitConverter.GetBytes(0u), 0, image, boundDdOff + 4, 4);
+        }
 
         if (_discoveredOep != 0)
         {

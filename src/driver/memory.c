@@ -332,3 +332,64 @@ KfWriteMemory(
     Irp->IoStatus.Information = bytesWritten;
     return status;
 }
+
+/* ------------------------------------------------------------------ */
+/* IOCTL_KF_PROTECT_MEMORY — change page protection via ZwProtectVirtualMemory */
+/* ------------------------------------------------------------------ */
+NTSTATUS
+KfProtectMemory(
+    PIRP                Irp,
+    PIO_STACK_LOCATION  IoStack)
+{
+    PKF_PROTECT_MEMORY_IN  input;
+    PKF_PROTECT_MEMORY_OUT output;
+    PEPROCESS process = NULL;
+    NTSTATUS  status;
+    ULONG     oldProtect = 0;
+
+    if (IoStack->Parameters.DeviceIoControl.InputBufferLength < sizeof(KF_PROTECT_MEMORY_IN)) {
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+    if (IoStack->Parameters.DeviceIoControl.OutputBufferLength < sizeof(KF_PROTECT_MEMORY_OUT)) {
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    input  = (PKF_PROTECT_MEMORY_IN)Irp->AssociatedIrp.SystemBuffer;
+    output = (PKF_PROTECT_MEMORY_OUT)Irp->AssociatedIrp.SystemBuffer;
+
+    status = PsLookupProcessByProcessId((HANDLE)(ULONG_PTR)input->ProcessId, &process);
+    if (!NT_SUCCESS(status)) {
+        Irp->IoStatus.Information = 0;
+        return status;
+    }
+
+    {
+        KAPC_STATE  apcState;
+        PVOID       baseAddr = (PVOID)input->Address;
+        SIZE_T      regionSize = (SIZE_T)input->Size;
+
+        KeStackAttachProcess(process, &apcState);
+
+        __try {
+            status = ZwProtectVirtualMemory(
+                ZwCurrentProcess(), &baseAddr, &regionSize,
+                input->NewProtection, &oldProtect);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {
+            status = GetExceptionCode();
+        }
+
+        KeUnstackDetachProcess(&apcState);
+    }
+
+    ObDereferenceObject(process);
+
+    if (NT_SUCCESS(status)) {
+        output->OldProtection = oldProtect;
+        Irp->IoStatus.Information = sizeof(KF_PROTECT_MEMORY_OUT);
+    } else {
+        Irp->IoStatus.Information = 0;
+    }
+
+    return status;
+}
