@@ -1,20 +1,20 @@
  KernelFlirt
 
- Timestamp is 69b7911f (Mon Mar 16 13:11:59 2026)
+ Timestamp is 69b7b524 (Mon Mar 16 15:45:40 2026)
 
  Preferred load address is 0000000180000000
 
  Start         Length     Name                   Class
- 0001:00000000 00006480H .text$mn                CODE
- 0001:00006480 000004a6H .text$mn$21             CODE
+ 0001:00000000 00006600H .text$mn                CODE
+ 0001:00006600 000004a6H .text$mn$21             CODE
  0002:00000000 00000180H .idata$5                DATA
  0002:00000180 00002410H .rdata                  DATA
  0002:00002590 00000018H .rdata$voltmd           DATA
  0002:000025a8 000001c0H .rdata$zzzdbg           DATA
- 0002:00002768 000007e8H .xdata                  DATA
+ 0002:00002768 00000810H .xdata                  DATA
  0003:00000000 00000080H .data                   DATA
- 0003:00000080 00003bb0H .bss                    DATA
- 0004:00000000 0000039cH .pdata                  DATA
+ 0003:00000080 00003bb8H .bss                    DATA
+ 0004:00000000 000003a8H .pdata                  DATA
  0005:00000000 00000014H .idata$2                DATA
  0005:00000014 00000014H .idata$3                DATA
  0005:00000028 00000180H .idata$4                DATA
@@ -57,32 +57,33 @@
  0001:00000270       KfCreateClose              0000000180001270 f   main.obj
  0001:000002a0       KfDeviceControl            00000001800012a0 f   main.obj
  0001:000002b0       KfDispatchIoctl            00000001800012b0 f   ioctl.obj
- 0001:00000fa0       KfReadMemory               0000000180001fa0 f   memory.obj
- 0001:000012e0       KfWriteMemory              00000001800022e0 f   memory.obj
- 0001:00002190       KfRemoveBreakpoint         0000000180003190 f   breakpoint.obj
- 0001:000023f0       KfFindSwBpOrigByte         00000001800033f0 f   breakpoint.obj
- 0001:000024c0       KfRemoveAllBreakpoints     00000001800034c0 f   breakpoint.obj
- 0001:000026e0       KfSingleStep               00000001800036e0 f   singlestep.obj
- 0001:000027c0       KfReadRegisters            00000001800037c0 f   registers.obj
- 0001:00002a60       KfWriteRegisters           0000000180003a60 f   registers.obj
- 0001:00002c50       KfEnumModules              0000000180003c50 f   modules.obj
- 0001:00003310       KfClearThreadHide          0000000180004310 f   modules.obj
- 0001:00003540       KfEnumThreads              0000000180004540 f   threads.obj
- 0001:000037f0       KfEnumProcesses            00000001800047f0 f   process.obj
- 0001:00003b30       KfPatchBytes               0000000180004b30 f   debughook.obj
- 0001:00004ed0       KfInstallDebugHook         0000000180005ed0 f   debughook.obj
- 0001:000055c0       KfDebugHookCleanup         00000001800065c0 f   debughook.obj
- 0001:00005820       KfDebugHookDeactivate      0000000180006820 f   debughook.obj
- 0001:00005d70       KfInstallNtQsiHook         0000000180006d70 f   ntqsi_hook.obj
- 0001:00006270       KfProbeNtQsi               0000000180007270 f   ntqsi_hook.obj
- 0001:00006391       __C_specific_handler       0000000180007391 f   ntoskrnl:ntoskrnl.exe
- 0001:000063a0       __cpu_features_init        00000001800073a0 f   ntoskrnl:cpuinfo.obj
- 0001:00006480       memcpy                     0000000180007480 f   ntoskrnl:memcpy.obj
- 0001:00006480       memmove                    0000000180007480 f   ntoskrnl:memcpy.obj
- 0001:00006740       memset                     0000000180007740 f   ntoskrnl:memset.obj
- 0001:00006740       memset_$fo_default$        0000000180007740     ntoskrnl:memset.obj
- 0001:00006880       __memset_repmovs           0000000180007880 f   ntoskrnl:memset.obj
- 0001:00006900       __memset_query             0000000180007900 f   ntoskrnl:memset.obj
+ 0001:00000fb0       KfReadMemory               0000000180001fb0 f   memory.obj
+ 0001:000012f0       KfWriteMemory              00000001800022f0 f   memory.obj
+ 0001:00001510       KfProtectMemory            0000000180002510 f   memory.obj
+ 0001:000022d0       KfRemoveBreakpoint         00000001800032d0 f   breakpoint.obj
+ 0001:00002530       KfFindSwBpOrigByte         0000000180003530 f   breakpoint.obj
+ 0001:00002600       KfRemoveAllBreakpoints     0000000180003600 f   breakpoint.obj
+ 0001:00002820       KfSingleStep               0000000180003820 f   singlestep.obj
+ 0001:00002900       KfReadRegisters            0000000180003900 f   registers.obj
+ 0001:00002ba0       KfWriteRegisters           0000000180003ba0 f   registers.obj
+ 0001:00002d90       KfEnumModules              0000000180003d90 f   modules.obj
+ 0001:00003450       KfClearThreadHide          0000000180004450 f   modules.obj
+ 0001:00003680       KfEnumThreads              0000000180004680 f   threads.obj
+ 0001:00003930       KfEnumProcesses            0000000180004930 f   process.obj
+ 0001:00003c70       KfPatchBytes               0000000180004c70 f   debughook.obj
+ 0001:00005040       KfInstallDebugHook         0000000180006040 f   debughook.obj
+ 0001:00005730       KfDebugHookCleanup         0000000180006730 f   debughook.obj
+ 0001:00005990       KfDebugHookDeactivate      0000000180006990 f   debughook.obj
+ 0001:00005ee0       KfInstallNtQsiHook         0000000180006ee0 f   ntqsi_hook.obj
+ 0001:000063e0       KfProbeNtQsi               00000001800073e0 f   ntqsi_hook.obj
+ 0001:00006501       __C_specific_handler       0000000180007501 f   ntoskrnl:ntoskrnl.exe
+ 0001:00006510       __cpu_features_init        0000000180007510 f   ntoskrnl:cpuinfo.obj
+ 0001:00006600       memcpy                     0000000180007600 f   ntoskrnl:memcpy.obj
+ 0001:00006600       memmove                    0000000180007600 f   ntoskrnl:memcpy.obj
+ 0001:000068c0       memset                     00000001800078c0 f   ntoskrnl:memset.obj
+ 0001:000068c0       memset_$fo_default$        00000001800078c0     ntoskrnl:memset.obj
+ 0001:00006a00       __memset_repmovs           0000000180007a00 f   ntoskrnl:memset.obj
+ 0001:00006a80       __memset_query             0000000180007a80 f   ntoskrnl:memset.obj
  0002:00000000       __imp_RtlInitUnicodeString 0000000180008000     ntoskrnl:ntoskrnl.exe
  0002:00000008       __imp_IoDeleteDevice       0000000180008008     ntoskrnl:ntoskrnl.exe
  0002:00000010       __imp_IoDeleteSymbolicLink 0000000180008010     ntoskrnl:ntoskrnl.exe
@@ -344,65 +345,65 @@
  0000:fffef000       .debug$S                   0000000180000000     ntoskrnl:ntoskrnl.exe
  0000:fffef000       .debug$S                   0000000180000000     ntoskrnl:ntoskrnl.exe
  0000:fffef000       .debug$S                   0000000180000000     ntoskrnl:ntoskrnl.exe
- 0001:00000d84       $LN153                     0000000180001d84     ioctl.obj
- 0001:00000dc8       $LN152                     0000000180001dc8     ioctl.obj
- 0001:00000eb0       KfSafeKernelRead           0000000180001eb0 f   memory.obj
- 0001:00001120       KfSafeKernelWrite          0000000180002120 f   memory.obj
- 0001:00001500       KfWriteProcessMemory       0000000180002500 f   breakpoint.obj
- 0001:000016e0       KfWriteKernelByte          00000001800026e0 f   breakpoint.obj
- 0001:000017f0       KfReadKernelByte           00000001800027f0 f   breakpoint.obj
- 0001:00001840       KfSetSwBreakpoint          0000000180002840 f   breakpoint.obj
- 0001:00001b40       KfSetHwBreakpoint          0000000180002b40 f   breakpoint.obj
- 0001:00001e50       KfSetMemoryBreakpoint      0000000180002e50 f   breakpoint.obj
- 0001:000020a0       KfRemoveMemoryBreakpoint   00000001800030a0 f   breakpoint.obj
- 0001:00002f10       FindCrossThreadFlagsOffset 0000000180003f10 f   modules.obj
- 0001:00003770       KfResolveSuspendApis       0000000180004770 f   threads.obj
- 0001:000039f0       KfWriteByteInContext       00000001800049f0 f   debughook.obj
- 0001:00003d60       KfPatternScanKdTrap        0000000180004d60 f   debughook.obj
- 0001:00004010       KfFindKdpTrapCallSite      0000000180005010 f   debughook.obj
- 0001:00004110       KfFindKiDebugRoutineInCode 0000000180005110 f   debughook.obj
- 0001:000042d0       KfFindKiDebugRoutine       00000001800052d0 f   debughook.obj
- 0001:000044b0       KfFillDebugEvent           00000001800054b0 f   debughook.obj
- 0001:00004780       KfCompleteWaitIrp          0000000180005780 f   debughook.obj
- 0001:00004830       KfReportAndBlock           0000000180005830 f   debughook.obj
- 0001:00004970       KfDebugHandler             0000000180005970 f   debughook.obj
- 0001:00004d10       KfCancelWaitIrp            0000000180005d10 f   debughook.obj
- 0001:00004d80       KfDumpBytes                0000000180005d80 f   debughook.obj
- 0001:000058e0       KfNtQsiHandler             00000001800068e0 f   ntqsi_hook.obj
- 0001:00005950       DecodeInsnLength           0000000180006950 f   ntqsi_hook.obj
- 0001:00005b10       FindNtQuerySystemInformation 0000000180006b10 f   ntqsi_hook.obj
- 0001:00006480       $$000000                   0000000180007480     ntoskrnl:memcpy.obj
- 0001:000064a0       mcpy00                     00000001800074a0     ntoskrnl:memcpy.obj
- 0001:000064c0       mcpy10                     00000001800074c0     ntoskrnl:memcpy.obj
- 0001:000064da       mcpy20                     00000001800074da     ntoskrnl:memcpy.obj
- 0001:000064e0       mcpy30                     00000001800074e0     ntoskrnl:memcpy.obj
- 0001:00006500       xcpy00                     0000000180007500     ntoskrnl:memcpy.obj
- 0001:00006531       xcpy10                     0000000180007531     ntoskrnl:memcpy.obj
- 0001:00006580       xcpy13                     0000000180007580     ntoskrnl:memcpy.obj
- 0001:000065af       xcpy15                     00000001800075af     ntoskrnl:memcpy.obj
- 0001:000065d1       xcpy20                     00000001800075d1     ntoskrnl:memcpy.obj
- 0001:000065e5       xcpy30                     00000001800075e5     ntoskrnl:memcpy.obj
- 0001:00006600       lcpy00                     0000000180007600     ntoskrnl:memcpy.obj
- 0001:00006640       lcpy10                     0000000180007640     ntoskrnl:memcpy.obj
- 0001:00006680       xmov00                     0000000180007680     ntoskrnl:memcpy.obj
- 0001:000066ad       xmov10                     00000001800076ad     ntoskrnl:memcpy.obj
- 0001:000066c0       xmov13                     00000001800076c0     ntoskrnl:memcpy.obj
- 0001:000066ef       xmov15                     00000001800076ef     ntoskrnl:memcpy.obj
- 0001:00006711       xmov20                     0000000180007711     ntoskrnl:memcpy.obj
- 0001:00006726       xmov30                     0000000180007726     ntoskrnl:memcpy.obj
- 0001:00006740       $$000000                   0000000180007740     ntoskrnl:memset.obj
- 0001:00006762       mset10                     0000000180007762     ntoskrnl:memset.obj
- 0001:00006778       mset20                     0000000180007778     ntoskrnl:memset.obj
- 0001:000067a1       mset30                     00000001800077a1     ntoskrnl:memset.obj
- 0001:000067d0       mset45                     00000001800077d0     ntoskrnl:memset.obj
- 0001:000067d6       mset46                     00000001800077d6     ntoskrnl:memset.obj
- 0001:00006800       mset47                     0000000180007800     ntoskrnl:memset.obj
- 0001:00006830       mset48                     0000000180007830     ntoskrnl:memset.obj
- 0001:00006846       mset50                     0000000180007846     ntoskrnl:memset.obj
- 0001:00006880       $$000000                   0000000180007880     ntoskrnl:memset.obj
- 0001:0000688a       repmovs10                  000000018000788a     ntoskrnl:memset.obj
- 0001:000068bc       repmovs20                  00000001800078bc     ntoskrnl:memset.obj
- 0001:00006900       $$000000                   0000000180007900     ntoskrnl:memset.obj
+ 0001:00000d88       $LN154                     0000000180001d88     ioctl.obj
+ 0001:00000dd0       $LN153                     0000000180001dd0     ioctl.obj
+ 0001:00000ec0       KfSafeKernelRead           0000000180001ec0 f   memory.obj
+ 0001:00001130       KfSafeKernelWrite          0000000180002130 f   memory.obj
+ 0001:00001640       KfWriteProcessMemory       0000000180002640 f   breakpoint.obj
+ 0001:00001820       KfWriteKernelByte          0000000180002820 f   breakpoint.obj
+ 0001:00001930       KfReadKernelByte           0000000180002930 f   breakpoint.obj
+ 0001:00001980       KfSetSwBreakpoint          0000000180002980 f   breakpoint.obj
+ 0001:00001c80       KfSetHwBreakpoint          0000000180002c80 f   breakpoint.obj
+ 0001:00001f90       KfSetMemoryBreakpoint      0000000180002f90 f   breakpoint.obj
+ 0001:000021e0       KfRemoveMemoryBreakpoint   00000001800031e0 f   breakpoint.obj
+ 0001:00003050       FindCrossThreadFlagsOffset 0000000180004050 f   modules.obj
+ 0001:000038b0       KfResolveSuspendApis       00000001800048b0 f   threads.obj
+ 0001:00003b30       KfWriteByteInContext       0000000180004b30 f   debughook.obj
+ 0001:00003ea0       KfPatternScanKdTrap        0000000180004ea0 f   debughook.obj
+ 0001:00004150       KfFindKdpTrapCallSite      0000000180005150 f   debughook.obj
+ 0001:00004250       KfFindKiDebugRoutineInCode 0000000180005250 f   debughook.obj
+ 0001:00004410       KfFindKiDebugRoutine       0000000180005410 f   debughook.obj
+ 0001:000045f0       KfFillDebugEvent           00000001800055f0 f   debughook.obj
+ 0001:000048e0       KfCompleteWaitIrp          00000001800058e0 f   debughook.obj
+ 0001:00004990       KfReportAndBlock           0000000180005990 f   debughook.obj
+ 0001:00004ad0       KfDebugHandler             0000000180005ad0 f   debughook.obj
+ 0001:00004e80       KfCancelWaitIrp            0000000180005e80 f   debughook.obj
+ 0001:00004ef0       KfDumpBytes                0000000180005ef0 f   debughook.obj
+ 0001:00005a50       KfNtQsiHandler             0000000180006a50 f   ntqsi_hook.obj
+ 0001:00005ac0       DecodeInsnLength           0000000180006ac0 f   ntqsi_hook.obj
+ 0001:00005c80       FindNtQuerySystemInformation 0000000180006c80 f   ntqsi_hook.obj
+ 0001:00006600       $$000000                   0000000180007600     ntoskrnl:memcpy.obj
+ 0001:00006620       mcpy00                     0000000180007620     ntoskrnl:memcpy.obj
+ 0001:00006640       mcpy10                     0000000180007640     ntoskrnl:memcpy.obj
+ 0001:0000665a       mcpy20                     000000018000765a     ntoskrnl:memcpy.obj
+ 0001:00006660       mcpy30                     0000000180007660     ntoskrnl:memcpy.obj
+ 0001:00006680       xcpy00                     0000000180007680     ntoskrnl:memcpy.obj
+ 0001:000066b1       xcpy10                     00000001800076b1     ntoskrnl:memcpy.obj
+ 0001:00006700       xcpy13                     0000000180007700     ntoskrnl:memcpy.obj
+ 0001:0000672f       xcpy15                     000000018000772f     ntoskrnl:memcpy.obj
+ 0001:00006751       xcpy20                     0000000180007751     ntoskrnl:memcpy.obj
+ 0001:00006765       xcpy30                     0000000180007765     ntoskrnl:memcpy.obj
+ 0001:00006780       lcpy00                     0000000180007780     ntoskrnl:memcpy.obj
+ 0001:000067c0       lcpy10                     00000001800077c0     ntoskrnl:memcpy.obj
+ 0001:00006800       xmov00                     0000000180007800     ntoskrnl:memcpy.obj
+ 0001:0000682d       xmov10                     000000018000782d     ntoskrnl:memcpy.obj
+ 0001:00006840       xmov13                     0000000180007840     ntoskrnl:memcpy.obj
+ 0001:0000686f       xmov15                     000000018000786f     ntoskrnl:memcpy.obj
+ 0001:00006891       xmov20                     0000000180007891     ntoskrnl:memcpy.obj
+ 0001:000068a6       xmov30                     00000001800078a6     ntoskrnl:memcpy.obj
+ 0001:000068c0       $$000000                   00000001800078c0     ntoskrnl:memset.obj
+ 0001:000068e2       mset10                     00000001800078e2     ntoskrnl:memset.obj
+ 0001:000068f8       mset20                     00000001800078f8     ntoskrnl:memset.obj
+ 0001:00006921       mset30                     0000000180007921     ntoskrnl:memset.obj
+ 0001:00006950       mset45                     0000000180007950     ntoskrnl:memset.obj
+ 0001:00006956       mset46                     0000000180007956     ntoskrnl:memset.obj
+ 0001:00006980       mset47                     0000000180007980     ntoskrnl:memset.obj
+ 0001:000069b0       mset48                     00000001800079b0     ntoskrnl:memset.obj
+ 0001:000069c6       mset50                     00000001800079c6     ntoskrnl:memset.obj
+ 0001:00006a00       $$000000                   0000000180007a00     ntoskrnl:memset.obj
+ 0001:00006a0a       repmovs10                  0000000180007a0a     ntoskrnl:memset.obj
+ 0001:00006a3c       repmovs20                  0000000180007a3c     ntoskrnl:memset.obj
+ 0001:00006a80       $$000000                   0000000180007a80     ntoskrnl:memset.obj
  0002:00001ef8       ?suffix@?1??KfPatternScanKdTrap@@9@9 0000000180009ef8     debughook.obj
  0002:00001f08       ?prefix@?1??KfPatternScanKdTrap@@9@9 0000000180009f08     debughook.obj
  0002:00001f10       ?target@?N@??FindNtQuerySystemInformation@@9@9 0000000180009f10     ntqsi_hook.obj
@@ -421,68 +422,69 @@
  0002:00002824       $unwind$KfReadMemory       000000018000a824     memory.obj
  0002:0000284c       $unwind$KfSafeKernelWrite  000000018000a84c     memory.obj
  0002:00002890       $unwind$KfWriteMemory      000000018000a890     memory.obj
- 0002:000028b8       $unwind$KfWriteProcessMemory 000000018000a8b8     breakpoint.obj
- 0002:000028f4       $unwind$KfWriteKernelByte  000000018000a8f4     breakpoint.obj
- 0002:00002920       $unwind$KfReadKernelByte   000000018000a920     breakpoint.obj
- 0002:00002944       $unwind$KfSetSwBreakpoint  000000018000a944     breakpoint.obj
- 0002:00002970       $unwind$KfSetHwBreakpoint  000000018000a970     breakpoint.obj
- 0002:0000299c       $unwind$KfSetMemoryBreakpoint 000000018000a99c     breakpoint.obj
- 0002:000029b0       $unwind$KfRemoveMemoryBreakpoint 000000018000a9b0     breakpoint.obj
- 0002:000029bc       $chain$0$KfRemoveMemoryBreakpoint 000000018000a9bc     breakpoint.obj
- 0002:000029d0       $chain$1$KfRemoveMemoryBreakpoint 000000018000a9d0     breakpoint.obj
- 0002:000029e0       $unwind$KfRemoveBreakpoint 000000018000a9e0     breakpoint.obj
- 0002:00002a0c       $unwind$KfFindSwBpOrigByte 000000018000aa0c     breakpoint.obj
- 0002:00002a20       $unwind$KfRemoveAllBreakpoints 000000018000aa20     breakpoint.obj
- 0002:00002a4c       $unwind$KfSingleStep       000000018000aa4c     singlestep.obj
- 0002:00002a74       $unwind$KfReadRegisters    000000018000aa74     registers.obj
- 0002:00002a9c       $unwind$KfWriteRegisters   000000018000aa9c     registers.obj
- 0002:00002ac4       $unwind$KfEnumModules      000000018000aac4     modules.obj
- 0002:00002af0       $unwind$FindCrossThreadFlagsOffset 000000018000aaf0     modules.obj
- 0002:00002af8       $chain$0$FindCrossThreadFlagsOffset 000000018000aaf8     modules.obj
- 0002:00002b0c       $chain$7$FindCrossThreadFlagsOffset 000000018000ab0c     modules.obj
- 0002:00002b38       $chain$8$FindCrossThreadFlagsOffset 000000018000ab38     modules.obj
- 0002:00002b4c       $chain$10$FindCrossThreadFlagsOffset 000000018000ab4c     modules.obj
- 0002:00002b64       $unwind$KfClearThreadHide  000000018000ab64     modules.obj
- 0002:00002b90       $unwind$KfEnumThreads      000000018000ab90     threads.obj
- 0002:00002bbc       $unwind$KfResolveSuspendApis 000000018000abbc     threads.obj
- 0002:00002bc4       $unwind$KfEnumProcesses    000000018000abc4     process.obj
- 0002:00002bf0       $unwind$KfWriteByteInContext 000000018000abf0     debughook.obj
- 0002:00002c2c       $unwind$KfPatchBytes       000000018000ac2c     debughook.obj
- 0002:00002c5c       $unwind$KfPatternScanKdTrap 000000018000ac5c     debughook.obj
- 0002:00002c64       $chain$0$KfPatternScanKdTrap 000000018000ac64     debughook.obj
- 0002:00002c78       $chain$2$KfPatternScanKdTrap 000000018000ac78     debughook.obj
- 0002:00002c8c       $chain$10$KfPatternScanKdTrap 000000018000ac8c     debughook.obj
- 0002:00002cb8       $chain$12$KfPatternScanKdTrap 000000018000acb8     debughook.obj
- 0002:00002ce4       $unwind$KfFindKdpTrapCallSite 000000018000ace4     debughook.obj
- 0002:00002cfc       $unwind$KfFindKiDebugRoutineInCode 000000018000acfc     debughook.obj
- 0002:00002d14       $unwind$KfFindKiDebugRoutine 000000018000ad14     debughook.obj
- 0002:00002d20       $chain$4$KfFindKiDebugRoutine 000000018000ad20     debughook.obj
- 0002:00002d44       $chain$6$KfFindKiDebugRoutine 000000018000ad44     debughook.obj
- 0002:00002d68       $chain$7$KfFindKiDebugRoutine 000000018000ad68     debughook.obj
- 0002:00002d78       $unwind$KfFillDebugEvent   000000018000ad78     debughook.obj
- 0002:00002d8c       $unwind$KfReportAndBlock   000000018000ad8c     debughook.obj
- 0002:00002da0       $unwind$KfDebugHandler     000000018000ada0     debughook.obj
- 0002:00002db8       $unwind$KfCancelWaitIrp    000000018000adb8     debughook.obj
- 0002:00002db8       $unwind$KfDebugHookDeactivate 000000018000adb8     debughook.obj
- 0002:00002dc0       $unwind$KfDumpBytes        000000018000adc0     debughook.obj
- 0002:00002dcc       $chain$2$KfDumpBytes       000000018000adcc     debughook.obj
- 0002:00002de8       $chain$3$KfDumpBytes       000000018000ade8     debughook.obj
- 0002:00002df8       $unwind$KfInstallDebugHook 000000018000adf8     debughook.obj
- 0002:00002e0c       $unwind$KfDebugHookCleanup 000000018000ae0c     debughook.obj
- 0002:00002e18       $unwind$KfNtQsiHandler     000000018000ae18     ntqsi_hook.obj
- 0002:00002e40       $unwind$DecodeInsnLength   000000018000ae40     ntqsi_hook.obj
- 0002:00002e48       $chain$0$DecodeInsnLength  000000018000ae48     ntqsi_hook.obj
- 0002:00002e5c       $chain$1$DecodeInsnLength  000000018000ae5c     ntqsi_hook.obj
- 0002:00002e6c       $unwind$FindNtQuerySystemInformation 000000018000ae6c     ntqsi_hook.obj
- 0002:00002e98       $unwind$KfInstallNtQsiHook 000000018000ae98     ntqsi_hook.obj
- 0002:00002eb4       $chain$7$KfInstallNtQsiHook 000000018000aeb4     ntqsi_hook.obj
- 0002:00002ed0       $chain$8$KfInstallNtQsiHook 000000018000aed0     ntqsi_hook.obj
- 0002:00002ee8       $unwind$KfProbeNtQsi       000000018000aee8     ntqsi_hook.obj
- 0002:00002f18       $xdatasym$memcpy           000000018000af18     ntoskrnl:memcpy.obj
- 0002:00002f18       $xdatasym$memset           000000018000af18     ntoskrnl:memset.obj
- 0002:00002f20       $xdatasym$__memset_repmovs 000000018000af20     ntoskrnl:memset.obj
- 0002:00002f30       $xdatasym$__memset_query   000000018000af30     ntoskrnl:memset.obj
- 0002:00002f44       $unwind$__cpu_features_init 000000018000af44     ntoskrnl:cpuinfo.obj
+ 0002:000028b8       $unwind$KfProtectMemory    000000018000a8b8     memory.obj
+ 0002:000028e0       $unwind$KfWriteProcessMemory 000000018000a8e0     breakpoint.obj
+ 0002:0000291c       $unwind$KfWriteKernelByte  000000018000a91c     breakpoint.obj
+ 0002:00002948       $unwind$KfReadKernelByte   000000018000a948     breakpoint.obj
+ 0002:0000296c       $unwind$KfSetSwBreakpoint  000000018000a96c     breakpoint.obj
+ 0002:00002998       $unwind$KfSetHwBreakpoint  000000018000a998     breakpoint.obj
+ 0002:000029c4       $unwind$KfSetMemoryBreakpoint 000000018000a9c4     breakpoint.obj
+ 0002:000029d8       $unwind$KfRemoveMemoryBreakpoint 000000018000a9d8     breakpoint.obj
+ 0002:000029e4       $chain$0$KfRemoveMemoryBreakpoint 000000018000a9e4     breakpoint.obj
+ 0002:000029f8       $chain$1$KfRemoveMemoryBreakpoint 000000018000a9f8     breakpoint.obj
+ 0002:00002a08       $unwind$KfRemoveBreakpoint 000000018000aa08     breakpoint.obj
+ 0002:00002a34       $unwind$KfFindSwBpOrigByte 000000018000aa34     breakpoint.obj
+ 0002:00002a48       $unwind$KfRemoveAllBreakpoints 000000018000aa48     breakpoint.obj
+ 0002:00002a74       $unwind$KfSingleStep       000000018000aa74     singlestep.obj
+ 0002:00002a9c       $unwind$KfReadRegisters    000000018000aa9c     registers.obj
+ 0002:00002ac4       $unwind$KfWriteRegisters   000000018000aac4     registers.obj
+ 0002:00002aec       $unwind$KfEnumModules      000000018000aaec     modules.obj
+ 0002:00002b18       $unwind$FindCrossThreadFlagsOffset 000000018000ab18     modules.obj
+ 0002:00002b20       $chain$0$FindCrossThreadFlagsOffset 000000018000ab20     modules.obj
+ 0002:00002b34       $chain$7$FindCrossThreadFlagsOffset 000000018000ab34     modules.obj
+ 0002:00002b60       $chain$8$FindCrossThreadFlagsOffset 000000018000ab60     modules.obj
+ 0002:00002b74       $chain$10$FindCrossThreadFlagsOffset 000000018000ab74     modules.obj
+ 0002:00002b8c       $unwind$KfClearThreadHide  000000018000ab8c     modules.obj
+ 0002:00002bb8       $unwind$KfEnumThreads      000000018000abb8     threads.obj
+ 0002:00002be4       $unwind$KfResolveSuspendApis 000000018000abe4     threads.obj
+ 0002:00002bec       $unwind$KfEnumProcesses    000000018000abec     process.obj
+ 0002:00002c18       $unwind$KfWriteByteInContext 000000018000ac18     debughook.obj
+ 0002:00002c54       $unwind$KfPatchBytes       000000018000ac54     debughook.obj
+ 0002:00002c84       $unwind$KfPatternScanKdTrap 000000018000ac84     debughook.obj
+ 0002:00002c8c       $chain$0$KfPatternScanKdTrap 000000018000ac8c     debughook.obj
+ 0002:00002ca0       $chain$2$KfPatternScanKdTrap 000000018000aca0     debughook.obj
+ 0002:00002cb4       $chain$10$KfPatternScanKdTrap 000000018000acb4     debughook.obj
+ 0002:00002ce0       $chain$12$KfPatternScanKdTrap 000000018000ace0     debughook.obj
+ 0002:00002d0c       $unwind$KfFindKdpTrapCallSite 000000018000ad0c     debughook.obj
+ 0002:00002d24       $unwind$KfFindKiDebugRoutineInCode 000000018000ad24     debughook.obj
+ 0002:00002d3c       $unwind$KfFindKiDebugRoutine 000000018000ad3c     debughook.obj
+ 0002:00002d48       $chain$4$KfFindKiDebugRoutine 000000018000ad48     debughook.obj
+ 0002:00002d6c       $chain$6$KfFindKiDebugRoutine 000000018000ad6c     debughook.obj
+ 0002:00002d90       $chain$7$KfFindKiDebugRoutine 000000018000ad90     debughook.obj
+ 0002:00002da0       $unwind$KfFillDebugEvent   000000018000ada0     debughook.obj
+ 0002:00002db4       $unwind$KfReportAndBlock   000000018000adb4     debughook.obj
+ 0002:00002dc8       $unwind$KfDebugHandler     000000018000adc8     debughook.obj
+ 0002:00002de0       $unwind$KfCancelWaitIrp    000000018000ade0     debughook.obj
+ 0002:00002de0       $unwind$KfDebugHookDeactivate 000000018000ade0     debughook.obj
+ 0002:00002de8       $unwind$KfDumpBytes        000000018000ade8     debughook.obj
+ 0002:00002df4       $chain$2$KfDumpBytes       000000018000adf4     debughook.obj
+ 0002:00002e10       $chain$3$KfDumpBytes       000000018000ae10     debughook.obj
+ 0002:00002e20       $unwind$KfInstallDebugHook 000000018000ae20     debughook.obj
+ 0002:00002e34       $unwind$KfDebugHookCleanup 000000018000ae34     debughook.obj
+ 0002:00002e40       $unwind$KfNtQsiHandler     000000018000ae40     ntqsi_hook.obj
+ 0002:00002e68       $unwind$DecodeInsnLength   000000018000ae68     ntqsi_hook.obj
+ 0002:00002e70       $chain$0$DecodeInsnLength  000000018000ae70     ntqsi_hook.obj
+ 0002:00002e84       $chain$1$DecodeInsnLength  000000018000ae84     ntqsi_hook.obj
+ 0002:00002e94       $unwind$FindNtQuerySystemInformation 000000018000ae94     ntqsi_hook.obj
+ 0002:00002ec0       $unwind$KfInstallNtQsiHook 000000018000aec0     ntqsi_hook.obj
+ 0002:00002edc       $chain$7$KfInstallNtQsiHook 000000018000aedc     ntqsi_hook.obj
+ 0002:00002ef8       $chain$8$KfInstallNtQsiHook 000000018000aef8     ntqsi_hook.obj
+ 0002:00002f10       $unwind$KfProbeNtQsi       000000018000af10     ntqsi_hook.obj
+ 0002:00002f40       $xdatasym$memcpy           000000018000af40     ntoskrnl:memcpy.obj
+ 0002:00002f40       $xdatasym$memset           000000018000af40     ntoskrnl:memset.obj
+ 0002:00002f48       $xdatasym$__memset_repmovs 000000018000af48     ntoskrnl:memset.obj
+ 0002:00002f58       $xdatasym$__memset_query   000000018000af58     ntoskrnl:memset.obj
+ 0002:00002f6c       $unwind$__cpu_features_init 000000018000af6c     ntoskrnl:cpuinfo.obj
  0003:00000000       g_NextHandle               000000018000b000     breakpoint.obj
  0003:00000004       g_StepPastAutoRun          000000018000b004     debughook.obj
  0003:00000005       g_OrigKdDebuggerNotPresent 000000018000b005     debughook.obj
@@ -517,21 +519,21 @@
  0003:00003aa0       g_OrigKiDebugRoutine       000000018000eaa0     debughook.obj
  0003:00003aa8       g_TargetPid                000000018000eaa8     debughook.obj
  0003:00003ab0       g_DebugEvent               000000018000eab0     debughook.obj
- 0003:00003ba0       g_OrigCallDisp2            000000018000eba0     debughook.obj
- 0003:00003ba8       g_OrigEntryBytes           000000018000eba8     debughook.obj
- 0003:00003bb8       g_HookBpNotFoundCount      000000018000ebb8     debughook.obj
- 0003:00003bc0       g_pKdDebuggerEnabled       000000018000ebc0     debughook.obj
- 0003:00003bc8       g_HookTargetCallCount      000000018000ebc8     debughook.obj
- 0003:00003bd0       g_LastTargetAddr           000000018000ebd0     debughook.obj
- 0003:00003bd8       g_pKdDebuggerNotPresent    000000018000ebd8     debughook.obj
- 0003:00003be0       g_pKiDebugRoutine          000000018000ebe0     debughook.obj
- 0003:00003be8       g_OrigSelectValue          000000018000ebe8     debughook.obj
- 0003:00003bec       g_ContinueMode             000000018000ebec     debughook.obj
- 0003:00003bf0       g_Trampoline               000000018000ebf0     debughook.obj
- 0003:00003bf8       g_CallSite2                000000018000ebf8     debughook.obj
- 0003:00003c00       g_NtQsiOrigBytes           000000018000ec00     ntqsi_hook.obj
- 0003:00003c10       g_NtQsiTrampoline          000000018000ec10     ntqsi_hook.obj
- 0003:00003c18       g_NtQsiCopyLen             000000018000ec18     ntqsi_hook.obj
- 0003:00003c20       g_OrigNtQsi                000000018000ec20     ntqsi_hook.obj
- 0003:00003c28       g_NtQsiAddr                000000018000ec28     ntqsi_hook.obj
+ 0003:00003ba8       g_OrigCallDisp2            000000018000eba8     debughook.obj
+ 0003:00003bb0       g_OrigEntryBytes           000000018000ebb0     debughook.obj
+ 0003:00003bc0       g_HookBpNotFoundCount      000000018000ebc0     debughook.obj
+ 0003:00003bc8       g_pKdDebuggerEnabled       000000018000ebc8     debughook.obj
+ 0003:00003bd0       g_HookTargetCallCount      000000018000ebd0     debughook.obj
+ 0003:00003bd8       g_LastTargetAddr           000000018000ebd8     debughook.obj
+ 0003:00003be0       g_pKdDebuggerNotPresent    000000018000ebe0     debughook.obj
+ 0003:00003be8       g_pKiDebugRoutine          000000018000ebe8     debughook.obj
+ 0003:00003bf0       g_OrigSelectValue          000000018000ebf0     debughook.obj
+ 0003:00003bf4       g_ContinueMode             000000018000ebf4     debughook.obj
+ 0003:00003bf8       g_Trampoline               000000018000ebf8     debughook.obj
+ 0003:00003c00       g_CallSite2                000000018000ec00     debughook.obj
+ 0003:00003c08       g_NtQsiOrigBytes           000000018000ec08     ntqsi_hook.obj
+ 0003:00003c18       g_NtQsiTrampoline          000000018000ec18     ntqsi_hook.obj
+ 0003:00003c20       g_NtQsiCopyLen             000000018000ec20     ntqsi_hook.obj
+ 0003:00003c28       g_OrigNtQsi                000000018000ec28     ntqsi_hook.obj
+ 0003:00003c30       g_NtQsiAddr                000000018000ec30     ntqsi_hook.obj
  0005:000005b0       .idata$6                   00000001800105b0     ntoskrnl:ntoskrnl.exe

@@ -2896,16 +2896,21 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     Address = evt.Address,
                     IsKernelMode = evt.IsKernelMode,
                     ExceptionCode = evt.ExceptionCode,
-                    FaultAddress = evt.FaultAddress
+                    FaultAddress = evt.FaultAddress,
+                    AccessType = evt.AccessType
                 };
 
                 if (_pluginManager.RunDebugEventFilters(pluginEvt))
                 {
                     // Plugin handled — continue process without touching UI thread.
-                    // Use STEP_PAST for breakpoint events (skip INT3), RUN otherwise.
-                    var mode = evt.Type == DebugEventType.Breakpoint
-                        ? DriverComm.CONTINUE_STEP_PAST
-                        : DriverComm.CONTINUE_RUN;
+                    // Use plugin's ContinueMode if set, otherwise default logic.
+                    uint mode;
+                    if (pluginEvt.ContinueMode != 0)
+                        mode = pluginEvt.ContinueMode;
+                    else if (evt.Type == DebugEventType.Breakpoint)
+                        mode = DriverComm.CONTINUE_STEP_PAST;
+                    else
+                        mode = DriverComm.CONTINUE_RUN;
                     _driver.ContinueDebugEvent(mode);
                     continue; // Loop back to WaitDebugEvent
                 }

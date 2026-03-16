@@ -83,4 +83,11 @@ public class PluginDebugEvent
     public bool IsKernelMode { get; set; }
     public uint ExceptionCode { get; set; }
     public ulong FaultAddress { get; set; }
+    public uint AccessType { get; set; }    // For AV: 0=read, 1=write, 8=execute
+
+    /// <summary>
+    /// Set by plugin in OnDebugEventFilter to control how the process is continued.
+    /// 0=Run (default), 1=StepPast, 2=StepInto, 3=Handled (suppress AV + single-step).
+    /// </summary>
+    public uint ContinueMode { get; set; }
 }

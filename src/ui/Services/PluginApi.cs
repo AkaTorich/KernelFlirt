@@ -128,6 +128,9 @@ public class MemoryApiAdapter : IMemoryApi
     }
 
     public bool WriteRip(uint pid, uint tid, ulong newRip) => _driver.WriteRip(pid, tid, newRip);
+
+    public (bool ok, uint oldProtection) ProtectMemory(uint pid, ulong address, uint size, uint newProtection)
+        => _driver.ProtectMemory(pid, address, size, newProtection);
 }
 
 public class BreakpointApiAdapter : IBreakpointApi

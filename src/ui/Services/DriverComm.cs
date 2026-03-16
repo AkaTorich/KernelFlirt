@@ -40,6 +40,7 @@ public class DriverComm : IDisposable
     private static readonly uint IOCTL_KF_SET_BREAKPOINT  = CTL_CODE(DeviceType, 0x802, 0, 0);
     private static readonly uint IOCTL_KF_REMOVE_BREAKPOINT = CTL_CODE(DeviceType, 0x803, 0, 0);
     private static readonly uint IOCTL_KF_SINGLE_STEP     = CTL_CODE(DeviceType, 0x804, 0, 0);
+    private static readonly uint IOCTL_KF_PROTECT_MEMORY  = CTL_CODE(DeviceType, 0x805, 0, 0);
     private static readonly uint IOCTL_KF_READ_REGISTERS  = CTL_CODE(DeviceType, 0x810, 0, 0);
     private static readonly uint IOCTL_KF_WRITE_REGISTERS = CTL_CODE(DeviceType, 0x811, 0, 0);
     private static readonly uint IOCTL_KF_ENUM_MODULES    = CTL_CODE(DeviceType, 0x820, 0, 0);
@@ -268,6 +269,8 @@ public class DriverComm : IDisposable
         public uint PreviousMode;
         public uint ExceptionCode;
         public ulong FaultAddress;
+        public uint AccessType;     // For AV: 0=read, 1=write, 8=execute
+        public uint Reserved0;      // Alignment padding
         public KF_REGISTERS Registers;
     }
 
@@ -902,6 +905,7 @@ public class DriverComm : IDisposable
             IsKernelMode = ev.PreviousMode == 0,
             ExceptionCode = ev.ExceptionCode,
             FaultAddress = ev.FaultAddress,
+            AccessType = ev.AccessType,
             Registers = new DebugEventRegisters
             {
                 Rax = ev.Registers.Rax, Rbx = ev.Registers.Rbx,
@@ -921,6 +925,7 @@ public class DriverComm : IDisposable
     public const uint CONTINUE_RUN        = 0;
     public const uint CONTINUE_STEP_PAST  = 1;
     public const uint CONTINUE_STEP_INTO  = 2;
+    public const uint CONTINUE_HANDLED    = 3;
 
     public bool ContinueDebugEvent(uint mode = CONTINUE_RUN)
     {
@@ -928,6 +933,36 @@ public class DriverComm : IDisposable
         // Must use CMD channel — DBG channel's _dbgRemoteLock is held by WaitDebugEvent
         var (ok, _) = SendIoctl(IOCTL_KF_CONTINUE_DEBUG_EVENT, input, 0);
         return ok;
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    private struct KF_PROTECT_MEMORY_IN
+    {
+        public uint ProcessId;
+        public ulong Address;
+        public uint Size;
+        public uint NewProtection;
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    private struct KF_PROTECT_MEMORY_OUT
+    {
+        public uint OldProtection;
+    }
+
+    public (bool ok, uint oldProtection) ProtectMemory(uint pid, ulong address, uint size, uint newProtection)
+    {
+        var input = StructToBytes(new KF_PROTECT_MEMORY_IN
+        {
+            ProcessId = pid,
+            Address = address,
+            Size = size,
+            NewProtection = newProtection
+        });
+        var (ok, data) = SendIoctl(IOCTL_KF_PROTECT_MEMORY, input, Marshal.SizeOf<KF_PROTECT_MEMORY_OUT>());
+        if (!ok || data == null) return (false, 0);
+        var output = BytesToStruct<KF_PROTECT_MEMORY_OUT>(data);
+        return (true, output.OldProtection);
     }
 
     public (uint hookCalls, uint bpHits, uint bpNotFound, uint steps, byte kdEnabled, byte kdNotPresent,
