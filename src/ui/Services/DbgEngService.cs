@@ -30,9 +30,6 @@ public class DbgEngService : IDisposable
     private readonly Dictionary<uint, BreakpointInfo> _breakpoints = new();
     private uint _nextBpHandle = 1;
 
-    // Current process context
-    private uint _currentProcessSysId;
-
     // Cached register index (not needed for kd.exe but kept for API compat)
 
     public bool IsConnected => _connected;

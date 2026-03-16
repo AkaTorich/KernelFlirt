@@ -10,11 +10,11 @@ none
 false
 TRACE;RELEASE;NET;NET9_0;NETCOREAPP;WINDOWS;WINDOWS7_0;NET5_0_OR_GREATER;NET6_0_OR_GREATER;NET7_0_OR_GREATER;NET8_0_OR_GREATER;NET9_0_OR_GREATER;NETCOREAPP3_0_OR_GREATER;NETCOREAPP3_1_OR_GREATER;WINDOWS7_0_OR_GREATER
 C:\Users\psysh\OneDrive\Desktop\KernelFlirt\src\ui\App.xaml
-6-399905136
+7-1295984851
 
-37-715111085
+382086822642
 215964901083
-Controls\DisasmView.xaml;Controls\HexDumpView.xaml;MainWindow.xaml;Themes\Dark.xaml;Views\ProcessPickerDialog.xaml;Views\RemoteFileBrowserDialog.xaml;
+Controls\DisasmView.xaml;Controls\HexDumpView.xaml;MainWindow.xaml;PluginSettingsWindow.xaml;Themes\Dark.xaml;Views\ProcessPickerDialog.xaml;Views\RemoteFileBrowserDialog.xaml;
 
 False
 

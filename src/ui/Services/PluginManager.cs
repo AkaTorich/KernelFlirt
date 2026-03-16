@@ -30,6 +30,8 @@ public class LoadedPlugin
     public required IKernelFlirtPlugin Plugin { get; init; }
     public required PluginLoadContext Context { get; init; }
     public required string DllPath { get; init; }
+    public DebuggerApiAdapter? Adapter { get; init; }
+    public bool Enabled { get; set; } = true;
 }
 
 public class PluginManager
@@ -44,7 +46,10 @@ public class PluginManager
         _log = log;
     }
 
-    public void LoadPlugins(string pluginsDir, IDebuggerApi api)
+    /// <summary>
+    /// Load plugins from directory. apiFactory creates a per-plugin adapter so each can be enabled/disabled independently.
+    /// </summary>
+    public void LoadPlugins(string pluginsDir, Func<DebuggerApiAdapter> apiFactory)
     {
         if (!Directory.Exists(pluginsDir))
         {
@@ -71,13 +76,15 @@ public class PluginManager
                 {
                     try
                     {
+                        var adapter = apiFactory();
                         var plugin = (IKernelFlirtPlugin)Activator.CreateInstance(type)!;
-                        plugin.Initialize(api);
+                        plugin.Initialize(adapter);
                         _plugins.Add(new LoadedPlugin
                         {
                             Plugin = plugin,
                             Context = context,
-                            DllPath = dllPath
+                            DllPath = dllPath,
+                            Adapter = adapter
                         });
                         _log($"[Plugins] Loaded: {plugin.Name} v{plugin.Version} ({Path.GetFileName(dllPath)})");
                     }
@@ -94,6 +101,14 @@ public class PluginManager
         }
 
         _log($"[Plugins] {_plugins.Count} plugin(s) loaded");
+    }
+
+    public void SetPluginEnabled(LoadedPlugin plugin, bool enabled)
+    {
+        plugin.Enabled = enabled;
+        if (plugin.Adapter != null)
+            plugin.Adapter.Enabled = enabled;
+        _log($"[Plugins] {plugin.Plugin.Name}: {(enabled ? "enabled" : "disabled")}");
     }
 
     public void UnloadAll()

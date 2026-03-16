@@ -171,7 +171,7 @@ public class AntiDebugPanel : ScrollViewer
         root.Children.Add(MakeGroup("NtClose (via ClearDebugPort)", [ChkNtClose], white));
 
         // ── Timing ──
-        ChkPatchRdtsc = MakeCheckBox("Patch RDTSC/CPUID timing checks", true, "NOP out RDTSC and CPUID in code sections to defeat timing-based detection", true, white);
+        ChkPatchRdtsc = MakeCheckBox("Patch RDTSC/CPUID timing checks", false, "NOP out RDTSC and CPUID in code sections. WARNING: breaks Themida/VMProtect (CRC checks detect patches)", true, white);
         root.Children.Add(MakeGroup("Timing Checks", [ChkPatchRdtsc], white));
 
         // ── Context / DRx ──
@@ -183,7 +183,7 @@ public class AntiDebugPanel : ScrollViewer
         root.Children.Add(MakeGroup("Automation", [ChkAutoApply], white));
 
         // ── Unpacker ──
-        ChkAutoOep = MakeCheckBox("Auto-break at OEP", true, "Automatically detect unpacked PE and break at its entry point after Run (F9)", true, white);
+        ChkAutoOep = MakeCheckBox("Auto-break at OEP", false, "Automatically detect unpacked PE and break at its entry point after Run (F9).\nWARNING: Slows Themida-protected apps (intercepts every VirtualProtect call).", true, white);
         root.Children.Add(MakeGroup("Unpacker", [ChkAutoOep], white));
 
         // ── Buttons ──
@@ -281,6 +281,7 @@ public class AntiDebugPanel : ScrollViewer
         if (_unpackerActive) return; // already tracking
 
         uint pid = _api.TargetPid;
+        uint tid = _api.SelectedThreadId;
 
         // Snapshot known modules so we can distinguish new PEs from system DLLs
         _knownModuleBases.Clear();
@@ -307,25 +308,29 @@ public class AntiDebugPanel : ScrollViewer
 
         if (vpAddr != 0)
         {
-            var h = _api.Breakpoints.SetBreakpoint(pid, 0, vpAddr, PluginBreakpointType.Software);
+            var h = _api.Breakpoints.SetBreakpoint(pid, tid, vpAddr, PluginBreakpointType.Hardware);
+            if (!h.HasValue)
+                h = _api.Breakpoints.SetBreakpoint(pid, 0, vpAddr, PluginBreakpointType.Software);
             if (h.HasValue)
             {
                 _virtualProtectBpHandle = h.Value;
                 _virtualProtectAddr = vpAddr;
                 anyBp = true;
-                _api.Log.Info($"[Unpacker] BP on NtProtectVirtualMemory at 0x{vpAddr:X}");
+                _api.Log.Info($"[Unpacker] HW BP on NtProtectVirtualMemory at 0x{vpAddr:X}");
             }
         }
 
         if (vaAddr != 0)
         {
-            var h = _api.Breakpoints.SetBreakpoint(pid, 0, vaAddr, PluginBreakpointType.Software);
+            var h = _api.Breakpoints.SetBreakpoint(pid, tid, vaAddr, PluginBreakpointType.Hardware);
+            if (!h.HasValue)
+                h = _api.Breakpoints.SetBreakpoint(pid, 0, vaAddr, PluginBreakpointType.Software);
             if (h.HasValue)
             {
                 _virtualAllocBpHandle = h.Value;
                 _virtualAllocAddr = vaAddr;
                 anyBp = true;
-                _api.Log.Info($"[Unpacker] BP on NtAllocateVirtualMemory at 0x{vaAddr:X}");
+                _api.Log.Info($"[Unpacker] HW BP on NtAllocateVirtualMemory at 0x{vaAddr:X}");
             }
         }
 
@@ -401,11 +406,13 @@ public class AntiDebugPanel : ScrollViewer
                     _virtualAllocAddr = 0;
                 }
 
-                var oepH = _api.Breakpoints.SetBreakpoint(pid, 0, _discoveredOep, PluginBreakpointType.Software);
+                var oepH = _api.Breakpoints.SetBreakpoint(pid, evt.ThreadId, _discoveredOep, PluginBreakpointType.Hardware);
+                if (!oepH.HasValue)
+                    oepH = _api.Breakpoints.SetBreakpoint(pid, 0, _discoveredOep, PluginBreakpointType.Software);
                 if (oepH.HasValue)
                 {
                     _oepBpHandle = oepH.Value;
-                    _api.Log.Info($"[Unpacker] BP set at OEP 0x{_discoveredOep:X}, continuing...");
+                    _api.Log.Info($"[Unpacker] HW BP set at OEP 0x{_discoveredOep:X}, continuing...");
                 }
 
                 // Also provide sections to UI for when we break at OEP
@@ -1895,8 +1902,17 @@ public class AntiDebugPanel : ScrollViewer
                 // Only scan executable sections
                 if ((characteristics & 0x20000000) == 0) continue;
 
+                // Read section name (first 8 bytes) and skip protector sections
+                // Themida/WinLicense CRC-checks .boot/.themida — patching there crashes the protector
+                string sectName = System.Text.Encoding.ASCII.GetString(sectData, s * 40, 8).TrimEnd('\0').ToLowerInvariant();
+                if (sectName is ".themida" or ".boot" or ".vmp0" or ".vmp1" or ".packed" or ".upx")
+                    continue;
+
                 uint virtualAddr = BitConverter.ToUInt32(sectData, s * 40 + 12);
                 uint virtualSize = BitConverter.ToUInt32(sectData, s * 40 + 8);
+
+                // Skip huge sections (>2MB) — likely protector VM code, not original program
+                if (virtualSize > 0x200000) continue;
                 if (virtualSize > 0x100000) virtualSize = 0x100000; // cap at 1MB
 
                 ulong sectionBase = imageBase + virtualAddr;
@@ -1941,13 +1957,19 @@ public class AntiDebugPanel : ScrollViewer
         if (ChkBeingDebugged.IsChecked == true)
         {
             if (_api.Memory.WriteMemory(pid, pebAddr + PEB_BEING_DEBUGGED, [0]))
+            {
                 count++;
+                _api.Log.Info("  PEB.BeingDebugged = 0");
+            }
         }
 
         if (ChkNtGlobalFlag.IsChecked == true)
         {
             if (_api.Memory.WriteMemory(pid, pebAddr + PEB_NT_GLOBAL_FLAG, BitConverter.GetBytes(0u)))
+            {
                 count++;
+                _api.Log.Info("  PEB.NtGlobalFlag = 0");
+            }
         }
 
         if (ChkHeapFlags.IsChecked == true)
@@ -1962,6 +1984,7 @@ public class AntiDebugPanel : ScrollViewer
                         count++;
                     if (_api.Memory.WriteMemory(pid, heapAddr + HEAP_FORCE_FLAGS, BitConverter.GetBytes(0u)))
                         count++;
+                    _api.Log.Info($"  HeapFlags patched (heap at 0x{heapAddr:X})");
                 }
             }
         }

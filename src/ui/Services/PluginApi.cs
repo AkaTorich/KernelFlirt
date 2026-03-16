@@ -13,6 +13,9 @@ public class DebuggerApiAdapter : IDebuggerApi
     private readonly Func<uint> _getSelectedThreadId;
     private readonly Func<bool> _getIs32Bit;
 
+    /// <summary>When false, all event forwarding from PluginManager is suppressed.</summary>
+    public bool Enabled { get; set; } = true;
+
     public IMemoryApi Memory { get; }
     public IBreakpointApi Breakpoints { get; }
     public ISymbolApi Symbols { get; }
@@ -70,15 +73,16 @@ public class DebuggerApiAdapter : IDebuggerApi
         Log = new LogApiAdapter(log);
         UI = new UiApiAdapter(navigateDisasm, addMenuItem, addToolPanel, addUnpackedModule, refreshModulesAndSections, addModuleSections);
 
-        // Wire events from PluginManager
-        pluginManager.OnDebugEvent += evt => OnDebugEvent?.Invoke(evt);
-        pluginManager.OnConnected += () => OnConnected?.Invoke();
-        pluginManager.OnDisconnected += () => OnDisconnected?.Invoke();
-        pluginManager.OnBreakStateEntered += () => OnBreakStateEntered?.Invoke();
-        pluginManager.OnBreakStateExited += () => OnBreakStateExited?.Invoke();
-        pluginManager.OnBeforeRun += () => OnBeforeRun?.Invoke();
+        // Wire events from PluginManager — all gated by Enabled flag
+        pluginManager.OnDebugEvent += evt => { if (Enabled) OnDebugEvent?.Invoke(evt); };
+        pluginManager.OnConnected += () => { if (Enabled) OnConnected?.Invoke(); };
+        pluginManager.OnDisconnected += () => { if (Enabled) OnDisconnected?.Invoke(); };
+        pluginManager.OnBreakStateEntered += () => { if (Enabled) OnBreakStateEntered?.Invoke(); };
+        pluginManager.OnBreakStateExited += () => { if (Enabled) OnBreakStateExited?.Invoke(); };
+        pluginManager.OnBeforeRun += () => { if (Enabled) OnBeforeRun?.Invoke(); };
         pluginManager.OnDebugEventFilter += evt =>
         {
+            if (!Enabled) return false;
             var filter = OnDebugEventFilter;
             if (filter == null) return false;
             foreach (var handler in filter.GetInvocationList().Cast<Func<PluginDebugEvent, bool>>())
