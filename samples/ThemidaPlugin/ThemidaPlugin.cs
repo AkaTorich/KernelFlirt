@@ -78,6 +78,16 @@ public class ThemidaPanel : ScrollViewer
     private ulong _firstTextExecAddr;
     private ulong _oepAddr;
 
+    // TLS callback tracking (Magicmida _tlsTotal/_tlsCounter/_tmGuard)
+    private int _tlsTotal;
+    private int _tlsCounter;
+    private bool _tmGuard;
+
+    // MSVC virtualized OEP (Magicmida _traceMSVCOEP/_msvcInitCookie/_msvcOEP)
+    private bool _traceMsvcOep;
+    private ulong _msvcInitCookie;
+    private ulong _msvcOep;
+
     // IAT tracing (replaces Magicmida Tracer + TraceImports)
     private RemoteDumper? _dumper;
     private ulong _iatBase;
@@ -247,6 +257,47 @@ public class ThemidaPanel : ScrollViewer
         if (_sleepApi == 0) _sleepApi = _api.Symbols.ResolveNameToAddress("kernel32.dll!Sleep");
         if (_lstrlenApi == 0) _lstrlenApi = _api.Symbols.ResolveNameToAddress("kernel32.dll!lstrlenA");
 
+        // TLS callback tracking (Magicmida TMInit: parse TLS directory)
+        _tlsTotal = 0;
+        _tlsCounter = 0;
+        _tmGuard = false;
+        _traceMsvcOep = false;
+        int tlsDirOff = _is64 ? (int)lfanew + 4 + 20 + 0x90 : (int)lfanew + 4 + 20 + 0x80; // IMAGE_DIRECTORY_ENTRY_TLS = 9
+        if (tlsDirOff + 8 <= hdr.Length)
+        {
+            uint tlsRva = BitConverter.ToUInt32(hdr, tlsDirOff);
+            uint tlsSize = BitConverter.ToUInt32(hdr, tlsDirOff + 4);
+            if (tlsSize > 0 && tlsRva > 0)
+            {
+                int tlsStructSize = _is64 ? 40 : 24; // sizeof(IMAGE_TLS_DIRECTORY64/32)
+                var tlsData = _api.Memory.ReadMemory(pid, _imageBase + tlsRva, (uint)Math.Min(tlsSize, (uint)tlsStructSize));
+                if (tlsData != null && tlsData.Length >= (_is64 ? 32 : 16))
+                {
+                    ulong addrOfCallbacks = _is64
+                        ? BitConverter.ToUInt64(tlsData, 24)
+                        : BitConverter.ToUInt32(tlsData, 12);
+                    long tlsDist = (long)(_imageBase + tlsRva) - (long)addrOfCallbacks;
+                    if (tlsDist > 0 && tlsDist <= (long)(_ptrSize * 5))
+                    {
+                        _tlsTotal = (int)(tlsDist / _ptrSize) - 1;
+                        _api.Log.Info($"[MSVC] Expecting {_tlsTotal} TLS callback(s)");
+                    }
+                }
+            }
+        }
+
+        // PE antidump patching (Magicmida TMInit: patch .idata → .pdata)
+        if (numSect >= 3)
+        {
+            int sect2Off = sectOff + 2 * 40; // 3rd section
+            if (sect2Off + 8 <= hdr.Length && hdr[sect2Off + 1] == (byte)'i')
+            {
+                ulong patchAddr = _imageBase + (ulong)sect2Off + 1;
+                _api.Memory.WriteMemory(pid, patchAddr, new byte[] { (byte)'p' });
+                _api.Log.Info("[Antidump] Patched section name byte 'i' → 'p'");
+            }
+        }
+
         _detected = true;
         _guardAddrs.Clear();
         _isVmOep = false;
@@ -293,6 +344,10 @@ public class ThemidaPanel : ScrollViewer
         _suspendedTids.Clear();
 
         _phase = Phase.Idle;
+        _tmGuard = false;
+        _traceMsvcOep = false;
+        _tlsCounter = 0;
+        _guardHitCount = 0;
         _api.Log.Info("[Unpack] Stopped.");
         SetStatus("Idle");
     }
@@ -331,43 +386,105 @@ public class ThemidaPanel : ScrollViewer
             _guardHitCount++;
             uint access = evt.AccessType;
 
-            if (access == 8) // EXECUTE → OEP!
+            // Unprotect .text for inspection
+            _api.Memory.ProtectMemory(pid, _textBase, GuardSize(), _guardOldProt);
+
+            // Branch 1: _tmGuard — suppress Themida's re-entry after TLS callback (Magicmida _tmGuard)
+            if (_tmGuard)
             {
-                _firstTextExecAddr = fault;
-                _api.Log.Warning($"[OEP] Execute .text 0x{fault:X} (#{_guardHitCount})");
-                _api.Memory.ProtectMemory(pid, _textBase, GuardSize(), _guardOldProt);
-                _phase = Phase.OepStepThrough;
-                evt.ContinueMode = 3; // HANDLED: suppress AV + set TF
+                _tmGuard = false;
+                _api.Memory.ProtectMemory(pid, _textBase, GuardSize(), 0x01); // re-arm guard
+                evt.ContinueMode = 3;
                 return true;
             }
 
-            // Read/write access — Themida decrypting .text or library reading
+            // Branch 2: RIP outside image bounds — library code reading .text
             bool ripInImage = rip >= _imageBase && rip < _imageBoundary;
-            bool ripInTm = IsInTmRange(rip);
-
-            if (ripInTm)
+            if (!ripInImage)
             {
-                // Themida code accessing .text — track the accessed address (Magicmida FGuardAddrs)
+                _phase = Phase.TextStepRearm;
+                evt.ContinueMode = 3;
+                return true;
+            }
+
+            // Branch 3: RIP in Themida section — TM decrypting .text, track access
+            if (IsInTmRange(rip))
+            {
                 _guardAddrs.Add(fault);
+                if (_guardHitCount <= 5 || _guardHitCount % 1000 == 0)
+                    _api.Log.Info($"[Guard] TM {(access == 0 ? "read" : "write")} 0x{fault:X} from 0x{rip:X} (#{_guardHitCount})");
+                _phase = Phase.TextStepRearm;
+                evt.ContinueMode = 3;
+                return true;
             }
 
-            if (_guardHitCount <= 5 || _guardHitCount % 1000 == 0)
+            // Branch 4: Execute + TLS callbacks remaining (Magicmida _tlsTotal/_tlsCounter)
+            if (access == 8 && _tlsTotal > 0 && _tlsCounter < _tlsTotal)
             {
-                string at = access == 0 ? "read" : "write";
-                _api.Log.Info($"[Guard] .text {at} 0x{fault:X} from 0x{rip:X} (#{_guardHitCount})");
+                _tlsCounter++;
+                _api.Log.Warning($"[TLS] Callback {_tlsCounter}/{_tlsTotal}: 0x{fault:X}");
+                // Switch guard to TM section, let TLS callback execute in .text
+                if (_tmBase > 0)
+                    _api.Memory.ProtectMemory(pid, _tmBase, (uint)(_tmEnd - _tmBase), 0x04); // PAGE_READWRITE on TM
+                _tmGuard = true;
+                evt.ContinueMode = 3;
+                return true;
             }
+
+            // Branch 5: MSVC virtualized OEP tracing — second pass
+            // fault = __scrt_startup address (the execute target that hit guard)
+            if (_traceMsvcOep && access == 8)
+            {
+                WriteMsvcOep(fault); // writes stub at _msvcOep: call initcookie + jmp fault
+                _api.Log.Warning($"[OEP] MSVC virtualized OEP fixed at 0x{_msvcOep:X}");
+                _oepAddr = _msvcOep;
+                _traceMsvcOep = false;
+                SetStatus($"OEP = 0x{_oepAddr:X}");
+                _api.UI.NavigateDisassembly(_oepAddr);
+
+                // Suppress AV, redirect to restored OEP
+                evt.ContinueMode = 3; // HANDLED: suppress AV + set TF
+                evt.NewRip = _msvcOep;
+
+                bool autoIat = false;
+                try { Application.Current?.Dispatcher.Invoke(() => autoIat = _chkAutoIat.IsChecked == true); }
+                catch { autoIat = true; }
+
+                if (autoIat)
+                {
+                    // Single-step lands at OEP, then start IAT trace
+                    _phase = Phase.OepStepThrough;
+                    return true;
+                }
+
+                // Break at OEP for user — single-step to OEP first
+                _phase = Phase.Done;
+                return true; // suppress AV, will single-step to OEP
+            }
+
+            // Branch 6: Execute access → real OEP!
+            if (access == 8)
+            {
+                _firstTextExecAddr = fault;
+                _api.Log.Warning($"[OEP] Execute .text 0x{fault:X} (#{_guardHitCount})");
+                _phase = Phase.OepStepThrough;
+                evt.ContinueMode = 3;
+                return true;
+            }
+
+            // Read/write from non-TM image code
+            if (_guardHitCount <= 5 || _guardHitCount % 1000 == 0)
+                _api.Log.Info($"[Guard] {(access == 0 ? "read" : "write")} 0x{fault:X} from 0x{rip:X} (#{_guardHitCount})");
 
             if (_guardHitCount > 500000)
             {
                 _api.Log.Error("[Guard] 500K hits — aborting.");
-                _api.Memory.ProtectMemory(pid, _textBase, GuardSize(), _guardOldProt);
                 _phase = Phase.Idle;
                 return false;
             }
 
-            _api.Memory.ProtectMemory(pid, _textBase, GuardSize(), _guardOldProt);
             _phase = Phase.TextStepRearm;
-            evt.ContinueMode = 3; // HANDLED
+            evt.ContinueMode = 3;
             return true;
         }
 
@@ -438,7 +555,23 @@ public class ThemidaPanel : ScrollViewer
                 {
                     _api.Log.Info($"[OEP] Return addr 0x{retAddr:X} in .themida → MSVC OEP search");
                     ulong realOep = TryFindMsvcOep(pid, _firstTextExecAddr);
-                    if (realOep != 0)
+
+                    if (realOep != 0 && _traceMsvcOep)
+                    {
+                        // Guard fallback path: TryFindMsvcOep set _traceMsvcOep=true
+                        // Need to skip to retAddr and re-enter guard mode for WriteMSVCOEP on next .text hit
+                        _msvcOep = realOep;
+                        _api.Log.Info($"[OEP] MSVC: will trace to next .text exec for OEP stub write (OEP=0x{realOep:X})");
+                        // Redirect RIP to return address, pop stack
+                        evt.NewRip = retAddr;
+                        evt.NewRsp = rsp + (ulong)_ptrSize;
+                        // Re-arm guard and wait for next .text execute
+                        _api.Memory.ProtectMemory(pid, _textBase, GuardSize(), 0x01);
+                        _phase = Phase.TextGuarded;
+                        evt.ContinueMode = 3;
+                        return true;
+                    }
+                    else if (realOep != 0)
                     {
                         _api.Log.Warning($"[OEP] Real MSVC OEP: 0x{realOep:X}");
                         rip = realOep;
@@ -489,14 +622,41 @@ public class ThemidaPanel : ScrollViewer
             }
         }
 
-        // Magicmida fallback: two consecutive guard addresses
+        // Magicmida fallback: two consecutive guard addresses → need MSVC OEP trace
         if (_guardAddrs.Count >= 2 &&
             _guardAddrs[_guardAddrs.Count - 1] == _guardAddrs[_guardAddrs.Count - 2] + 1)
         {
+            _traceMsvcOep = true;
+            _msvcInitCookie = hitAddr; // the __security_init_cookie address
             return _guardAddrs[_guardAddrs.Count - 2];
         }
 
         return 0;
+    }
+
+    // WriteMsvcOep — Magicmida WriteMSVCOEP: writes 18-byte shellcode at _msvcOep
+    // sub rsp,28h / call __security_init_cookie / add rsp,28h / jmp __scrt_startup
+    private void WriteMsvcOep(ulong crtStartup)
+    {
+        uint pid = _api.TargetPid;
+        _api.Memory.ProtectMemory(pid, _msvcOep, 18, 0x40); // PAGE_EXECUTE_READWRITE
+
+        var code = new byte[18];
+        // sub rsp, 28h = 48 83 EC 28
+        code[0] = 0x48; code[1] = 0x83; code[2] = 0xEC; code[3] = 0x28;
+        // call __security_init_cookie (rel32)
+        code[4] = 0xE8;
+        int callRel = (int)((long)_msvcInitCookie - (long)(_msvcOep + 4) - 5);
+        Array.Copy(BitConverter.GetBytes(callRel), 0, code, 5, 4);
+        // add rsp, 28h = 48 83 C4 28
+        code[9] = 0x48; code[10] = 0x83; code[11] = 0xC4; code[12] = 0x28;
+        // jmp __scrt_startup (rel32)
+        code[13] = 0xE9;
+        int jmpRel = (int)((long)crtStartup - (long)(_msvcOep + 13) - 5);
+        Array.Copy(BitConverter.GetBytes(jmpRel), 0, code, 14, 4);
+
+        _api.Memory.WriteMemory(pid, _msvcOep, code);
+        _api.Log.Warning($"[MSVC] Virtualized OEP restored at 0x{_msvcOep:X}");
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -673,18 +833,19 @@ public class ThemidaPanel : ScrollViewer
         }
 
         // RIP exited TM range. Check anti-trace APIs (Magicmida TraceIsAtAPI)
-        // Sleep/lstrlen called by wrapper as anti-trace
+        // Sleep/lstrlen called by wrapper as anti-trace — ONLY if SP < start (still in wrapper frame)
         if (rip == _sleepApi || rip == _lstrlenApi)
         {
-            _api.Log.Info($"[IAT] Skipping anti-trace API at 0x{rip:X}");
-            // Skip: read return address, redirect
-            var retData = _api.Memory.ReadMemory(pid, _savedRsp, (uint)_ptrSize);
-            // Can't easily pop stack remotely — just re-launch trace from same wrapper
-            // The driver trace exited because it hit the API. Re-trace won't help.
-            // Mark as unresolved and continue.
-            _iatFailedCount++;
-            AdvanceOrFinish(pid, evt);
-            return;
+            var traceRegs = _api.Memory.ReadRegisters(pid, evt.ThreadId);
+            ulong rsp = GetReg(traceRegs, _is64 ? "RSP" : "ESP");
+            if (rsp < _traceStartSP)
+            {
+                _api.Log.Info($"[IAT] Skipping anti-trace API 0x{rip:X} (SP=0x{rsp:X} < start=0x{_traceStartSP:X})");
+                _iatFailedCount++;
+                AdvanceOrFinish(pid, evt);
+                return;
+            }
+            // SP >= start → legitimate API call, fall through to validation
         }
 
         // Validate result (Magicmida checks)
@@ -1136,6 +1297,7 @@ internal class RemoteDumper
     // Forward tables (built from local DLLs — same arch)
     private Dictionary<ulong, ulong> _forwards = new();
     private Dictionary<ulong, ulong> _forwardsKernelbase = new();
+    private Dictionary<ulong, ulong> _forwardsWsock = new();
 
     public RemoteDumper(IDebuggerApi api, uint pid, ulong imageBase, ulong imageBoundary, ulong oep, bool is64)
     {
@@ -1157,60 +1319,82 @@ internal class RemoteDumper
         try
         {
             CollectForwardsFrom(_forwards, "kernel32.dll");
+            CollectForwardsFrom(_forwards, "user32.dll");
             CollectForwardsFrom(_forwards, "ole32.dll");
             CollectForwardsFrom(_forwards, "advapi32.dll");
+            LoadAndCollect(_forwards, "netapi32.dll", "srvcli.dll", "samcli.dll");
+            if (Environment.OSVersion.Version.Major >= 6)
+                LoadAndCollect(_forwards, "crypt32.dll", "dpapi.dll");
+            LoadAndCollect(_forwards, "dbghelp.dll", "dbgcore.dll");
+            LoadAndCollect(_forwards, "setupapi.dll", "cfgmgr32.dll");
+            LoadAndCollect(_forwardsWsock, "wsock32.dll", "ws2_32.dll");
             CollectForwardsFrom(_forwardsKernelbase, "kernelbase.dll");
         }
         catch { } // Non-critical — forward resolution is best-effort
     }
 
-    private unsafe void CollectForwardsFrom(Dictionary<ulong, ulong> fwds, string dllName)
+    private unsafe void LoadAndCollect(Dictionary<ulong, ulong> fwds, string mainDll, params string[] deps)
     {
-        var hMod = NativeMethods.LoadLibraryW(dllName);
-        if (hMod == IntPtr.Zero) return;
-
-        try
+        var handles = new List<IntPtr>();
+        foreach (var dep in deps)
         {
-            byte* modBase = (byte*)hMod;
-            int lfanew = *(int*)(modBase + 0x3C);
-            // Skip to export directory
-            int ddOffset = _is64 ? lfanew + 4 + 20 + 0x70 : lfanew + 4 + 20 + 0x60;
-            uint expRva = *(uint*)(modBase + ddOffset);
-            uint expSize = *(uint*)(modBase + ddOffset + 4);
-            if (expRva == 0 || expSize == 0) return;
+            var h = NativeMethods.LoadLibraryW(dep);
+            if (h != IntPtr.Zero) handles.Add(h);
+        }
+        var hMain = NativeMethods.LoadLibraryW(mainDll);
+        if (hMain != IntPtr.Zero)
+        {
+            CollectForwardsFromHandle(fwds, hMain);
+            NativeMethods.FreeLibrary(hMain);
+        }
+        foreach (var h in handles) NativeMethods.FreeLibrary(h);
+    }
 
-            byte* expDir = modBase + expRva;
-            uint numFuncs = *(uint*)(expDir + 20);
-            uint* addrFuncs = (uint*)(modBase + *(uint*)(expDir + 28));
+    private unsafe void CollectForwardsFromHandle(Dictionary<ulong, ulong> fwds, IntPtr hMod)
+    {
+        byte* modBase = (byte*)hMod;
+        int lfanew = *(int*)(modBase + 0x3C);
+        int ddOffset = _is64 ? lfanew + 4 + 20 + 0x70 : lfanew + 4 + 20 + 0x60;
+        uint expRva = *(uint*)(modBase + ddOffset);
+        uint expSize = *(uint*)(modBase + ddOffset + 4);
+        if (expRva == 0 || expSize == 0) return;
 
-            for (uint i = 0; i < numFuncs; i++)
+        byte* expDir = modBase + expRva;
+        uint numFuncs = *(uint*)(expDir + 20);
+        uint* addrFuncs = (uint*)(modBase + *(uint*)(expDir + 28));
+
+        for (uint i = 0; i < numFuncs; i++)
+        {
+            byte* fwdPtr = modBase + addrFuncs[i];
+            if (fwdPtr >= expDir && fwdPtr < expDir + expSize)
             {
-                byte* fwdPtr = modBase + addrFuncs[i];
-                // Check if it's a forward (string within export directory range)
-                if (fwdPtr >= expDir && fwdPtr < expDir + expSize)
+                string fwdStr = Marshal.PtrToStringAnsi((IntPtr)fwdPtr) ?? "";
+                int dot = fwdStr.IndexOf('.');
+                if (fwdStr.Length >= 10 && fwdStr.Length <= 90 &&
+                    ((dot > 0 && dot < 15) || fwdStr.Contains("api-ms-win")) &&
+                    !fwdStr.Contains(".#"))
                 {
-                    string fwdStr = Marshal.PtrToStringAnsi((IntPtr)fwdPtr) ?? "";
-                    int dot = fwdStr.IndexOf('.');
-                    if (dot > 0 && dot < 15 && fwdStr.Length >= 10 && fwdStr.Length <= 90 && !fwdStr.Contains(".#"))
+                    string modName = fwdStr.Substring(0, dot);
+                    string procName = fwdStr.Substring(dot + 1);
+                    var hTarget = NativeMethods.GetModuleHandleA(modName);
+                    if (hTarget == IntPtr.Zero) hTarget = NativeMethods.LoadLibraryW(modName + ".dll");
+                    if (hTarget != IntPtr.Zero)
                     {
-                        string modName = fwdStr.Substring(0, dot);
-                        string procName = fwdStr.Substring(dot + 1);
-                        var hTarget = NativeMethods.GetModuleHandleA(modName);
-                        if (hTarget == IntPtr.Zero) hTarget = NativeMethods.LoadLibraryW(modName + ".dll");
-                        if (hTarget != IntPtr.Zero)
-                        {
-                            var procAddr = NativeMethods.GetProcAddress(hTarget, procName);
-                            if (procAddr != IntPtr.Zero)
-                            {
-                                // Map: resolved_in_target → original_in_exporter
-                                fwds[(ulong)(long)procAddr] = (ulong)(long)hMod + addrFuncs[i];
-                            }
-                        }
+                        var procAddr = NativeMethods.GetProcAddress(hTarget, procName);
+                        if (procAddr != IntPtr.Zero)
+                            fwds[(ulong)(long)procAddr] = (ulong)(long)hMod + addrFuncs[i];
                     }
                 }
             }
         }
-        catch { }
+    }
+
+    private unsafe void CollectForwardsFrom(Dictionary<ulong, ulong> fwds, string dllName)
+    {
+        var hMod = NativeMethods.GetModuleHandleA(dllName);
+        if (hMod == IntPtr.Zero) hMod = NativeMethods.LoadLibraryW(dllName);
+        if (hMod == IntPtr.Zero) return;
+        try { CollectForwardsFromHandle(fwds, hMod); } catch { }
     }
 
     // ── Module snapshot and export table parsing ──
@@ -1265,6 +1449,14 @@ internal class RemoteDumper
         foreach (var rm in _allModules!)
             if (address >= rm.Base && address < rm.End) return rm;
         return null;
+    }
+
+    public bool TargetHasModule(string name)
+    {
+        if (_allModules == null) TakeModuleSnapshot();
+        foreach (var rm in _allModules!)
+            if (rm.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
     }
 
     // Parse export table from remote process memory (Magicmida GatherModuleExportsFromRemoteProcess)
@@ -1334,6 +1526,67 @@ internal class RemoteDumper
         }
     }
 
+    // ── TrimHugeSections (Magicmida PEHeader.TrimHugeSections) ──
+    // Trims trailing zeros from sections >1MB to reduce dump size
+
+    private void TrimHugeSections(byte[] buf, int numSect, int sectStart, ref uint iatRawAddr)
+    {
+        uint sectionAlign = 0x1000u;
+        for (int i = 0; i < numSect; i++)
+        {
+            int o = sectStart + i * 40;
+            if (o + 40 > buf.Length) break;
+            uint ptrRaw = BitConverter.ToUInt32(buf, o + 20);
+            uint sizeRaw = BitConverter.ToUInt32(buf, o + 16);
+            if (sizeRaw == 0 || ptrRaw + sizeRaw > buf.Length) continue;
+
+            // Scan backward for trailing zeros (DWORD granularity)
+            int zeroStart = -1;
+            for (int j = (int)(sizeRaw / 4) - 1; j >= 0; j--)
+            {
+                if (BitConverter.ToUInt32(buf, (int)(ptrRaw + (uint)j * 4)) == 0)
+                    zeroStart = j * 4;
+                else
+                    break;
+            }
+
+            if (zeroStart != -1 && sizeRaw - (uint)zeroStart > 1024 * 1024)
+            {
+                uint oldSize = sizeRaw;
+                uint newSize = (uint)zeroStart;
+                // Align to section alignment
+                newSize = (newSize + sectionAlign - 1) & ~(sectionAlign - 1);
+                if (newSize >= oldSize) continue;
+
+                uint delta = oldSize - newSize;
+                // Update section header
+                Array.Copy(BitConverter.GetBytes(newSize), 0, buf, o + 16, 4);
+
+                // Shift subsequent data
+                if (i < numSect - 1)
+                {
+                    int nextSectOff = sectStart + (i + 1) * 40;
+                    uint nextPtrRaw = BitConverter.ToUInt32(buf, nextSectOff + 20);
+                    int remaining = buf.Length - (int)(ptrRaw + oldSize);
+                    if (remaining > 0)
+                        Array.Copy(buf, (int)(ptrRaw + oldSize), buf, (int)(ptrRaw + newSize), remaining);
+
+                    for (int j = i + 1; j < numSect; j++)
+                    {
+                        int oj = sectStart + j * 40;
+                        uint pr = BitConverter.ToUInt32(buf, oj + 20);
+                        Array.Copy(BitConverter.GetBytes(pr - delta), 0, buf, oj + 20, 4);
+                    }
+                }
+
+                if (iatRawAddr >= ptrRaw + oldSize)
+                    iatRawAddr -= delta;
+
+                _api.Log.Info($"[Trim] Section {i}: 0x{oldSize:X} → 0x{newSize:X} (saved {delta} bytes)");
+            }
+        }
+    }
+
     // ── Process and Dump (Magicmida Dumper.Process + DumpToFile) ──
 
     public byte[]? ProcessAndDump(uint pid, ulong iat, int iatCount, ulong[] iatData,
@@ -1382,17 +1635,28 @@ internal class RemoteDumper
                 Array.Copy(BitConverter.GetBytes((uint)iatData[i]), 0, pe, off, 4);
         }
 
-        // Determine IAT size
-        uint iatSize = 0;
-        for (int i = iatCount - 1; i >= 0; i--)
+        // TrimHugeSections (Magicmida PEHeader.TrimHugeSections)
+        TrimHugeSections(pe, numSect, sectStart, ref iatRva);
+
+        // Determine IAT size (Magicmida Dumper.DetermineIATSize)
+        uint lastValid = 0;
+        for (int i = 0; i < iatCount; i++)
         {
             if (IsAPIAddress(iatData[i]))
+                lastValid = (uint)((i + 1) * _ptrSize);
+        }
+        // Scan 0x100 bytes beyond last valid for strays
+        if (lastValid > 0)
+        {
+            int startSlot = (int)(lastValid / (uint)_ptrSize);
+            int extra = Math.Min(0x100 / _ptrSize, iatCount - startSlot);
+            for (int i = startSlot; i < startSlot + extra; i++)
             {
-                iatSize = (uint)((i + 1) * _ptrSize);
-                break;
+                if (i < iatCount && IsAPIAddress(iatData[i]))
+                    lastValid = (uint)((i + 1) * _ptrSize);
             }
         }
-        if (iatSize == 0) iatSize = (uint)(iatCount * _ptrSize);
+        uint iatSize = lastValid > 0 ? lastValid : (uint)(iatCount * _ptrSize);
 
         // Apply forward resolution to IAT in dump
         for (int i = 0; i < iatCount; i++)
@@ -1401,6 +1665,7 @@ internal class RemoteDumper
             ulong resolved = val;
             if (_forwards.TryGetValue(val, out var fwd)) resolved = fwd;
             else if (_forwardsKernelbase.TryGetValue(val, out fwd)) resolved = fwd;
+            else if (_forwardsWsock.TryGetValue(val, out fwd) && TargetHasModule("wsock32.dll")) resolved = fwd;
 
             if (resolved != val)
             {
