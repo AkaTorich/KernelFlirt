@@ -65,7 +65,6 @@ public class ThemidaPanel : ScrollViewer
         TextGuarded,                // PAGE_NOACCESS on .text — waiting for execute access = OEP
         TextStepRearm,              // Single-stepping past a read/write AV, will re-arm PAGE_NOACCESS
         OepStepThrough,             // Execute AV suppressed, waiting for SingleStep to break at OEP
-        IatTracing,                 // Runtime IAT tracing — single-stepping through .themida wrappers
         Done
     }
 
@@ -98,16 +97,6 @@ public class ThemidaPanel : ScrollViewer
     private List<IatFixEntry> _iatFixes = new();
     private record IatFixEntry(ulong IatSlotAddress, ulong OriginalValue, ulong ResolvedApi, string DllName, string ApiName);
 
-    // Runtime IAT tracer state
-    private Queue<(ulong SlotAddress, ulong WrapperAddress, string DllName)> _iatTraceQueue = new();
-    private ulong _iatTraceCurrentSlot;
-    private ulong _iatTraceCurrentWrapper;
-    private string _iatTraceCurrentDll = "";
-    private ulong _iatTraceOriginalRip;
-    private int _iatTraceStepCount;
-    private const int IAT_TRACE_MAX_STEPS = 500_000;
-    private uint? _iatTraceHwBpHandle;
-    private List<(ulong BaseAddress, ulong End, string Name)>? _iatTraceModuleRanges;
 
     // Settings
     public CheckBox ChkAutoUnpack { get; }
@@ -911,20 +900,8 @@ public class ThemidaPanel : ScrollViewer
             FixIatInternal(pid);
         }
 
-        // If runtime IAT tracing was started, it will call FinishOepNotification() when done.
-        // Otherwise, finish immediately.
-        if (_phase == UnpackPhase.IatTracing)
-            return; // async — will complete via OnDebugEventFilter
-
         _phase = UnpackPhase.Done;
-        FinishOepNotification();
-    }
 
-    /// <summary>
-    /// Complete OEP notification — called directly or after async IAT tracing finishes.
-    /// </summary>
-    private void FinishOepNotification()
-    {
         string status = $"★ UNPACKED!\nOEP: 0x{_discoveredOep:X}\nPE Base: 0x{_unpackedPeBase:X}";
         if (_stolenBytesSize > 0) status += $"\nStolen bytes: {_stolenBytesSize} restored";
         else if (_stolenBytesSize < 0) status += "\nStolen bytes: entry virtualized";
@@ -1049,7 +1026,8 @@ public class ThemidaPanel : ScrollViewer
             }
 
             OnOepFound(pid, rip);
-            return false; // Break in UI at OEP
+            // If IAT runtime tracing was started, don't break — tracer will drive execution
+            return false;
         }
 
         // ══════ Single-step re-arm: re-set PAGE_NOACCESS after stepping past ══════
@@ -1070,111 +1048,6 @@ public class ThemidaPanel : ScrollViewer
             }
 
             return true; // continue silently
-        }
-
-        // ══════ Runtime IAT tracing: single-step / HW BP through .themida wrappers ══════
-        if (_phase == UnpackPhase.IatTracing)
-        {
-            bool isHwBp = evt.Type == PluginDebugEventType.HwBreakpoint;
-            bool isSingleStep = evt.Type == PluginDebugEventType.SingleStep;
-
-            if (!isHwBp && !isSingleStep)
-                return false; // not our event
-
-            uint tid = evt.ThreadId;
-
-            // Check if we hit the jmp rax breakpoint
-            if (isHwBp && rip == _bootJmpRaxAddr)
-            {
-                // Read RAX — contains the resolved real API address
-                var regs = _api.Memory.ReadRegisters(pid, tid);
-                ulong rax = GetReg(regs, _is64 ? "RAX" : "EAX");
-
-                if (rax != 0 && _iatTraceModuleRanges != null &&
-                    IsRealApiAddress(rax, _iatTraceModuleRanges))
-                {
-                    // Resolved! Write real address to IAT slot and record
-                    string apiName = _api.Symbols.ResolveAddress(rax) ?? $"0x{rax:X}";
-                    string dllName = _iatTraceCurrentDll;
-
-                    // Try to get DLL name from resolved symbol (e.g. "kernel32!CreateFileW")
-                    if (apiName.Contains('!'))
-                    {
-                        var parts = apiName.Split('!', 2);
-                        dllName = parts[0];
-                        apiName = parts[1];
-                    }
-                    else
-                    {
-                        var mod = _iatTraceModuleRanges.FirstOrDefault(m => rax >= m.BaseAddress && rax < m.End);
-                        if (mod.Name != null) dllName = mod.Name;
-                    }
-
-                    byte[] fix = _is64 ? BitConverter.GetBytes(rax) : BitConverter.GetBytes((uint)rax);
-                    _api.Memory.WriteMemory(pid, _iatTraceCurrentSlot, fix);
-                    _iatFixes.Add(new IatFixEntry(_iatTraceCurrentSlot, _iatTraceCurrentWrapper, rax, dllName, apiName));
-
-                    if (_iatFixes.Count <= 20 || _iatFixes.Count % 50 == 0)
-                        _api.Log.Info($"[IAT Trace] #{_iatFixes.Count}: {dllName}!{apiName} (0x{rax:X}) [{_iatTraceStepCount} steps]");
-                }
-                else
-                {
-                    _api.Log.Warning($"[IAT Trace] jmp rax hit but RAX=0x{rax:X} is not a valid API — skipping slot 0x{_iatTraceCurrentSlot:X}");
-                }
-
-                // Move to next wrapper
-                TraceNextIatSlot(pid, tid);
-                return true;
-            }
-
-            // Single-step mode (fallback or HW BP not set)
-            if (isSingleStep)
-            {
-                _iatTraceStepCount++;
-
-                // Check if RIP is now in a real DLL module
-                if (_iatTraceModuleRanges != null && IsRealApiAddress(rip, _iatTraceModuleRanges))
-                {
-                    // Found the API!
-                    string apiName = _api.Symbols.ResolveAddress(rip) ?? $"0x{rip:X}";
-                    string dllName = _iatTraceCurrentDll;
-                    if (apiName.Contains('!'))
-                    {
-                        var parts = apiName.Split('!', 2);
-                        dllName = parts[0];
-                        apiName = parts[1];
-                    }
-                    else
-                    {
-                        var mod = _iatTraceModuleRanges.FirstOrDefault(m => rip >= m.BaseAddress && rip < m.End);
-                        if (mod.Name != null) dllName = mod.Name;
-                    }
-
-                    byte[] fix = _is64 ? BitConverter.GetBytes(rip) : BitConverter.GetBytes((uint)rip);
-                    _api.Memory.WriteMemory(pid, _iatTraceCurrentSlot, fix);
-                    _iatFixes.Add(new IatFixEntry(_iatTraceCurrentSlot, _iatTraceCurrentWrapper, rip, dllName, apiName));
-
-                    if (_iatFixes.Count <= 20 || _iatFixes.Count % 50 == 0)
-                        _api.Log.Info($"[IAT Trace] #{_iatFixes.Count}: {dllName}!{apiName} [{_iatTraceStepCount} steps]");
-
-                    TraceNextIatSlot(pid, tid);
-                    return true;
-                }
-
-                // Check step limit
-                if (_iatTraceStepCount >= IAT_TRACE_MAX_STEPS)
-                {
-                    _api.Log.Warning($"[IAT Trace] Exceeded {IAT_TRACE_MAX_STEPS} steps for slot 0x{_iatTraceCurrentSlot:X} — skipping");
-                    TraceNextIatSlot(pid, tid);
-                    return true;
-                }
-
-                // Continue single-stepping
-                _api.SingleStep();
-                return true;
-            }
-
-            return true; // swallow unexpected events during tracing
         }
 
         // ══════ Legacy phases (DecompDetecting, WaitingForApiCall) ══════
@@ -1477,7 +1350,7 @@ public class ThemidaPanel : ScrollViewer
         var importData = _api.Memory.ReadMemory(pid, peBase + importRva, 0x2000);
         if (importData == null) return;
 
-        int totalRedirected = 0;
+        int totalFixed = 0, totalRedirected = 0;
 
         for (int i = 0; i + 20 <= importData.Length; i += 20)
         {
@@ -1517,125 +1390,35 @@ public class ThemidaPanel : ScrollViewer
                 if (!isLegit)
                 {
                     totalRedirected++;
-                    ulong slot = peBase + firstThunk + (ulong)j;
-                    _iatTraceQueue.Enqueue((slot, iatEntry, dllName));
+                    totalRedirected++;
+                    ulong resolved = TraceThemidaWrapper(pid, iatEntry, moduleRanges);
+                    if (resolved != 0)
+                    {
+                        string apiName = _api.Symbols.ResolveAddress(resolved) ?? $"0x{resolved:X}";
+                        ulong slot = peBase + firstThunk + (ulong)j;
+                        byte[] fix = is64 ? BitConverter.GetBytes(resolved) : BitConverter.GetBytes((uint)resolved);
+                        if (_api.Memory.WriteMemory(pid, slot, fix))
+                        {
+                            _iatFixes.Add(new IatFixEntry(slot, iatEntry, resolved, dllName, apiName));
+                            totalFixed++;
+                        }
+                    }
                 }
             }
         }
 
         // Also brute-force scan .rdata for additional redirected pointers
         // (Themida API-wrapping puts extra thunks outside import directory)
-        ScanAndFixIatBruteForce(pid, peBase, is64, moduleRanges);
+        int bfFixed = ScanAndFixIatBruteForce(pid, peBase, is64, moduleRanges);
+        totalFixed += bfFixed;
 
-        if (_iatTraceQueue.Count > 0 && _bootJmpRaxAddr != 0)
+        if (totalRedirected > 0 || bfFixed > 0)
         {
-            _api.Log.Warning($"[IAT] {_iatTraceQueue.Count} Themida-wrapped imports found — starting runtime trace via jmp rax at 0x{_bootJmpRaxAddr:X}");
-            _iatTraceModuleRanges = moduleRanges;
-            StartIatRuntimeTrace(pid);
-            return; // will continue asynchronously via OnDebugEventFilter
-        }
-
-        if (_iatTraceQueue.Count > 0)
-        {
-            _api.Log.Warning($"[IAT] {_iatTraceQueue.Count} Themida-wrapped imports but no jmp rax found — cannot runtime trace");
-            _iatTraceQueue.Clear();
-        }
-
-        FinishIatFix();
-    }
-
-    /// <summary>
-    /// Start runtime IAT tracing: set HW BP on jmp rax, redirect RIP to first wrapper.
-    /// </summary>
-    private void StartIatRuntimeTrace(uint pid)
-    {
-        uint tid = _api.SelectedThreadId;
-
-        // Save original RIP to restore when done
-        var regs = _api.Memory.ReadRegisters(pid, tid);
-        _iatTraceOriginalRip = GetReg(regs, _is64 ? "RIP" : "EIP");
-
-        // Set HW execute breakpoint on jmp rax in .boot
-        _iatTraceHwBpHandle = _api.Breakpoints.SetBreakpoint(pid, tid, _bootJmpRaxAddr,
-            PluginBreakpointType.Hardware, 1);
-        if (_iatTraceHwBpHandle == null)
-        {
-            _api.Log.Error("[IAT Trace] Failed to set HW breakpoint on jmp rax — falling back to single-step mode");
-        }
-
-        _phase = UnpackPhase.IatTracing;
-        TraceNextIatSlot(pid, tid);
-    }
-
-    /// <summary>
-    /// Start tracing the next IAT wrapper in the queue.
-    /// </summary>
-    private void TraceNextIatSlot(uint pid, uint tid)
-    {
-        if (_iatTraceQueue.Count == 0)
-        {
-            // All done — finish up
-            FinishIatRuntimeTrace(pid, tid);
-            return;
-        }
-
-        var (slot, wrapper, dll) = _iatTraceQueue.Dequeue();
-        _iatTraceCurrentSlot = slot;
-        _iatTraceCurrentWrapper = wrapper;
-        _iatTraceCurrentDll = dll;
-        _iatTraceStepCount = 0;
-
-        // Redirect RIP to the wrapper address
-        _api.Memory.WriteRip(pid, tid, wrapper);
-
-        if (_iatTraceHwBpHandle != null)
-        {
-            // HW BP mode — just continue, will hit jmp rax
-            _api.Continue();
-        }
-        else
-        {
-            // Fallback: single-step mode
-            _api.SingleStep();
-        }
-    }
-
-    /// <summary>
-    /// Finish runtime IAT tracing — restore state, report results.
-    /// </summary>
-    private void FinishIatRuntimeTrace(uint pid, uint tid)
-    {
-        // Remove HW breakpoint
-        if (_iatTraceHwBpHandle != null)
-        {
-            _api.Breakpoints.RemoveBreakpoint(_iatTraceHwBpHandle.Value);
-            _iatTraceHwBpHandle = null;
-        }
-
-        // Restore original RIP
-        if (_iatTraceOriginalRip != 0)
-            _api.Memory.WriteRip(pid, tid, _iatTraceOriginalRip);
-
-        _iatTraceModuleRanges = null;
-        _phase = UnpackPhase.Done;
-        FinishIatFix();
-
-        // Complete the OEP flow (status, UI refresh) that was deferred
-        FinishOepNotification();
-    }
-
-    /// <summary>
-    /// Report IAT fix results.
-    /// </summary>
-    private void FinishIatFix()
-    {
-        if (_iatFixes.Count > 0)
-        {
-            _api.Log.Warning($"[IAT] ★ {_iatFixes.Count} imports resolved");
-            foreach (var fix in _iatFixes.Take(20))
+            _api.Log.Warning($"[IAT] {totalRedirected} redirected in import dir, {totalFixed} total fixed (incl. brute-force)");
+            foreach (var fix in _iatFixes.Take(15))
                 _api.Log.Info($"  {fix.DllName}!{fix.ApiName} → 0x{fix.ResolvedApi:X}");
-            if (_iatFixes.Count > 20)
-                _api.Log.Info($"  ... and {_iatFixes.Count - 20} more");
+            if (_iatFixes.Count > 15)
+                _api.Log.Info($"  ... and {_iatFixes.Count - 15} more");
         }
         else
         {
@@ -1806,22 +1589,26 @@ public class ThemidaPanel : ScrollViewer
                 if (IsInModule(ptr, moduleRanges) && !IsThemidaAddress(ptr)) continue;
                 if (ptr >= peBase && ptr < peBase + _originalImageSize && !IsThemidaAddress(ptr)) continue;
 
-                // Check if we already fixed or queued this slot
+                // Check if we already fixed this slot
                 ulong slotAddr = scanBase + (ulong)i;
                 if (_iatFixes.Any(f => f.IatSlotAddress == slotAddr)) continue;
-                if (_iatTraceQueue.Any(q => q.SlotAddress == slotAddr)) continue;
 
-                // Queue for runtime tracing instead of static trace
-                if (IsThemidaAddress(ptr))
+                ulong resolved = TraceThemidaWrapper(pid, ptr, moduleRanges);
+                if (resolved != 0)
                 {
-                    _iatTraceQueue.Enqueue((slotAddr, ptr, "?"));
-                    fixedCount++;
+                    byte[] fix = is64 ? BitConverter.GetBytes(resolved) : BitConverter.GetBytes((uint)resolved);
+                    if (_api.Memory.WriteMemory(pid, slotAddr, fix))
+                    {
+                        string apiName = _api.Symbols.ResolveAddress(resolved) ?? $"0x{resolved:X}";
+                        _iatFixes.Add(new IatFixEntry(slotAddr, ptr, resolved, "?", apiName));
+                        fixedCount++;
+                    }
                 }
             }
         }
 
         if (fixedCount > 0)
-            _api.Log.Info($"[IAT] Brute-force: {fixedCount} additional Themida wrappers queued for runtime trace");
+            _api.Log.Info($"[IAT] Brute-force: {fixedCount} additional imports fixed");
 
         return fixedCount;
     }
@@ -2251,6 +2038,11 @@ public class ThemidaPanel : ScrollViewer
                 if (!dllName.Contains('.')) dllName += ".dll";
             }
 
+            // Strip "Stub" suffix — dbghelp resolves internal CRT wrappers like
+            // "GetModuleFileNameWStub" but the real export is "GetModuleFileNameW"
+            if (funcName.EndsWith("Stub") && funcName.Length > 4)
+                funcName = funcName[..^4];
+
             // Check for ordinal (e.g. "Ordinal#123" or "#123")
             bool isOrdinal = false;
             ushort ordinal = 0;
@@ -2319,6 +2111,10 @@ public class ThemidaPanel : ScrollViewer
                 }
 
                 if (funcName.StartsWith("0x")) continue; // unresolved
+
+                // Strip "Stub" suffix from internal CRT wrapper names
+                if (funcName.EndsWith("Stub") && funcName.Length > 4)
+                    funcName = funcName[..^4];
 
                 bool isOrdinal = false;
                 ushort ordinal = 0;
