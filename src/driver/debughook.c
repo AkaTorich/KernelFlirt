@@ -738,6 +738,9 @@ static void KfFillDebugEvent(
     evt->FaultAddress  = (ExceptionRecord->ExceptionCode == STATUS_ACCESS_VIOLATION &&
                           ExceptionRecord->NumberParameters >= 2)
                          ? (ULONG64)ExceptionRecord->ExceptionInformation[1] : 0;
+    evt->AccessType    = (ExceptionRecord->ExceptionCode == STATUS_ACCESS_VIOLATION &&
+                          ExceptionRecord->NumberParameters >= 1)
+                         ? (ULONG)ExceptionRecord->ExceptionInformation[0] : 0;
 
     evt->Registers.Rax    = ContextRecord->Rax;
     evt->Registers.Rbx    = ContextRecord->Rbx;
@@ -859,7 +862,7 @@ static BOOLEAN KfDebugHandler(
     /* Treat as target: matching PID, any PID if g_TargetPid==0, or kernel-space address */
     BOOLEAN isTarget = (g_TargetPid == 0 || currentPid == g_TargetPid
                         || excAddr >= 0xFFFF800000000000ULL);
-    /* For AV: strict PID match only (kernel AVs happen all the time and are not anti-debug) */
+    /* For AV: strict PID match only (kernel AVs happen all the time) */
     BOOLEAN isTargetAv = (g_TargetPid != 0 && currentPid == g_TargetPid
                           && excAddr < 0xFFFF800000000000ULL);
 
@@ -879,7 +882,7 @@ static BOOLEAN KfDebugHandler(
         g_LastNonTargetPid = currentPid;
     }
 
-    /* Only handle BP, SingleStep, GuardPage, and AV for target process (user-mode only) */
+    /* Only handle BP, SingleStep, GuardPage, and AV for target process (user-mode) */
     if (ExceptionRecord->ExceptionCode != STATUS_BREAKPOINT &&
         ExceptionRecord->ExceptionCode != STATUS_SINGLE_STEP &&
         ExceptionRecord->ExceptionCode != STATUS_GUARD_PAGE_VIOLATION &&
@@ -891,10 +894,24 @@ static BOOLEAN KfDebugHandler(
         return FALSE;
 
     /* ============================================================== */
-    /*  ACCESS VIOLATION — catch anti-debug kill (target, 1st chance)  */
+    /*  ACCESS VIOLATION — report to UI, then pass to app's SEH.      */
+    /*  User sees the AV in the debugger (can inspect state), but     */
+    /*  when they press Run, we return FALSE so the app's SEH handler */
+    /*  receives the exception. This is correct for protectors like   */
+    /*  Themida (VM uses intentional AV with SEH) AND for real crashes */
+    /*  (user sees the crash, app gets the unhandled exception).       */
     /* ============================================================== */
     if (ExceptionRecord->ExceptionCode == STATUS_ACCESS_VIOLATION && isTargetAv) {
-        goto report_to_ui;
+        KfReportAndBlock(TrapFrame, ExceptionRecord, ContextRecord, PreviousMode);
+
+        if (g_ContinueMode == KF_CONTINUE_HANDLED) {
+            /* Plugin handled the AV (e.g. PAGE_NOACCESS guard):
+             * Set TF for single-step, return TRUE to suppress AV from reaching SEH */
+            ContextRecord->EFlags |= 0x100UL;
+            return TRUE;
+        }
+        /* Default: return FALSE to pass AV to app's SEH */
+        return FALSE;
     }
 
     /* ============================================================== */
@@ -979,13 +996,15 @@ static BOOLEAN KfDebugHandler(
                 /* Not in our BP table. For kernel addresses this may be a
                    file-patched INT3 (e.g. DriverEntry debug break) — report
                    to UI so the debugger can handle it. For user-mode addresses
-                   it's likely compiler padding — skip it. */
+                   return FALSE so normal exception dispatch continues:
+                   the app's SEH handler will receive STATUS_BREAKPOINT.
+                   This is critical for protectors like Themida that use INT3
+                   with SEH as anti-debug checks — they expect the SEH to fire. */
                 InterlockedIncrement(&g_HookBpNotFoundCount);
                 if (bpAddr >= 0xFFFF800000000000ULL) {
                     goto report_to_ui;
                 }
-                ContextRecord->Rip = bpAddr + 1;
-                return TRUE;
+                return FALSE;
             }
 
             InterlockedIncrement(&g_HookBpHitCount);
@@ -1461,6 +1480,36 @@ void KfDebugHookCleanup(void)
 
     KfRemoveDebugHook();
 
+    KeAcquireSpinLock(&g_DbgLock, &oldIrql);
+    if (g_WaitIrp) {
+        PIRP irp = g_WaitIrp;
+        g_WaitIrp = NULL;
+        KeReleaseSpinLock(&g_DbgLock, oldIrql);
+
+        IoSetCancelRoutine(irp, NULL);
+        irp->IoStatus.Status      = STATUS_CANCELLED;
+        irp->IoStatus.Information = 0;
+        IoCompleteRequest(irp, IO_NO_INCREMENT);
+    } else {
+        KeReleaseSpinLock(&g_DbgLock, oldIrql);
+    }
+}
+
+void KfDebugHookDeactivate(void)
+{
+    KIRQL oldIrql;
+
+    /* Set PID to invalid — hook returns FALSE for everything */
+    g_TargetPid = 0xFFFFFFFF;
+    DbgPrint("[KernelFlirt] Hook deactivated (PID=0xFFFFFFFF)\n");
+
+    /* Wake any blocked thread */
+    KeAcquireSpinLock(&g_DbgLock, &oldIrql);
+    if (g_ThreadBlocked)
+        KeSetEvent(&g_ContinueEvent, 0, FALSE);
+    KeReleaseSpinLock(&g_DbgLock, oldIrql);
+
+    /* Cancel pending WAIT IRP */
     KeAcquireSpinLock(&g_DbgLock, &oldIrql);
     if (g_WaitIrp) {
         PIRP irp = g_WaitIrp;

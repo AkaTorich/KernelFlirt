@@ -59,6 +59,7 @@ public class DriverComm : IDisposable
     private static readonly uint IOCTL_KF_WAIT_DEBUG_EVENT = CTL_CODE(DeviceType, 0x842, 0, 0);
     private static readonly uint IOCTL_KF_CONTINUE_DEBUG_EVENT = CTL_CODE(DeviceType, 0x843, 0, 0);
     private static readonly uint IOCTL_KF_GET_HOOK_STATS = CTL_CODE(DeviceType, 0x844, 0, 0);
+    private static readonly uint IOCTL_KF_SET_TARGET_PID = CTL_CODE(DeviceType, 0x845, 0, 0);
     private static readonly uint IOCTL_KF_RESET          = CTL_CODE(DeviceType, 0x8FE, 0, 0);
 
     // Relay pseudo-IOCTLs (handled by relay, not driver)
@@ -864,6 +865,13 @@ public class DriverComm : IDisposable
     public bool RemoveDebugHook()
     {
         var (ok, _) = SendIoctl(IOCTL_KF_REMOVE_HOOK, null, 0);
+        return ok;
+    }
+
+    public bool SetTargetPid(uint pid)
+    {
+        var pidBytes = BitConverter.GetBytes(pid);
+        var (ok, _) = SendIoctl(IOCTL_KF_SET_TARGET_PID, pidBytes, 0);
         return ok;
     }
 

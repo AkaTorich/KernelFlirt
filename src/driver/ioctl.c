@@ -164,17 +164,16 @@ KfDispatchIoctl(
     }
 
     case IOCTL_KF_REMOVE_HOOK:
-        KfRemoveDebugHook();
+        KfDebugHookDeactivate();  /* deactivate, don't remove — hook stays safe */
         status = STATUS_SUCCESS;
         Irp->IoStatus.Information = 0;
         break;
 
     case IOCTL_KF_RESET:
-        DbgPrint("[KernelFlirt] RESET: removing all breakpoints and hooks\n");
+        DbgPrint("[KernelFlirt] RESET: deactivating hook, removing BPs\n");
         KfRemoveNtQsiHook();
         KfRemoveAllBreakpoints();
-        KfDebugHookCleanup();   /* removes hook AND cancels pending WAIT IRP */
-        KfSetTargetPid(0);
+        KfDebugHookDeactivate();  /* PID=invalid, wake threads, cancel WAIT IRP — hook stays */
         status = STATUS_SUCCESS;
         Irp->IoStatus.Information = 0;
         break;
@@ -189,6 +188,17 @@ KfDispatchIoctl(
 
     case IOCTL_KF_GET_HOOK_STATS:
         return KfGetHookStats(Irp, ioStack);
+
+    case IOCTL_KF_SET_TARGET_PID:
+    {
+        ULONG pid = 0xFFFFFFFF;  /* default = no target */
+        if (ioStack->Parameters.DeviceIoControl.InputBufferLength >= sizeof(ULONG))
+            pid = *(PULONG)Irp->AssociatedIrp.SystemBuffer;
+        KfSetTargetPid(pid);
+        status = STATUS_SUCCESS;
+        Irp->IoStatus.Information = 0;
+        break;
+    }
 
     default:
         DbgPrint("[KernelFlirt] Unknown IOCTL: 0x%08X\n", ioctl);

@@ -30,8 +30,6 @@ public partial class HexDumpView : UserControl
     /// <summary>Address of the selected line (for context menu operations).</summary>
     public ulong SelectedLineAddress { get; private set; }
 
-    /// <summary>Column that was right-clicked: "address", "hex", or "ascii".</summary>
-    private string _clickedColumn = "";
 
     public HexDumpView()
     {
@@ -95,7 +93,7 @@ public partial class HexDumpView : UserControl
 
         // === Address column ===
         var addrRun = new Run($"{lineAddr:X16}  ") { Foreground = AddressColor };
-        addrRun.MouseRightButtonDown += (s, e) => { _clickedColumn = "address"; SelectLine(lineIdx); };
+        addrRun.MouseRightButtonDown += (s, e) => {SelectLine(lineIdx); };
         tb.Inlines.Add(addrRun);
 
         // === Hex bytes column ===
@@ -116,7 +114,7 @@ public partial class HexDumpView : UserControl
             {
                 hexRun = new Run("   ");
             }
-            hexRun.MouseRightButtonDown += (s, e) => { _clickedColumn = "hex"; SelectLine(lineIdx); };
+            hexRun.MouseRightButtonDown += (s, e) => {SelectLine(lineIdx); };
             tb.Inlines.Add(hexRun);
             if (j == 7) tb.Inlines.Add(new Run(" "));
         }
@@ -131,7 +129,7 @@ public partial class HexDumpView : UserControl
             asciiSb.Append(b >= 0x20 && b < 0x7F ? (char)b : '.');
         }
         var asciiRun = new Run(asciiSb.ToString()) { Foreground = AsciiColor };
-        asciiRun.MouseRightButtonDown += (s, e) => { _clickedColumn = "ascii"; SelectLine(lineIdx); };
+        asciiRun.MouseRightButtonDown += (s, e) => {SelectLine(lineIdx); };
         tb.Inlines.Add(asciiRun);
 
         Brush bgBrush = hasBp ? BpLineColor : Brushes.Transparent;

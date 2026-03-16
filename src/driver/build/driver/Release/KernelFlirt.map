@@ -1,20 +1,20 @@
  KernelFlirt
 
- Timestamp is 69b69f49 (Sun Mar 15 20:00:09 2026)
+ Timestamp is 69b7911f (Mon Mar 16 13:11:59 2026)
 
  Preferred load address is 0000000180000000
 
  Start         Length     Name                   Class
- 0001:00000000 00006400H .text$mn                CODE
- 0001:00006400 000004a6H .text$mn$21             CODE
+ 0001:00000000 00006480H .text$mn                CODE
+ 0001:00006480 000004a6H .text$mn$21             CODE
  0002:00000000 00000180H .idata$5                DATA
- 0002:00000180 000023f0H .rdata                  DATA
- 0002:00002570 00000018H .rdata$voltmd           DATA
- 0002:00002588 000001c0H .rdata$zzzdbg           DATA
- 0002:00002748 00000808H .xdata                  DATA
+ 0002:00000180 00002410H .rdata                  DATA
+ 0002:00002590 00000018H .rdata$voltmd           DATA
+ 0002:000025a8 000001c0H .rdata$zzzdbg           DATA
+ 0002:00002768 000007e8H .xdata                  DATA
  0003:00000000 00000080H .data                   DATA
  0003:00000080 00003bb0H .bss                    DATA
- 0004:00000000 000003a8H .pdata                  DATA
+ 0004:00000000 0000039cH .pdata                  DATA
  0005:00000000 00000014H .idata$2                DATA
  0005:00000014 00000014H .idata$3                DATA
  0005:00000028 00000180H .idata$4                DATA
@@ -54,34 +54,35 @@
  0000:00000000       __ImageBase                0000000180000000     <linker-defined>
  0001:00000000       DriverEntry                0000000180001000 f   main.obj
  0001:000001b0       KfUnload                   00000001800011b0 f   main.obj
- 0001:000002d0       KfCreateClose              00000001800012d0 f   main.obj
- 0001:00000300       KfDeviceControl            0000000180001300 f   main.obj
- 0001:00000310       KfDispatchIoctl            0000000180001310 f   ioctl.obj
- 0001:00001030       KfReadMemory               0000000180002030 f   memory.obj
- 0001:00001370       KfWriteMemory              0000000180002370 f   memory.obj
- 0001:00002220       KfRemoveBreakpoint         0000000180003220 f   breakpoint.obj
- 0001:00002480       KfFindSwBpOrigByte         0000000180003480 f   breakpoint.obj
- 0001:00002550       KfRemoveAllBreakpoints     0000000180003550 f   breakpoint.obj
- 0001:00002770       KfSingleStep               0000000180003770 f   singlestep.obj
- 0001:00002850       KfReadRegisters            0000000180003850 f   registers.obj
- 0001:00002af0       KfWriteRegisters           0000000180003af0 f   registers.obj
- 0001:00002ce0       KfEnumModules              0000000180003ce0 f   modules.obj
- 0001:000033a0       KfClearThreadHide          00000001800043a0 f   modules.obj
- 0001:000035d0       KfEnumThreads              00000001800045d0 f   threads.obj
- 0001:00003880       KfEnumProcesses            0000000180004880 f   process.obj
- 0001:00003bc0       KfPatchBytes               0000000180004bc0 f   debughook.obj
- 0001:00004f50       KfInstallDebugHook         0000000180005f50 f   debughook.obj
- 0001:00005640       KfRemoveDebugHook          0000000180006640 f   debughook.obj
- 0001:00005ce0       KfInstallNtQsiHook         0000000180006ce0 f   ntqsi_hook.obj
- 0001:000061e0       KfProbeNtQsi               00000001800071e0 f   ntqsi_hook.obj
- 0001:00006301       __C_specific_handler       0000000180007301 f   ntoskrnl:ntoskrnl.exe
- 0001:00006310       __cpu_features_init        0000000180007310 f   ntoskrnl:cpuinfo.obj
- 0001:00006400       memcpy                     0000000180007400 f   ntoskrnl:memcpy.obj
- 0001:00006400       memmove                    0000000180007400 f   ntoskrnl:memcpy.obj
- 0001:000066c0       memset                     00000001800076c0 f   ntoskrnl:memset.obj
- 0001:000066c0       memset_$fo_default$        00000001800076c0     ntoskrnl:memset.obj
- 0001:00006800       __memset_repmovs           0000000180007800 f   ntoskrnl:memset.obj
- 0001:00006880       __memset_query             0000000180007880 f   ntoskrnl:memset.obj
+ 0001:00000270       KfCreateClose              0000000180001270 f   main.obj
+ 0001:000002a0       KfDeviceControl            00000001800012a0 f   main.obj
+ 0001:000002b0       KfDispatchIoctl            00000001800012b0 f   ioctl.obj
+ 0001:00000fa0       KfReadMemory               0000000180001fa0 f   memory.obj
+ 0001:000012e0       KfWriteMemory              00000001800022e0 f   memory.obj
+ 0001:00002190       KfRemoveBreakpoint         0000000180003190 f   breakpoint.obj
+ 0001:000023f0       KfFindSwBpOrigByte         00000001800033f0 f   breakpoint.obj
+ 0001:000024c0       KfRemoveAllBreakpoints     00000001800034c0 f   breakpoint.obj
+ 0001:000026e0       KfSingleStep               00000001800036e0 f   singlestep.obj
+ 0001:000027c0       KfReadRegisters            00000001800037c0 f   registers.obj
+ 0001:00002a60       KfWriteRegisters           0000000180003a60 f   registers.obj
+ 0001:00002c50       KfEnumModules              0000000180003c50 f   modules.obj
+ 0001:00003310       KfClearThreadHide          0000000180004310 f   modules.obj
+ 0001:00003540       KfEnumThreads              0000000180004540 f   threads.obj
+ 0001:000037f0       KfEnumProcesses            00000001800047f0 f   process.obj
+ 0001:00003b30       KfPatchBytes               0000000180004b30 f   debughook.obj
+ 0001:00004ed0       KfInstallDebugHook         0000000180005ed0 f   debughook.obj
+ 0001:000055c0       KfDebugHookCleanup         00000001800065c0 f   debughook.obj
+ 0001:00005820       KfDebugHookDeactivate      0000000180006820 f   debughook.obj
+ 0001:00005d70       KfInstallNtQsiHook         0000000180006d70 f   ntqsi_hook.obj
+ 0001:00006270       KfProbeNtQsi               0000000180007270 f   ntqsi_hook.obj
+ 0001:00006391       __C_specific_handler       0000000180007391 f   ntoskrnl:ntoskrnl.exe
+ 0001:000063a0       __cpu_features_init        00000001800073a0 f   ntoskrnl:cpuinfo.obj
+ 0001:00006480       memcpy                     0000000180007480 f   ntoskrnl:memcpy.obj
+ 0001:00006480       memmove                    0000000180007480 f   ntoskrnl:memcpy.obj
+ 0001:00006740       memset                     0000000180007740 f   ntoskrnl:memset.obj
+ 0001:00006740       memset_$fo_default$        0000000180007740     ntoskrnl:memset.obj
+ 0001:00006880       __memset_repmovs           0000000180007880 f   ntoskrnl:memset.obj
+ 0001:00006900       __memset_query             0000000180007900 f   ntoskrnl:memset.obj
  0002:00000000       __imp_RtlInitUnicodeString 0000000180008000     ntoskrnl:ntoskrnl.exe
  0002:00000008       __imp_IoDeleteDevice       0000000180008008     ntoskrnl:ntoskrnl.exe
  0002:00000010       __imp_IoDeleteSymbolicLink 0000000180008010     ntoskrnl:ntoskrnl.exe
@@ -138,154 +139,155 @@
  0002:00000270       ??_C@_0CK@KOOPDGE@?$FLKernelFlirt?$FN?5Driver?5loaded?5suc@ 0000000180008270     main.obj
  0002:000002a0       ??_C@_0CA@DMGKCEPJ@?$FLKernelFlirt?$FN?5Unloading?5driver?6@ 00000001800082a0     main.obj
  0002:000002c0       ??_C@_0BP@PLJPJMDF@?$FLKernelFlirt?$FN?5Driver?5unloaded?6@ 00000001800082c0     main.obj
- 0002:000002e0       ??_C@_0DJ@CAOHHIMH@?$FLKernelFlirt?$FN?5RESET?3?5removing?5a@ 00000001800082e0     ioctl.obj
- 0002:00000320       ??_C@_0CF@EBHKIIL@?$FLKernelFlirt?$FN?5Unknown?5IOCTL?3?50x@ 0000000180008320     ioctl.obj
- 0002:00000348       ??_C@_0DN@MLBBDGIG@?$FLKernelFlirt?$FN?5PsLookupProcessBy@ 0000000180008348     memory.obj
- 0002:00000388       ??_C@_0DP@DIDOFPBD@?$FLKernelFlirt?$FN?5HW?5BP?5slot?$DN?$CFu?5add@ 0000000180008388     breakpoint.obj
- 0002:000003c8       ??_C@_0DE@JHMMNBBB@?$FLKernelFlirt?$FN?5MemBP?3?5Failed?5to?5@ 00000001800083c8     breakpoint.obj
- 0002:00000400       ??_C@_0DM@ENIAAMLB@?$FLKernelFlirt?$FN?5MemBP?3?5ZwProtectV@ 0000000180008400     breakpoint.obj
- 0002:00000440       ??_C@_0DP@CFKEFOOK@?$FLKernelFlirt?$FN?5MemBP?3?5Set?5PAGE_G@ 0000000180008440     breakpoint.obj
- 0002:00000480       ??_C@_0DH@HBGIJHNG@?$FLKernelFlirt?$FN?5MemBP?3?5Restored?5p@ 0000000180008480     breakpoint.obj
- 0002:000004b8       ??_C@_0CP@MDEMENBN@?$FLKernelFlirt?$FN?5All?5breakpoints?5r@ 00000001800084b8     breakpoint.obj
- 0002:000004e8       ??_C@_0DJ@BBMHLJEH@KernelFlirt?3?5SingleStep?5TID?5?$CFu?5@ 00000001800084e8     singlestep.obj
- 0002:00000528       ??_C@_0DK@ILAHJAFK@?$FLKernelFlirt?$FN?5ReadRegs?3?5PsLooku@ 0000000180008528     registers.obj
- 0002:00000570       ??_C@_0FO@GKGAEENF@?$FLKernelFlirt?$FN?5ReadRegs?$CITID?5?$CFu?$CJ?3@ 0000000180008570     registers.obj
- 0002:000005d0       ??_C@_0CO@FGHCCPIM@?$FLKernelFlirt?$FN?5ReadRegs?$CITID?5?$CFu?$CJ?3@ 00000001800085d0     registers.obj
- 0002:00000600       ??_C@_0DC@PJCIHGLO@?$FLKernelFlirt?$FN?5ReadRegs?$CITID?5?$CFu?$CJ?3@ 0000000180008600     registers.obj
- 0002:00000640       ??_C@_0EE@CFJKJJHM@?$FLKernelFlirt?$FN?5ReadRegs?$CITID?5?$CFu?$CJ?3@ 0000000180008640     registers.obj
- 0002:00000688       ??_C@_0CN@LNJPFHJK@?$FLKernelFlirt?$FN?5PEB?5or?5Ldr?5is?5NUL@ 0000000180008688     modules.obj
- 0002:000006b8       ??_C@_0DB@KCJAPLHK@?$FLKernelFlirt?$FN?5Exception?50x?$CF08X?5@ 00000001800086b8     modules.obj
- 0002:000006f0       ??_C@_1CM@HAJLGLCA@?$AAP?$AAs?$AAG?$AAe?$AAt?$AAP?$AAr?$AAo?$AAc?$AAe?$AAs?$AAs?$AAD?$AAe?$AAb@ 00000001800086f0     modules.obj
- 0002:00000720       ??_C@_1CM@KPFJDGG@?$AAP?$AAs?$AAI?$AAs?$AAT?$AAh?$AAr?$AAe?$AAa?$AAd?$AAT?$AAe?$AAr?$AAm?$AAi@ 0000000180008720     modules.obj
- 0002:00000750       ??_C@_0CP@CDFOCPJA@?$FLKernelFlirt?$FN?5PsIsThreadTermina@ 0000000180008750     modules.obj
- 0002:00000780       ??_C@_0HM@IDBDCIBF@?$FLKernelFlirt?$FN?5PsIsThreadTermina@ 0000000180008780     modules.obj
- 0002:00000800       ??_C@_0DK@FNNKLJNM@?$FLKernelFlirt?$FN?5CrossThreadFlags?5@ 0000000180008800     modules.obj
- 0002:00000840       ??_C@_0DJ@CLKMILBF@?$FLKernelFlirt?$FN?5CrossThreadFlags?5@ 0000000180008840     modules.obj
- 0002:00000880       ??_C@_0DL@GCFLFEHP@?$FLKernelFlirt?$FN?5CrossThreadFlags?5@ 0000000180008880     modules.obj
- 0002:000008c0       ??_C@_0DK@BPEHPFLD@?$FLKernelFlirt?$FN?5CrossThreadFlags?5@ 00000001800088c0     modules.obj
- 0002:00000900       ??_C@_0DC@OLGBPIBC@?$FLKernelFlirt?$FN?5CrossThreadFlags?5@ 0000000180008900     modules.obj
- 0002:00000938       ??_C@_0DD@MDHOOBAM@?$FLKernelFlirt?$FN?5CrossThreadFlags?5@ 0000000180008938     modules.obj
- 0002:00000970       ??_C@_0DM@OLOMALF@?$FLKernelFlirt?$FN?5CrossThreadFlags?5@ 0000000180008970     modules.obj
- 0002:000009b0       ??_C@_0DN@ILCJAIHP@?$FLKernelFlirt?$FN?5CrossThreadFlags?5@ 00000001800089b0     modules.obj
- 0002:000009f0       ??_C@_0EN@MLMCODLM@?$FLKernelFlirt?$FN?5CrossThreadFlags?3@ 00000001800089f0     modules.obj
- 0002:00000a40       ??_C@_0DP@EMIPNFFD@?$FLKernelFlirt?$FN?5ClearDebugPort?3?5f@ 0000000180008a40     modules.obj
- 0002:00000a80       ??_C@_0EM@HKJPHIPM@?$FLKernelFlirt?$FN?5ClearDebugPort?3?5z@ 0000000180008a80     modules.obj
- 0002:00000ad0       ??_C@_0EH@OIDJJJCE@?$FLKernelFlirt?$FN?5ClearThreadHide?3?5@ 0000000180008ad0     modules.obj
- 0002:00000b18       ??_C@_0DF@ELGIAOBP@?$FLKernelFlirt?$FN?5Exception?50x?$CF08X?5@ 0000000180008b18     modules.obj
- 0002:00000b50       ??_C@_0FC@EKKIJKEI@?$FLKernelFlirt?$FN?5ClearThreadHide?3?5@ 0000000180008b50     modules.obj
- 0002:00000ba8       ??_C@_0DB@OPMCAOPC@?$FLKernelFlirt?$FN?5Exception?50x?$CF08X?5@ 0000000180008ba8     threads.obj
- 0002:00000be0       ??_C@_1CC@FFNFOKJM@?$AAP?$AAs?$AAS?$AAu?$AAs?$AAp?$AAe?$AAn?$AAd?$AAP?$AAr?$AAo?$AAc?$AAe?$AAs@ 0000000180008be0     threads.obj
- 0002:00000c08       ??_C@_1CA@LKJNMPCF@?$AAP?$AAs?$AAR?$AAe?$AAs?$AAu?$AAm?$AAe?$AAP?$AAr?$AAo?$AAc?$AAe?$AAs?$AAs@ 0000000180008c08     threads.obj
- 0002:00000c28       ??_C@_0DG@GKOAEFMD@?$FLKernelFlirt?$FN?5PsSuspendProcess?$DN@ 0000000180008c28     threads.obj
- 0002:00000c60       ??_C@_0DL@JEOKODPG@?$FLKernelFlirt?$FN?5PsLookupThreadByT@ 0000000180008c60     threads.obj
- 0002:00000ca0       ??_C@_0DD@GLOACPKO@?$FLKernelFlirt?$FN?5PsSuspendProcess?5@ 0000000180008ca0     threads.obj
- 0002:00000cd8       ??_C@_0DD@PPAGEABO@?$FLKernelFlirt?$FN?5Exception?50x?$CF08X?5@ 0000000180008cd8     process.obj
- 0002:00000d10       ??_C@_0DE@KGNNNPFI@?$FLKernelFlirt?$FN?5KfPatchBytes?$CIMDL?$CJ@ 0000000180008d10     debughook.obj
- 0002:00000d48       ??_C@_0DC@CJNCLNDO@?$FLKernelFlirt?$FN?5KfPatchBytes?3?5des@ 0000000180008d48     debughook.obj
- 0002:00000d80       ??_C@_0DC@PONBGBLB@?$FLKernelFlirt?$FN?5KfPatchBytes?3?5IoA@ 0000000180008d80     debughook.obj
- 0002:00000db8       ??_C@_0DP@KADHFEHD@?$FLKernelFlirt?$FN?5KfPatchBytes?3?5MmP@ 0000000180008db8     debughook.obj
- 0002:00000df8       ??_C@_0DF@JFELDBCI@?$FLKernelFlirt?$FN?5KfPatchBytes?3?5MmM@ 0000000180008df8     debughook.obj
- 0002:00000e30       ??_C@_0CN@JDPPPHGM@?$FLKernelFlirt?$FN?5KfPatchBytes?3?5map@ 0000000180008e30     debughook.obj
- 0002:00000e60       ??_C@_0EF@DOLHMGKP@?$FLKernelFlirt?$FN?5KfPatchBytes?3?5MmP@ 0000000180008e60     debughook.obj
- 0002:00000ea8       ??_C@_0DP@CMKCEPL@?$FLKernelFlirt?$FN?5KfPatchBytes?$CIMDL?$CJ@ 0000000180008ea8     debughook.obj
- 0002:00000ef0       ??_C@_0HB@HHFFAGPF@?$FLKernelFlirt?$FN?5KfPatchBytes?$CIMDL?$CJ@ 0000000180008ef0     debughook.obj
- 0002:00000f68       ??_C@_0CG@MKPGCMDE@?$FLKernelFlirt?$FN?5ntoskrnl?5base?3?5?$CFp@ 0000000180008f68     debughook.obj
- 0002:00000f90       ??_C@_0DH@EJEHNCDB@?$FLKernelFlirt?$FN?5ZwQuerySystemInfo@ 0000000180008f90     debughook.obj
- 0002:00000fc8       ??_C@_0CN@FFONDFJM@?$FLKernelFlirt?$FN?5DOS?5header?5at?5?$CFp?5@ 0000000180008fc8     debughook.obj
- 0002:00000ff8       ??_C@_0CL@MIEPHALN@?$FLKernelFlirt?$FN?5Invalid?5DOS?5signa@ 0000000180008ff8     debughook.obj
- 0002:00001028       ??_C@_0CM@JGCAHOML@?$FLKernelFlirt?$FN?5NT?5header?5at?5?$CFp?5i@ 0000000180009028     debughook.obj
- 0002:00001058       ??_C@_0CE@PKJHGDHF@?$FLKernelFlirt?$FN?5Invalid?5NT?5signat@ 0000000180009058     debughook.obj
- 0002:00001080       ??_C@_0CC@PNMNHAOB@?$FLKernelFlirt?$FN?5Total?5sections?3?5?$CF@ 0000000180009080     debughook.obj
- 0002:000010a8       ??_C@_0DO@JEOLBDCF@?$FLKernelFlirt?$FN?5Section?$FL?$CFu?$FN?5?$CF?48s?5@ 00000001800090a8     debughook.obj
- 0002:000010e8       ??_C@_0DP@BELIGLH@?$FLKernelFlirt?$FN?5Scanning?5executab@ 00000001800090e8     debughook.obj
- 0002:00001128       ??_C@_0CO@IJDACNDD@?$FLKernelFlirt?$FN?5KdTrap?5found?5at?5?$CF@ 0000000180009128     debughook.obj
- 0002:00001158       ??_C@_0DM@OKHEHHDA@?$FLKernelFlirt?$FN?5KdTrap?5pattern?5no@ 0000000180009158     debughook.obj
- 0002:00001198       ??_C@_0CL@NKEDKHBD@?$FLKernelFlirt?$FN?5CMP?5disp?5at?5?$CFp?5is@ 0000000180009198     debughook.obj
- 0002:000011c8       ??_C@_0DI@HEJKHAJE@?$FLKernelFlirt?$FN?5KdpDebugRoutineSe@ 00000001800091c8     debughook.obj
- 0002:00001200       ??_C@_0DF@KLDOLLJN@?$FLKernelFlirt?$FN?5KdpDebugRoutineSe@ 0000000180009200     debughook.obj
- 0002:00001238       ??_C@_0CN@MLJMACKM@?$FLKernelFlirt?$FN?5CALL?$FL?$CFd?$FN?5at?5KdTra@ 0000000180009238     debughook.obj
- 0002:00001268       ??_C@_0CP@OLEHOEPN@?$FLKernelFlirt?$FN?5Using?5CALL?$FL?$CFd?$FN?5?$CIs@ 0000000180009268     debughook.obj
- 0002:00001298       ??_C@_0DL@ENJKMNLE@?$FLKernelFlirt?$FN?5Target?5CALL?5not?5f@ 0000000180009298     debughook.obj
- 0002:000012e0       ??_C@_0FA@NFOIAONE@?$FLKernelFlirt?$FN?5Scanning?5section?5@ 00000001800092e0     debughook.obj
- 0002:00001330       ??_C@_0FC@CPJIMEEL@?$FLKernelFlirt?$FN?5Found?5KiDebugRout@ 0000000180009330     debughook.obj
- 0002:00001390       ??_C@_0EN@GPFNFLNJ@?$FLKernelFlirt?$FN?5Code?9scanning?5sec@ 0000000180009390     debughook.obj
- 0002:000013e0       ??_C@_0EP@FBKEHIAP@?$FLKernelFlirt?$FN?5Found?5KiDebugRout@ 00000001800093e0     debughook.obj
- 0002:00001430       ??_C@_0FG@KLJGAMIJ@?$FLKernelFlirt?$FN?5Found?5KiDebugRout@ 0000000180009430     debughook.obj
- 0002:00001488       ??_C@_0DP@GIEMPGKN@?$FLKernelFlirt?$FN?5Data?5scan?5failed?0@ 0000000180009488     debughook.obj
- 0002:000014c8       ??_C@_0DG@CHEMNANO@?$FLKernelFlirt?$FN?5KiDebugRoutine?5no@ 00000001800094c8     debughook.obj
- 0002:00001500       ??_C@_0CE@LAMHBHA@?$FLKernelFlirt?$FN?5?$CFs?5?$CI?$CFd?5bytes?5at?5?$CF@ 0000000180009500     debughook.obj
- 0002:00001528       ??_C@_0CH@DGNAPKDI@?$FLKernelFlirt?$FN?5?5?5?$CL?$CF02X?3?5?$CIinvalid@ 0000000180009528     debughook.obj
- 0002:00001550       ??_C@_0EA@OJFLPIFK@?$FLKernelFlirt?$FN?5?5?5?$CL?$CF02X?3?5?$CF02X?5?$CF02@ 0000000180009550     debughook.obj
- 0002:00001590       ??_C@_0CM@MFJANDDN@?$FLKernelFlirt?$FN?5?5?5?$CL?$CF02X?3?5?$CF02X?5?$CF02@ 0000000180009590     debughook.obj
- 0002:000015c0       ??_C@_0CO@NKGLOFNJ@?$FLKernelFlirt?$FN?5?$DN?$DN?$DN?5InstallDebugH@ 00000001800095c0     debughook.obj
- 0002:000015f0       ??_C@_0CN@MOOCMGGG@?$FLKernelFlirt?$FN?5FAIL?3?5ntoskrnl?5ba@ 00000001800095f0     debughook.obj
- 0002:00001620       ??_C@_0CG@MLILJENP@?$FLKernelFlirt?$FN?5FAIL?3?5KdTrap?5not?5@ 0000000180009620     debughook.obj
- 0002:00001648       ??_C@_0O@JCGAJICG@KdTrap?$FL0?4?431?$FN@ 0000000180009648     debughook.obj
- 0002:00001658       ??_C@_0P@LEJFLKIF@KdTrap?$FL32?4?463?$FN@ 0000000180009658     debughook.obj
- 0002:00001668       ??_C@_0DF@LPLCKHDH@?$FLKernelFlirt?$FN?5FAIL?3?5KdpDebugRou@ 0000000180009668     debughook.obj
- 0002:000016a0       ??_C@_0DB@OCPFMHKE@?$FLKernelFlirt?$FN?5FAIL?3?5primary?5cal@ 00000001800096a0     debughook.obj
- 0002:000016e0       ??_C@_0FD@HAOIJPPI@?$FLKernelFlirt?$FN?5Found?5BOTH?5call?5s@ 00000001800096e0     debughook.obj
- 0002:00001740       ??_C@_0EC@ICNFNKPC@?$FLKernelFlirt?$FN?5WARNING?3?5only?5fou@ 0000000180009740     debughook.obj
- 0002:00001788       ??_C@_0DD@JAIDCEGD@?$FLKernelFlirt?$FN?5KdTrap?$DN?$CFp?5?5KdpTra@ 0000000180009788     debughook.obj
- 0002:000017c0       ??_C@_0P@MCEJFPLA@KdpTrap?$FL0?4?415?$FN@ 00000001800097c0     debughook.obj
- 0002:000017d0       ??_C@_0DO@HBNIACIL@?$FLKernelFlirt?$FN?5Installing?5inline@ 00000001800097d0     debughook.obj
- 0002:00001810       ??_C@_0DA@DEJJCGEL@?$FLKernelFlirt?$FN?5FAIL?3?5Cannot?5allo@ 0000000180009810     debughook.obj
- 0002:00001840       ??_C@_0DH@MHNLADFB@?$FLKernelFlirt?$FN?5FAIL?3?5inline?5hook@ 0000000180009840     debughook.obj
- 0002:00001878       ??_C@_0DE@BAEFHJEL@?$FLKernelFlirt?$FN?5VERIFY?5inline?5hoo@ 0000000180009878     debughook.obj
- 0002:000018b0       ??_C@_0DD@MAGFPDCB@?$FLKernelFlirt?$FN?5VERIFY?5inline?5hoo@ 00000001800098b0     debughook.obj
- 0002:000018f0       ??_C@_0ED@ILCJIOCO@?$FLKernelFlirt?$FN?5KiDebugRoutine?5at@ 00000001800098f0     debughook.obj
- 0002:00001938       ??_C@_0DA@HMCFHEHO@?$FLKernelFlirt?$FN?5KiDebugRoutine?5pa@ 0000000180009938     debughook.obj
- 0002:00001968       ??_C@_0DM@CIDAGJMI@?$FLKernelFlirt?$FN?5WARNING?3?5KiDebugR@ 0000000180009968     debughook.obj
- 0002:000019b0       ??_C@_0FG@IMJNBLDE@?$FLKernelFlirt?$FN?5WARNING?3?5KiDebugR@ 00000001800099b0     debughook.obj
- 0002:00001a08       ??_C@_1CE@KBKMNMJL@?$AAK?$AAd?$AAD?$AAe?$AAb?$AAu?$AAg?$AAg?$AAe?$AAr?$AAE?$AAn?$AAa?$AAb?$AAl@ 0000000180009a08     debughook.obj
- 0002:00001a30       ??_C@_1CK@JLONAMAI@?$AAK?$AAd?$AAD?$AAe?$AAb?$AAu?$AAg?$AAg?$AAe?$AAr?$AAN?$AAo?$AAt?$AAP?$AAr@ 0000000180009a30     debughook.obj
- 0002:00001a60       ??_C@_0ED@NJPHMDGI@?$FLKernelFlirt?$FN?5KdDebuggerEnabled@ 0000000180009a60     debughook.obj
- 0002:00001ab0       ??_C@_0ED@LFNENPLE@?$FLKernelFlirt?$FN?5KdpDebugRoutineSe@ 0000000180009ab0     debughook.obj
- 0002:00001af8       ??_C@_0DP@OPDOPIBE@?$FLKernelFlirt?$FN?5WARNING?3?5KdDebugg@ 0000000180009af8     debughook.obj
- 0002:00001b38       ??_C@_0CL@DPFFLAOF@?$FLKernelFlirt?$FN?5KdDebuggerEnabled@ 0000000180009b38     debughook.obj
- 0002:00001b68       ??_C@_0DE@LMNEKBDI@?$FLKernelFlirt?$FN?5WARNING?3?5KdDebugg@ 0000000180009b68     debughook.obj
- 0002:00001ba0       ??_C@_0EC@GMMNICKG@?$FLKernelFlirt?$FN?5WARNING?3?5KdDebugg@ 0000000180009ba0     debughook.obj
- 0002:00001be8       ??_C@_0CO@ICJCKJBD@?$FLKernelFlirt?$FN?5KdDebuggerNotPres@ 0000000180009be8     debughook.obj
- 0002:00001c18       ??_C@_0DH@DHIANIKN@?$FLKernelFlirt?$FN?5WARNING?3?5KdDebugg@ 0000000180009c18     debughook.obj
- 0002:00001c50       ??_C@_0BD@CIIBAAAK@KdTrap?5AFTER?5patch@ 0000000180009c50     debughook.obj
- 0002:00001c68       ??_C@_0DJ@MKDLKLNO@?$FLKernelFlirt?$FN?5VERIFY?3?5KdDebugge@ 0000000180009c68     debughook.obj
- 0002:00001ca8       ??_C@_0DM@JNNGOEFG@?$FLKernelFlirt?$FN?5VERIFY?3?5KdDebugge@ 0000000180009ca8     debughook.obj
- 0002:00001ce8       ??_C@_0DO@IJLINFEA@?$FLKernelFlirt?$FN?5VERIFY?3?5KdpDebugR@ 0000000180009ce8     debughook.obj
- 0002:00001d28       ??_C@_0DB@FJNBILIE@?$FLKernelFlirt?$FN?5?$DN?$DN?$DN?5InstallDebugH@ 0000000180009d28     debughook.obj
- 0002:00001d60       ??_C@_0CN@PPCIGOJO@?$FLKernelFlirt?$FN?5KiDebugRoutine?5re@ 0000000180009d60     debughook.obj
- 0002:00001d90       ??_C@_0DA@EJNKKGNI@?$FLKernelFlirt?$FN?5KdDebuggerEnabled@ 0000000180009d90     debughook.obj
- 0002:00001dc0       ??_C@_0DD@GGDEELAA@?$FLKernelFlirt?$FN?5KdDebuggerNotPres@ 0000000180009dc0     debughook.obj
- 0002:00001df8       ??_C@_0CG@MFKLHDOJ@?$FLKernelFlirt?$FN?5KdpTrap?5entry?5res@ 0000000180009df8     debughook.obj
- 0002:00001e20       ??_C@_0DA@FOPFFBKP@?$FLKernelFlirt?$FN?5CALL?5displacement@ 0000000180009e20     debughook.obj
- 0002:00001e50       ??_C@_0DC@JNCLAGJL@?$FLKernelFlirt?$FN?5CALL?5displacement@ 0000000180009e50     debughook.obj
- 0002:00001e88       ??_C@_0CC@GNNJOJNF@?$FLKernelFlirt?$FN?5Debug?5hook?5remove@ 0000000180009e88     debughook.obj
- 0002:00001eb0       ??_C@_0BP@CKMMDCJN@?$FLKernelFlirt?$FN?5Target?5PID?5?$DN?5?$CFu?6@ 0000000180009eb0     debughook.obj
- 0002:00001f10       ??_C@_0EA@GDFGDIGI@?$FLKernelFlirt?$FN?5NtQsiHook?3?5RIP?9re@ 0000000180009f10     ntqsi_hook.obj
- 0002:00001f50       ??_C@_1DC@JJEJHHKD@?$AAN?$AAt?$AAQ?$AAu?$AAe?$AAr?$AAy?$AAS?$AAy?$AAs?$AAt?$AAe?$AAm?$AAI?$AAn@ 0000000180009f50     ntqsi_hook.obj
- 0002:00001f90       ??_C@_0EC@PCJJFOAA@?$FLKernelFlirt?$FN?5NtQsiHook?3?5found?5@ 0000000180009f90     ntqsi_hook.obj
- 0002:00001fe0       ??_C@_0FM@KDJJGELE@?$FLKernelFlirt?$FN?5NtQsiHook?3?5MmGetS@ 0000000180009fe0     ntqsi_hook.obj
- 0002:00002040       ??_C@_1DC@IMOAJNJN@?$AAZ?$AAw?$AAQ?$AAu?$AAe?$AAr?$AAy?$AAS?$AAy?$AAs?$AAt?$AAe?$AAm?$AAI?$AAn@ 000000018000a040     ntqsi_hook.obj
- 0002:00002080       ??_C@_0ED@IAPCFEFD@?$FLKernelFlirt?$FN?5NtQsiHook?3?5ZwQuer@ 000000018000a080     ntqsi_hook.obj
- 0002:000020c8       ??_C@_0CO@PAFHNEKP@?$FLKernelFlirt?$FN?5NtQsiHook?3?5ntoskr@ 000000018000a0c8     ntqsi_hook.obj
- 0002:000020f8       ??_C@_0CB@COHFLOOL@?$FLKernelFlirt?$FN?5NtQsiHook?3?5bad?5MZ@ 000000018000a0f8     ntqsi_hook.obj
- 0002:00002120       ??_C@_0CB@JLHMNFOE@?$FLKernelFlirt?$FN?5NtQsiHook?3?5bad?5PE@ 000000018000a120     ntqsi_hook.obj
- 0002:00002148       ??_C@_0DC@BFFCOOHK@?$FLKernelFlirt?$FN?5NtQsiHook?3?5found?5@ 000000018000a148     ntqsi_hook.obj
- 0002:00002180       ??_C@_0DM@LFHHFEPE@?$FLKernelFlirt?$FN?5NtQsiHook?3?5except@ 000000018000a180     ntqsi_hook.obj
- 0002:000021c0       ??_C@_0DN@MNMJJMKI@?$FLKernelFlirt?$FN?5NtQsiHook?3?5NtQuer@ 000000018000a1c0     ntqsi_hook.obj
- 0002:00002200       ??_C@_0CM@HGFBAKMP@?$FLKernelFlirt?$FN?5NtQsiHook?3?5alread@ 000000018000a200     ntqsi_hook.obj
- 0002:00002230       ??_C@_0DA@PEPLDKAP@?$FLKernelFlirt?$FN?5NtQsiHook?3?5first?5@ 000000018000a230     ntqsi_hook.obj
- 0002:00002260       ??_C@_0HE@NMAJMIIA@?$FLKernelFlirt?$FN?5?5?$CF02X?5?$CF02X?5?$CF02X?5?$CF@ 000000018000a260     ntqsi_hook.obj
- 0002:000022e0       ??_C@_0EJ@MKGBNFFI@?$FLKernelFlirt?$FN?5NtQsiHook?3?5unknow@ 000000018000a2e0     ntqsi_hook.obj
- 0002:00002330       ??_C@_0EB@JKMHOLME@?$FLKernelFlirt?$FN?5NtQsiHook?3?5insn?5?$CD@ 000000018000a330     ntqsi_hook.obj
- 0002:00002378       ??_C@_0DP@MDHPIMAB@?$FLKernelFlirt?$FN?5NtQsiHook?3?5will?5c@ 000000018000a378     ntqsi_hook.obj
- 0002:000023b8       ??_C@_0DC@OCAAHMFI@?$FLKernelFlirt?$FN?5NtQsiHook?3?5trampo@ 000000018000a3b8     ntqsi_hook.obj
- 0002:000023f0       ??_C@_0DH@GKGGAMKN@?$FLKernelFlirt?$FN?5NtQsiHook?3?5RIP?5fi@ 000000018000a3f0     ntqsi_hook.obj
- 0002:00002428       ??_C@_0CO@NPFDJMFC@?$FLKernelFlirt?$FN?5NtQsiHook?3?5patch?5@ 000000018000a428     ntqsi_hook.obj
- 0002:00002458       ??_C@_0CN@PCNMJGBD@?$FLKernelFlirt?$FN?5NtQsiHook?3?5instal@ 000000018000a458     ntqsi_hook.obj
- 0002:00002488       ??_C@_0DA@JIKBLEHK@?$FLKernelFlirt?$FN?5NtQsiHook?3?5verify@ 000000018000a488     ntqsi_hook.obj
- 0002:000024b8       ??_C@_0DE@LCGFJDHJ@?$FLKernelFlirt?$FN?5NtQsiHook?3?5remove@ 000000018000a4b8     ntqsi_hook.obj
- 0002:000024f0       __xmm@90909090909090909090909090909090 000000018000a4f0     ntqsi_hook.obj
- 0002:00002570       __volatile_metadata        000000018000a570     <linker-defined>
+ 0002:000002e0       ??_C@_0DG@PLEEGEIH@?$FLKernelFlirt?$FN?5RESET?3?5deactivati@ 00000001800082e0     ioctl.obj
+ 0002:00000318       ??_C@_0CF@EBHKIIL@?$FLKernelFlirt?$FN?5Unknown?5IOCTL?3?50x@ 0000000180008318     ioctl.obj
+ 0002:00000340       ??_C@_0DN@MLBBDGIG@?$FLKernelFlirt?$FN?5PsLookupProcessBy@ 0000000180008340     memory.obj
+ 0002:00000380       ??_C@_0DP@DIDOFPBD@?$FLKernelFlirt?$FN?5HW?5BP?5slot?$DN?$CFu?5add@ 0000000180008380     breakpoint.obj
+ 0002:000003c0       ??_C@_0DE@JHMMNBBB@?$FLKernelFlirt?$FN?5MemBP?3?5Failed?5to?5@ 00000001800083c0     breakpoint.obj
+ 0002:000003f8       ??_C@_0DM@ENIAAMLB@?$FLKernelFlirt?$FN?5MemBP?3?5ZwProtectV@ 00000001800083f8     breakpoint.obj
+ 0002:00000438       ??_C@_0DP@CFKEFOOK@?$FLKernelFlirt?$FN?5MemBP?3?5Set?5PAGE_G@ 0000000180008438     breakpoint.obj
+ 0002:00000478       ??_C@_0DH@HBGIJHNG@?$FLKernelFlirt?$FN?5MemBP?3?5Restored?5p@ 0000000180008478     breakpoint.obj
+ 0002:000004b0       ??_C@_0CP@MDEMENBN@?$FLKernelFlirt?$FN?5All?5breakpoints?5r@ 00000001800084b0     breakpoint.obj
+ 0002:000004e0       ??_C@_0DJ@BBMHLJEH@KernelFlirt?3?5SingleStep?5TID?5?$CFu?5@ 00000001800084e0     singlestep.obj
+ 0002:00000520       ??_C@_0DK@ILAHJAFK@?$FLKernelFlirt?$FN?5ReadRegs?3?5PsLooku@ 0000000180008520     registers.obj
+ 0002:00000560       ??_C@_0FO@GKGAEENF@?$FLKernelFlirt?$FN?5ReadRegs?$CITID?5?$CFu?$CJ?3@ 0000000180008560     registers.obj
+ 0002:000005c0       ??_C@_0CO@FGHCCPIM@?$FLKernelFlirt?$FN?5ReadRegs?$CITID?5?$CFu?$CJ?3@ 00000001800085c0     registers.obj
+ 0002:000005f0       ??_C@_0DC@PJCIHGLO@?$FLKernelFlirt?$FN?5ReadRegs?$CITID?5?$CFu?$CJ?3@ 00000001800085f0     registers.obj
+ 0002:00000630       ??_C@_0EE@CFJKJJHM@?$FLKernelFlirt?$FN?5ReadRegs?$CITID?5?$CFu?$CJ?3@ 0000000180008630     registers.obj
+ 0002:00000678       ??_C@_0CN@LNJPFHJK@?$FLKernelFlirt?$FN?5PEB?5or?5Ldr?5is?5NUL@ 0000000180008678     modules.obj
+ 0002:000006a8       ??_C@_0DB@KCJAPLHK@?$FLKernelFlirt?$FN?5Exception?50x?$CF08X?5@ 00000001800086a8     modules.obj
+ 0002:000006e0       ??_C@_1CM@HAJLGLCA@?$AAP?$AAs?$AAG?$AAe?$AAt?$AAP?$AAr?$AAo?$AAc?$AAe?$AAs?$AAs?$AAD?$AAe?$AAb@ 00000001800086e0     modules.obj
+ 0002:00000710       ??_C@_1CM@KPFJDGG@?$AAP?$AAs?$AAI?$AAs?$AAT?$AAh?$AAr?$AAe?$AAa?$AAd?$AAT?$AAe?$AAr?$AAm?$AAi@ 0000000180008710     modules.obj
+ 0002:00000740       ??_C@_0CP@CDFOCPJA@?$FLKernelFlirt?$FN?5PsIsThreadTermina@ 0000000180008740     modules.obj
+ 0002:00000770       ??_C@_0HM@IDBDCIBF@?$FLKernelFlirt?$FN?5PsIsThreadTermina@ 0000000180008770     modules.obj
+ 0002:000007f0       ??_C@_0DK@FNNKLJNM@?$FLKernelFlirt?$FN?5CrossThreadFlags?5@ 00000001800087f0     modules.obj
+ 0002:00000830       ??_C@_0DJ@CLKMILBF@?$FLKernelFlirt?$FN?5CrossThreadFlags?5@ 0000000180008830     modules.obj
+ 0002:00000870       ??_C@_0DL@GCFLFEHP@?$FLKernelFlirt?$FN?5CrossThreadFlags?5@ 0000000180008870     modules.obj
+ 0002:000008b0       ??_C@_0DK@BPEHPFLD@?$FLKernelFlirt?$FN?5CrossThreadFlags?5@ 00000001800088b0     modules.obj
+ 0002:000008f0       ??_C@_0DC@OLGBPIBC@?$FLKernelFlirt?$FN?5CrossThreadFlags?5@ 00000001800088f0     modules.obj
+ 0002:00000928       ??_C@_0DD@MDHOOBAM@?$FLKernelFlirt?$FN?5CrossThreadFlags?5@ 0000000180008928     modules.obj
+ 0002:00000960       ??_C@_0DM@OLOMALF@?$FLKernelFlirt?$FN?5CrossThreadFlags?5@ 0000000180008960     modules.obj
+ 0002:000009a0       ??_C@_0DN@ILCJAIHP@?$FLKernelFlirt?$FN?5CrossThreadFlags?5@ 00000001800089a0     modules.obj
+ 0002:000009e0       ??_C@_0EN@MLMCODLM@?$FLKernelFlirt?$FN?5CrossThreadFlags?3@ 00000001800089e0     modules.obj
+ 0002:00000a30       ??_C@_0DP@EMIPNFFD@?$FLKernelFlirt?$FN?5ClearDebugPort?3?5f@ 0000000180008a30     modules.obj
+ 0002:00000a70       ??_C@_0EM@HKJPHIPM@?$FLKernelFlirt?$FN?5ClearDebugPort?3?5z@ 0000000180008a70     modules.obj
+ 0002:00000ac0       ??_C@_0EH@OIDJJJCE@?$FLKernelFlirt?$FN?5ClearThreadHide?3?5@ 0000000180008ac0     modules.obj
+ 0002:00000b08       ??_C@_0DF@ELGIAOBP@?$FLKernelFlirt?$FN?5Exception?50x?$CF08X?5@ 0000000180008b08     modules.obj
+ 0002:00000b40       ??_C@_0FC@EKKIJKEI@?$FLKernelFlirt?$FN?5ClearThreadHide?3?5@ 0000000180008b40     modules.obj
+ 0002:00000b98       ??_C@_0DB@OPMCAOPC@?$FLKernelFlirt?$FN?5Exception?50x?$CF08X?5@ 0000000180008b98     threads.obj
+ 0002:00000bd0       ??_C@_1CC@FFNFOKJM@?$AAP?$AAs?$AAS?$AAu?$AAs?$AAp?$AAe?$AAn?$AAd?$AAP?$AAr?$AAo?$AAc?$AAe?$AAs@ 0000000180008bd0     threads.obj
+ 0002:00000bf8       ??_C@_1CA@LKJNMPCF@?$AAP?$AAs?$AAR?$AAe?$AAs?$AAu?$AAm?$AAe?$AAP?$AAr?$AAo?$AAc?$AAe?$AAs?$AAs@ 0000000180008bf8     threads.obj
+ 0002:00000c18       ??_C@_0DG@GKOAEFMD@?$FLKernelFlirt?$FN?5PsSuspendProcess?$DN@ 0000000180008c18     threads.obj
+ 0002:00000c50       ??_C@_0DL@JEOKODPG@?$FLKernelFlirt?$FN?5PsLookupThreadByT@ 0000000180008c50     threads.obj
+ 0002:00000c90       ??_C@_0DD@GLOACPKO@?$FLKernelFlirt?$FN?5PsSuspendProcess?5@ 0000000180008c90     threads.obj
+ 0002:00000cc8       ??_C@_0DD@PPAGEABO@?$FLKernelFlirt?$FN?5Exception?50x?$CF08X?5@ 0000000180008cc8     process.obj
+ 0002:00000d00       ??_C@_0DE@KGNNNPFI@?$FLKernelFlirt?$FN?5KfPatchBytes?$CIMDL?$CJ@ 0000000180008d00     debughook.obj
+ 0002:00000d38       ??_C@_0DC@CJNCLNDO@?$FLKernelFlirt?$FN?5KfPatchBytes?3?5des@ 0000000180008d38     debughook.obj
+ 0002:00000d70       ??_C@_0DC@PONBGBLB@?$FLKernelFlirt?$FN?5KfPatchBytes?3?5IoA@ 0000000180008d70     debughook.obj
+ 0002:00000da8       ??_C@_0DP@KADHFEHD@?$FLKernelFlirt?$FN?5KfPatchBytes?3?5MmP@ 0000000180008da8     debughook.obj
+ 0002:00000de8       ??_C@_0DF@JFELDBCI@?$FLKernelFlirt?$FN?5KfPatchBytes?3?5MmM@ 0000000180008de8     debughook.obj
+ 0002:00000e20       ??_C@_0CN@JDPPPHGM@?$FLKernelFlirt?$FN?5KfPatchBytes?3?5map@ 0000000180008e20     debughook.obj
+ 0002:00000e50       ??_C@_0EF@DOLHMGKP@?$FLKernelFlirt?$FN?5KfPatchBytes?3?5MmP@ 0000000180008e50     debughook.obj
+ 0002:00000e98       ??_C@_0DP@CMKCEPL@?$FLKernelFlirt?$FN?5KfPatchBytes?$CIMDL?$CJ@ 0000000180008e98     debughook.obj
+ 0002:00000ee0       ??_C@_0HB@HHFFAGPF@?$FLKernelFlirt?$FN?5KfPatchBytes?$CIMDL?$CJ@ 0000000180008ee0     debughook.obj
+ 0002:00000f58       ??_C@_0CG@MKPGCMDE@?$FLKernelFlirt?$FN?5ntoskrnl?5base?3?5?$CFp@ 0000000180008f58     debughook.obj
+ 0002:00000f80       ??_C@_0DH@EJEHNCDB@?$FLKernelFlirt?$FN?5ZwQuerySystemInfo@ 0000000180008f80     debughook.obj
+ 0002:00000fb8       ??_C@_0CN@FFONDFJM@?$FLKernelFlirt?$FN?5DOS?5header?5at?5?$CFp?5@ 0000000180008fb8     debughook.obj
+ 0002:00000fe8       ??_C@_0CL@MIEPHALN@?$FLKernelFlirt?$FN?5Invalid?5DOS?5signa@ 0000000180008fe8     debughook.obj
+ 0002:00001018       ??_C@_0CM@JGCAHOML@?$FLKernelFlirt?$FN?5NT?5header?5at?5?$CFp?5i@ 0000000180009018     debughook.obj
+ 0002:00001048       ??_C@_0CE@PKJHGDHF@?$FLKernelFlirt?$FN?5Invalid?5NT?5signat@ 0000000180009048     debughook.obj
+ 0002:00001070       ??_C@_0CC@PNMNHAOB@?$FLKernelFlirt?$FN?5Total?5sections?3?5?$CF@ 0000000180009070     debughook.obj
+ 0002:00001098       ??_C@_0DO@JEOLBDCF@?$FLKernelFlirt?$FN?5Section?$FL?$CFu?$FN?5?$CF?48s?5@ 0000000180009098     debughook.obj
+ 0002:000010d8       ??_C@_0DP@BELIGLH@?$FLKernelFlirt?$FN?5Scanning?5executab@ 00000001800090d8     debughook.obj
+ 0002:00001118       ??_C@_0CO@IJDACNDD@?$FLKernelFlirt?$FN?5KdTrap?5found?5at?5?$CF@ 0000000180009118     debughook.obj
+ 0002:00001148       ??_C@_0DM@OKHEHHDA@?$FLKernelFlirt?$FN?5KdTrap?5pattern?5no@ 0000000180009148     debughook.obj
+ 0002:00001188       ??_C@_0CL@NKEDKHBD@?$FLKernelFlirt?$FN?5CMP?5disp?5at?5?$CFp?5is@ 0000000180009188     debughook.obj
+ 0002:000011b8       ??_C@_0DI@HEJKHAJE@?$FLKernelFlirt?$FN?5KdpDebugRoutineSe@ 00000001800091b8     debughook.obj
+ 0002:000011f0       ??_C@_0DF@KLDOLLJN@?$FLKernelFlirt?$FN?5KdpDebugRoutineSe@ 00000001800091f0     debughook.obj
+ 0002:00001228       ??_C@_0CN@MLJMACKM@?$FLKernelFlirt?$FN?5CALL?$FL?$CFd?$FN?5at?5KdTra@ 0000000180009228     debughook.obj
+ 0002:00001258       ??_C@_0CP@OLEHOEPN@?$FLKernelFlirt?$FN?5Using?5CALL?$FL?$CFd?$FN?5?$CIs@ 0000000180009258     debughook.obj
+ 0002:00001288       ??_C@_0DL@ENJKMNLE@?$FLKernelFlirt?$FN?5Target?5CALL?5not?5f@ 0000000180009288     debughook.obj
+ 0002:000012d0       ??_C@_0FA@NFOIAONE@?$FLKernelFlirt?$FN?5Scanning?5section?5@ 00000001800092d0     debughook.obj
+ 0002:00001320       ??_C@_0FC@CPJIMEEL@?$FLKernelFlirt?$FN?5Found?5KiDebugRout@ 0000000180009320     debughook.obj
+ 0002:00001380       ??_C@_0EN@GPFNFLNJ@?$FLKernelFlirt?$FN?5Code?9scanning?5sec@ 0000000180009380     debughook.obj
+ 0002:000013d0       ??_C@_0EP@FBKEHIAP@?$FLKernelFlirt?$FN?5Found?5KiDebugRout@ 00000001800093d0     debughook.obj
+ 0002:00001420       ??_C@_0FG@KLJGAMIJ@?$FLKernelFlirt?$FN?5Found?5KiDebugRout@ 0000000180009420     debughook.obj
+ 0002:00001478       ??_C@_0DP@GIEMPGKN@?$FLKernelFlirt?$FN?5Data?5scan?5failed?0@ 0000000180009478     debughook.obj
+ 0002:000014b8       ??_C@_0DG@CHEMNANO@?$FLKernelFlirt?$FN?5KiDebugRoutine?5no@ 00000001800094b8     debughook.obj
+ 0002:000014f0       ??_C@_0CE@LAMHBHA@?$FLKernelFlirt?$FN?5?$CFs?5?$CI?$CFd?5bytes?5at?5?$CF@ 00000001800094f0     debughook.obj
+ 0002:00001518       ??_C@_0CH@DGNAPKDI@?$FLKernelFlirt?$FN?5?5?5?$CL?$CF02X?3?5?$CIinvalid@ 0000000180009518     debughook.obj
+ 0002:00001540       ??_C@_0EA@OJFLPIFK@?$FLKernelFlirt?$FN?5?5?5?$CL?$CF02X?3?5?$CF02X?5?$CF02@ 0000000180009540     debughook.obj
+ 0002:00001580       ??_C@_0CM@MFJANDDN@?$FLKernelFlirt?$FN?5?5?5?$CL?$CF02X?3?5?$CF02X?5?$CF02@ 0000000180009580     debughook.obj
+ 0002:000015b0       ??_C@_0CO@NKGLOFNJ@?$FLKernelFlirt?$FN?5?$DN?$DN?$DN?5InstallDebugH@ 00000001800095b0     debughook.obj
+ 0002:000015e0       ??_C@_0CN@MOOCMGGG@?$FLKernelFlirt?$FN?5FAIL?3?5ntoskrnl?5ba@ 00000001800095e0     debughook.obj
+ 0002:00001610       ??_C@_0CG@MLILJENP@?$FLKernelFlirt?$FN?5FAIL?3?5KdTrap?5not?5@ 0000000180009610     debughook.obj
+ 0002:00001638       ??_C@_0O@JCGAJICG@KdTrap?$FL0?4?431?$FN@ 0000000180009638     debughook.obj
+ 0002:00001648       ??_C@_0P@LEJFLKIF@KdTrap?$FL32?4?463?$FN@ 0000000180009648     debughook.obj
+ 0002:00001658       ??_C@_0DF@LPLCKHDH@?$FLKernelFlirt?$FN?5FAIL?3?5KdpDebugRou@ 0000000180009658     debughook.obj
+ 0002:00001690       ??_C@_0DB@OCPFMHKE@?$FLKernelFlirt?$FN?5FAIL?3?5primary?5cal@ 0000000180009690     debughook.obj
+ 0002:000016d0       ??_C@_0FD@HAOIJPPI@?$FLKernelFlirt?$FN?5Found?5BOTH?5call?5s@ 00000001800096d0     debughook.obj
+ 0002:00001730       ??_C@_0EC@ICNFNKPC@?$FLKernelFlirt?$FN?5WARNING?3?5only?5fou@ 0000000180009730     debughook.obj
+ 0002:00001778       ??_C@_0DD@JAIDCEGD@?$FLKernelFlirt?$FN?5KdTrap?$DN?$CFp?5?5KdpTra@ 0000000180009778     debughook.obj
+ 0002:000017b0       ??_C@_0P@MCEJFPLA@KdpTrap?$FL0?4?415?$FN@ 00000001800097b0     debughook.obj
+ 0002:000017c0       ??_C@_0DO@HBNIACIL@?$FLKernelFlirt?$FN?5Installing?5inline@ 00000001800097c0     debughook.obj
+ 0002:00001800       ??_C@_0DA@DEJJCGEL@?$FLKernelFlirt?$FN?5FAIL?3?5Cannot?5allo@ 0000000180009800     debughook.obj
+ 0002:00001830       ??_C@_0DH@MHNLADFB@?$FLKernelFlirt?$FN?5FAIL?3?5inline?5hook@ 0000000180009830     debughook.obj
+ 0002:00001868       ??_C@_0DE@BAEFHJEL@?$FLKernelFlirt?$FN?5VERIFY?5inline?5hoo@ 0000000180009868     debughook.obj
+ 0002:000018a0       ??_C@_0DD@MAGFPDCB@?$FLKernelFlirt?$FN?5VERIFY?5inline?5hoo@ 00000001800098a0     debughook.obj
+ 0002:000018e0       ??_C@_0ED@ILCJIOCO@?$FLKernelFlirt?$FN?5KiDebugRoutine?5at@ 00000001800098e0     debughook.obj
+ 0002:00001928       ??_C@_0DA@HMCFHEHO@?$FLKernelFlirt?$FN?5KiDebugRoutine?5pa@ 0000000180009928     debughook.obj
+ 0002:00001958       ??_C@_0DM@CIDAGJMI@?$FLKernelFlirt?$FN?5WARNING?3?5KiDebugR@ 0000000180009958     debughook.obj
+ 0002:000019a0       ??_C@_0FG@IMJNBLDE@?$FLKernelFlirt?$FN?5WARNING?3?5KiDebugR@ 00000001800099a0     debughook.obj
+ 0002:000019f8       ??_C@_1CE@KBKMNMJL@?$AAK?$AAd?$AAD?$AAe?$AAb?$AAu?$AAg?$AAg?$AAe?$AAr?$AAE?$AAn?$AAa?$AAb?$AAl@ 00000001800099f8     debughook.obj
+ 0002:00001a20       ??_C@_1CK@JLONAMAI@?$AAK?$AAd?$AAD?$AAe?$AAb?$AAu?$AAg?$AAg?$AAe?$AAr?$AAN?$AAo?$AAt?$AAP?$AAr@ 0000000180009a20     debughook.obj
+ 0002:00001a50       ??_C@_0ED@NJPHMDGI@?$FLKernelFlirt?$FN?5KdDebuggerEnabled@ 0000000180009a50     debughook.obj
+ 0002:00001aa0       ??_C@_0ED@LFNENPLE@?$FLKernelFlirt?$FN?5KdpDebugRoutineSe@ 0000000180009aa0     debughook.obj
+ 0002:00001ae8       ??_C@_0DP@OPDOPIBE@?$FLKernelFlirt?$FN?5WARNING?3?5KdDebugg@ 0000000180009ae8     debughook.obj
+ 0002:00001b28       ??_C@_0CL@DPFFLAOF@?$FLKernelFlirt?$FN?5KdDebuggerEnabled@ 0000000180009b28     debughook.obj
+ 0002:00001b58       ??_C@_0DE@LMNEKBDI@?$FLKernelFlirt?$FN?5WARNING?3?5KdDebugg@ 0000000180009b58     debughook.obj
+ 0002:00001b90       ??_C@_0EC@GMMNICKG@?$FLKernelFlirt?$FN?5WARNING?3?5KdDebugg@ 0000000180009b90     debughook.obj
+ 0002:00001bd8       ??_C@_0CO@ICJCKJBD@?$FLKernelFlirt?$FN?5KdDebuggerNotPres@ 0000000180009bd8     debughook.obj
+ 0002:00001c08       ??_C@_0DH@DHIANIKN@?$FLKernelFlirt?$FN?5WARNING?3?5KdDebugg@ 0000000180009c08     debughook.obj
+ 0002:00001c40       ??_C@_0BD@CIIBAAAK@KdTrap?5AFTER?5patch@ 0000000180009c40     debughook.obj
+ 0002:00001c58       ??_C@_0DJ@MKDLKLNO@?$FLKernelFlirt?$FN?5VERIFY?3?5KdDebugge@ 0000000180009c58     debughook.obj
+ 0002:00001c98       ??_C@_0DM@JNNGOEFG@?$FLKernelFlirt?$FN?5VERIFY?3?5KdDebugge@ 0000000180009c98     debughook.obj
+ 0002:00001cd8       ??_C@_0DO@IJLINFEA@?$FLKernelFlirt?$FN?5VERIFY?3?5KdpDebugR@ 0000000180009cd8     debughook.obj
+ 0002:00001d18       ??_C@_0DB@FJNBILIE@?$FLKernelFlirt?$FN?5?$DN?$DN?$DN?5InstallDebugH@ 0000000180009d18     debughook.obj
+ 0002:00001d50       ??_C@_0CN@PPCIGOJO@?$FLKernelFlirt?$FN?5KiDebugRoutine?5re@ 0000000180009d50     debughook.obj
+ 0002:00001d80       ??_C@_0DA@EJNKKGNI@?$FLKernelFlirt?$FN?5KdDebuggerEnabled@ 0000000180009d80     debughook.obj
+ 0002:00001db0       ??_C@_0DD@GGDEELAA@?$FLKernelFlirt?$FN?5KdDebuggerNotPres@ 0000000180009db0     debughook.obj
+ 0002:00001de8       ??_C@_0CG@MFKLHDOJ@?$FLKernelFlirt?$FN?5KdpTrap?5entry?5res@ 0000000180009de8     debughook.obj
+ 0002:00001e10       ??_C@_0DA@FOPFFBKP@?$FLKernelFlirt?$FN?5CALL?5displacement@ 0000000180009e10     debughook.obj
+ 0002:00001e40       ??_C@_0DC@JNCLAGJL@?$FLKernelFlirt?$FN?5CALL?5displacement@ 0000000180009e40     debughook.obj
+ 0002:00001e78       ??_C@_0CC@GNNJOJNF@?$FLKernelFlirt?$FN?5Debug?5hook?5remove@ 0000000180009e78     debughook.obj
+ 0002:00001ea0       ??_C@_0DB@PFPBAKPL@?$FLKernelFlirt?$FN?5Hook?5deactivated?5@ 0000000180009ea0     debughook.obj
+ 0002:00001ed8       ??_C@_0BP@CKMMDCJN@?$FLKernelFlirt?$FN?5Target?5PID?5?$DN?5?$CFu?6@ 0000000180009ed8     debughook.obj
+ 0002:00001f30       ??_C@_0EA@GDFGDIGI@?$FLKernelFlirt?$FN?5NtQsiHook?3?5RIP?9re@ 0000000180009f30     ntqsi_hook.obj
+ 0002:00001f70       ??_C@_1DC@JJEJHHKD@?$AAN?$AAt?$AAQ?$AAu?$AAe?$AAr?$AAy?$AAS?$AAy?$AAs?$AAt?$AAe?$AAm?$AAI?$AAn@ 0000000180009f70     ntqsi_hook.obj
+ 0002:00001fb0       ??_C@_0EC@PCJJFOAA@?$FLKernelFlirt?$FN?5NtQsiHook?3?5found?5@ 0000000180009fb0     ntqsi_hook.obj
+ 0002:00002000       ??_C@_0FM@KDJJGELE@?$FLKernelFlirt?$FN?5NtQsiHook?3?5MmGetS@ 000000018000a000     ntqsi_hook.obj
+ 0002:00002060       ??_C@_1DC@IMOAJNJN@?$AAZ?$AAw?$AAQ?$AAu?$AAe?$AAr?$AAy?$AAS?$AAy?$AAs?$AAt?$AAe?$AAm?$AAI?$AAn@ 000000018000a060     ntqsi_hook.obj
+ 0002:000020a0       ??_C@_0ED@IAPCFEFD@?$FLKernelFlirt?$FN?5NtQsiHook?3?5ZwQuer@ 000000018000a0a0     ntqsi_hook.obj
+ 0002:000020e8       ??_C@_0CO@PAFHNEKP@?$FLKernelFlirt?$FN?5NtQsiHook?3?5ntoskr@ 000000018000a0e8     ntqsi_hook.obj
+ 0002:00002118       ??_C@_0CB@COHFLOOL@?$FLKernelFlirt?$FN?5NtQsiHook?3?5bad?5MZ@ 000000018000a118     ntqsi_hook.obj
+ 0002:00002140       ??_C@_0CB@JLHMNFOE@?$FLKernelFlirt?$FN?5NtQsiHook?3?5bad?5PE@ 000000018000a140     ntqsi_hook.obj
+ 0002:00002168       ??_C@_0DC@BFFCOOHK@?$FLKernelFlirt?$FN?5NtQsiHook?3?5found?5@ 000000018000a168     ntqsi_hook.obj
+ 0002:000021a0       ??_C@_0DM@LFHHFEPE@?$FLKernelFlirt?$FN?5NtQsiHook?3?5except@ 000000018000a1a0     ntqsi_hook.obj
+ 0002:000021e0       ??_C@_0DN@MNMJJMKI@?$FLKernelFlirt?$FN?5NtQsiHook?3?5NtQuer@ 000000018000a1e0     ntqsi_hook.obj
+ 0002:00002220       ??_C@_0CM@HGFBAKMP@?$FLKernelFlirt?$FN?5NtQsiHook?3?5alread@ 000000018000a220     ntqsi_hook.obj
+ 0002:00002250       ??_C@_0DA@PEPLDKAP@?$FLKernelFlirt?$FN?5NtQsiHook?3?5first?5@ 000000018000a250     ntqsi_hook.obj
+ 0002:00002280       ??_C@_0HE@NMAJMIIA@?$FLKernelFlirt?$FN?5?5?$CF02X?5?$CF02X?5?$CF02X?5?$CF@ 000000018000a280     ntqsi_hook.obj
+ 0002:00002300       ??_C@_0EJ@MKGBNFFI@?$FLKernelFlirt?$FN?5NtQsiHook?3?5unknow@ 000000018000a300     ntqsi_hook.obj
+ 0002:00002350       ??_C@_0EB@JKMHOLME@?$FLKernelFlirt?$FN?5NtQsiHook?3?5insn?5?$CD@ 000000018000a350     ntqsi_hook.obj
+ 0002:00002398       ??_C@_0DP@MDHPIMAB@?$FLKernelFlirt?$FN?5NtQsiHook?3?5will?5c@ 000000018000a398     ntqsi_hook.obj
+ 0002:000023d8       ??_C@_0DC@OCAAHMFI@?$FLKernelFlirt?$FN?5NtQsiHook?3?5trampo@ 000000018000a3d8     ntqsi_hook.obj
+ 0002:00002410       ??_C@_0DH@GKGGAMKN@?$FLKernelFlirt?$FN?5NtQsiHook?3?5RIP?5fi@ 000000018000a410     ntqsi_hook.obj
+ 0002:00002448       ??_C@_0CO@NPFDJMFC@?$FLKernelFlirt?$FN?5NtQsiHook?3?5patch?5@ 000000018000a448     ntqsi_hook.obj
+ 0002:00002478       ??_C@_0CN@PCNMJGBD@?$FLKernelFlirt?$FN?5NtQsiHook?3?5instal@ 000000018000a478     ntqsi_hook.obj
+ 0002:000024a8       ??_C@_0DA@JIKBLEHK@?$FLKernelFlirt?$FN?5NtQsiHook?3?5verify@ 000000018000a4a8     ntqsi_hook.obj
+ 0002:000024d8       ??_C@_0DE@LCGFJDHJ@?$FLKernelFlirt?$FN?5NtQsiHook?3?5remove@ 000000018000a4d8     ntqsi_hook.obj
+ 0002:00002510       __xmm@90909090909090909090909090909090 000000018000a510     ntqsi_hook.obj
+ 0002:00002590       __volatile_metadata        000000018000a590     <linker-defined>
  0003:00000040       __isa_info                 000000018000b040     ntoskrnl:cpuinfo.obj
  0003:00000080       g_DeviceObject             000000018000b080     main.obj
  0005:00000000       __IMPORT_DESCRIPTOR_ntoskrnl 0000000180010000     ntoskrnl:ntoskrnl.exe
@@ -342,141 +344,140 @@
  0000:fffef000       .debug$S                   0000000180000000     ntoskrnl:ntoskrnl.exe
  0000:fffef000       .debug$S                   0000000180000000     ntoskrnl:ntoskrnl.exe
  0000:fffef000       .debug$S                   0000000180000000     ntoskrnl:ntoskrnl.exe
- 0001:00000e18       $LN157                     0000000180001e18     ioctl.obj
- 0001:00000e5c       $LN156                     0000000180001e5c     ioctl.obj
- 0001:00000f40       KfSafeKernelRead           0000000180001f40 f   memory.obj
- 0001:000011b0       KfSafeKernelWrite          00000001800021b0 f   memory.obj
- 0001:00001590       KfWriteProcessMemory       0000000180002590 f   breakpoint.obj
- 0001:00001770       KfWriteKernelByte          0000000180002770 f   breakpoint.obj
- 0001:00001880       KfReadKernelByte           0000000180002880 f   breakpoint.obj
- 0001:000018d0       KfSetSwBreakpoint          00000001800028d0 f   breakpoint.obj
- 0001:00001bd0       KfSetHwBreakpoint          0000000180002bd0 f   breakpoint.obj
- 0001:00001ee0       KfSetMemoryBreakpoint      0000000180002ee0 f   breakpoint.obj
- 0001:00002130       KfRemoveMemoryBreakpoint   0000000180003130 f   breakpoint.obj
- 0001:00002fa0       FindCrossThreadFlagsOffset 0000000180003fa0 f   modules.obj
- 0001:00003800       KfResolveSuspendApis       0000000180004800 f   threads.obj
- 0001:00003a80       KfWriteByteInContext       0000000180004a80 f   debughook.obj
- 0001:00003df0       KfPatternScanKdTrap        0000000180004df0 f   debughook.obj
- 0001:000040a0       KfFindKdpTrapCallSite      00000001800050a0 f   debughook.obj
- 0001:000041a0       KfFindKiDebugRoutineInCode 00000001800051a0 f   debughook.obj
- 0001:00004360       KfFindKiDebugRoutine       0000000180005360 f   debughook.obj
- 0001:00004540       KfFillDebugEvent           0000000180005540 f   debughook.obj
- 0001:00004810       KfCompleteWaitIrp          0000000180005810 f   debughook.obj
- 0001:000048c0       KfReportAndBlock           00000001800058c0 f   debughook.obj
- 0001:00004a00       KfDebugHandler             0000000180005a00 f   debughook.obj
- 0001:00004d90       KfCancelWaitIrp            0000000180005d90 f   debughook.obj
- 0001:00004e00       KfDumpBytes                0000000180005e00 f   debughook.obj
- 0001:00005850       KfNtQsiHandler             0000000180006850 f   ntqsi_hook.obj
- 0001:000058c0       DecodeInsnLength           00000001800068c0 f   ntqsi_hook.obj
- 0001:00005a80       FindNtQuerySystemInformation 0000000180006a80 f   ntqsi_hook.obj
- 0001:00006400       $$000000                   0000000180007400     ntoskrnl:memcpy.obj
- 0001:00006420       mcpy00                     0000000180007420     ntoskrnl:memcpy.obj
- 0001:00006440       mcpy10                     0000000180007440     ntoskrnl:memcpy.obj
- 0001:0000645a       mcpy20                     000000018000745a     ntoskrnl:memcpy.obj
- 0001:00006460       mcpy30                     0000000180007460     ntoskrnl:memcpy.obj
- 0001:00006480       xcpy00                     0000000180007480     ntoskrnl:memcpy.obj
- 0001:000064b1       xcpy10                     00000001800074b1     ntoskrnl:memcpy.obj
- 0001:00006500       xcpy13                     0000000180007500     ntoskrnl:memcpy.obj
- 0001:0000652f       xcpy15                     000000018000752f     ntoskrnl:memcpy.obj
- 0001:00006551       xcpy20                     0000000180007551     ntoskrnl:memcpy.obj
- 0001:00006565       xcpy30                     0000000180007565     ntoskrnl:memcpy.obj
- 0001:00006580       lcpy00                     0000000180007580     ntoskrnl:memcpy.obj
- 0001:000065c0       lcpy10                     00000001800075c0     ntoskrnl:memcpy.obj
- 0001:00006600       xmov00                     0000000180007600     ntoskrnl:memcpy.obj
- 0001:0000662d       xmov10                     000000018000762d     ntoskrnl:memcpy.obj
- 0001:00006640       xmov13                     0000000180007640     ntoskrnl:memcpy.obj
- 0001:0000666f       xmov15                     000000018000766f     ntoskrnl:memcpy.obj
- 0001:00006691       xmov20                     0000000180007691     ntoskrnl:memcpy.obj
- 0001:000066a6       xmov30                     00000001800076a6     ntoskrnl:memcpy.obj
- 0001:000066c0       $$000000                   00000001800076c0     ntoskrnl:memset.obj
- 0001:000066e2       mset10                     00000001800076e2     ntoskrnl:memset.obj
- 0001:000066f8       mset20                     00000001800076f8     ntoskrnl:memset.obj
- 0001:00006721       mset30                     0000000180007721     ntoskrnl:memset.obj
- 0001:00006750       mset45                     0000000180007750     ntoskrnl:memset.obj
- 0001:00006756       mset46                     0000000180007756     ntoskrnl:memset.obj
- 0001:00006780       mset47                     0000000180007780     ntoskrnl:memset.obj
- 0001:000067b0       mset48                     00000001800077b0     ntoskrnl:memset.obj
- 0001:000067c6       mset50                     00000001800077c6     ntoskrnl:memset.obj
- 0001:00006800       $$000000                   0000000180007800     ntoskrnl:memset.obj
- 0001:0000680a       repmovs10                  000000018000780a     ntoskrnl:memset.obj
- 0001:0000683c       repmovs20                  000000018000783c     ntoskrnl:memset.obj
+ 0001:00000d84       $LN153                     0000000180001d84     ioctl.obj
+ 0001:00000dc8       $LN152                     0000000180001dc8     ioctl.obj
+ 0001:00000eb0       KfSafeKernelRead           0000000180001eb0 f   memory.obj
+ 0001:00001120       KfSafeKernelWrite          0000000180002120 f   memory.obj
+ 0001:00001500       KfWriteProcessMemory       0000000180002500 f   breakpoint.obj
+ 0001:000016e0       KfWriteKernelByte          00000001800026e0 f   breakpoint.obj
+ 0001:000017f0       KfReadKernelByte           00000001800027f0 f   breakpoint.obj
+ 0001:00001840       KfSetSwBreakpoint          0000000180002840 f   breakpoint.obj
+ 0001:00001b40       KfSetHwBreakpoint          0000000180002b40 f   breakpoint.obj
+ 0001:00001e50       KfSetMemoryBreakpoint      0000000180002e50 f   breakpoint.obj
+ 0001:000020a0       KfRemoveMemoryBreakpoint   00000001800030a0 f   breakpoint.obj
+ 0001:00002f10       FindCrossThreadFlagsOffset 0000000180003f10 f   modules.obj
+ 0001:00003770       KfResolveSuspendApis       0000000180004770 f   threads.obj
+ 0001:000039f0       KfWriteByteInContext       00000001800049f0 f   debughook.obj
+ 0001:00003d60       KfPatternScanKdTrap        0000000180004d60 f   debughook.obj
+ 0001:00004010       KfFindKdpTrapCallSite      0000000180005010 f   debughook.obj
+ 0001:00004110       KfFindKiDebugRoutineInCode 0000000180005110 f   debughook.obj
+ 0001:000042d0       KfFindKiDebugRoutine       00000001800052d0 f   debughook.obj
+ 0001:000044b0       KfFillDebugEvent           00000001800054b0 f   debughook.obj
+ 0001:00004780       KfCompleteWaitIrp          0000000180005780 f   debughook.obj
+ 0001:00004830       KfReportAndBlock           0000000180005830 f   debughook.obj
+ 0001:00004970       KfDebugHandler             0000000180005970 f   debughook.obj
+ 0001:00004d10       KfCancelWaitIrp            0000000180005d10 f   debughook.obj
+ 0001:00004d80       KfDumpBytes                0000000180005d80 f   debughook.obj
+ 0001:000058e0       KfNtQsiHandler             00000001800068e0 f   ntqsi_hook.obj
+ 0001:00005950       DecodeInsnLength           0000000180006950 f   ntqsi_hook.obj
+ 0001:00005b10       FindNtQuerySystemInformation 0000000180006b10 f   ntqsi_hook.obj
+ 0001:00006480       $$000000                   0000000180007480     ntoskrnl:memcpy.obj
+ 0001:000064a0       mcpy00                     00000001800074a0     ntoskrnl:memcpy.obj
+ 0001:000064c0       mcpy10                     00000001800074c0     ntoskrnl:memcpy.obj
+ 0001:000064da       mcpy20                     00000001800074da     ntoskrnl:memcpy.obj
+ 0001:000064e0       mcpy30                     00000001800074e0     ntoskrnl:memcpy.obj
+ 0001:00006500       xcpy00                     0000000180007500     ntoskrnl:memcpy.obj
+ 0001:00006531       xcpy10                     0000000180007531     ntoskrnl:memcpy.obj
+ 0001:00006580       xcpy13                     0000000180007580     ntoskrnl:memcpy.obj
+ 0001:000065af       xcpy15                     00000001800075af     ntoskrnl:memcpy.obj
+ 0001:000065d1       xcpy20                     00000001800075d1     ntoskrnl:memcpy.obj
+ 0001:000065e5       xcpy30                     00000001800075e5     ntoskrnl:memcpy.obj
+ 0001:00006600       lcpy00                     0000000180007600     ntoskrnl:memcpy.obj
+ 0001:00006640       lcpy10                     0000000180007640     ntoskrnl:memcpy.obj
+ 0001:00006680       xmov00                     0000000180007680     ntoskrnl:memcpy.obj
+ 0001:000066ad       xmov10                     00000001800076ad     ntoskrnl:memcpy.obj
+ 0001:000066c0       xmov13                     00000001800076c0     ntoskrnl:memcpy.obj
+ 0001:000066ef       xmov15                     00000001800076ef     ntoskrnl:memcpy.obj
+ 0001:00006711       xmov20                     0000000180007711     ntoskrnl:memcpy.obj
+ 0001:00006726       xmov30                     0000000180007726     ntoskrnl:memcpy.obj
+ 0001:00006740       $$000000                   0000000180007740     ntoskrnl:memset.obj
+ 0001:00006762       mset10                     0000000180007762     ntoskrnl:memset.obj
+ 0001:00006778       mset20                     0000000180007778     ntoskrnl:memset.obj
+ 0001:000067a1       mset30                     00000001800077a1     ntoskrnl:memset.obj
+ 0001:000067d0       mset45                     00000001800077d0     ntoskrnl:memset.obj
+ 0001:000067d6       mset46                     00000001800077d6     ntoskrnl:memset.obj
+ 0001:00006800       mset47                     0000000180007800     ntoskrnl:memset.obj
+ 0001:00006830       mset48                     0000000180007830     ntoskrnl:memset.obj
+ 0001:00006846       mset50                     0000000180007846     ntoskrnl:memset.obj
  0001:00006880       $$000000                   0000000180007880     ntoskrnl:memset.obj
- 0002:00001ed0       ?suffix@?1??KfPatternScanKdTrap@@9@9 0000000180009ed0     debughook.obj
- 0002:00001ee0       ?prefix@?1??KfPatternScanKdTrap@@9@9 0000000180009ee0     debughook.obj
- 0002:00001ee8       ?target@?N@??FindNtQuerySystemInformation@@9@9 0000000180009ee8     ntqsi_hook.obj
- 0002:00002748       $unwind$DriverEntry        000000018000a748     main.obj
- 0002:00002754       $unwind$KfUnload           000000018000a754     main.obj
- 0002:00002760       $unwind$KfRemoveDebugHook  000000018000a760     debughook.obj
- 0002:00002760       $unwind$KfCreateClose      000000018000a760     main.obj
- 0002:00002768       $unwind$KfDispatchIoctl    000000018000a768     ioctl.obj
- 0002:00002780       $chain$2$KfDispatchIoctl   000000018000a780     ioctl.obj
- 0002:00002794       $chain$4$KfDispatchIoctl   000000018000a794     ioctl.obj
- 0002:00002794       $chain$6$KfDispatchIoctl   000000018000a794     ioctl.obj
- 0002:00002794       $chain$8$KfDispatchIoctl   000000018000a794     ioctl.obj
- 0002:000027a8       $chain$9$KfDispatchIoctl   000000018000a7a8     ioctl.obj
- 0002:000027bc       $chain$10$KfDispatchIoctl  000000018000a7bc     ioctl.obj
- 0002:000027cc       $chain$11$KfDispatchIoctl  000000018000a7cc     ioctl.obj
- 0002:000027dc       $unwind$KfSafeKernelRead   000000018000a7dc     memory.obj
- 0002:00002808       $unwind$KfReadMemory       000000018000a808     memory.obj
- 0002:00002830       $unwind$KfSafeKernelWrite  000000018000a830     memory.obj
- 0002:00002874       $unwind$KfWriteMemory      000000018000a874     memory.obj
- 0002:0000289c       $unwind$KfWriteProcessMemory 000000018000a89c     breakpoint.obj
- 0002:000028d8       $unwind$KfWriteKernelByte  000000018000a8d8     breakpoint.obj
- 0002:00002904       $unwind$KfReadKernelByte   000000018000a904     breakpoint.obj
- 0002:00002928       $unwind$KfSetSwBreakpoint  000000018000a928     breakpoint.obj
- 0002:00002954       $unwind$KfSetHwBreakpoint  000000018000a954     breakpoint.obj
- 0002:00002980       $unwind$KfSetMemoryBreakpoint 000000018000a980     breakpoint.obj
- 0002:00002994       $unwind$KfRemoveMemoryBreakpoint 000000018000a994     breakpoint.obj
- 0002:000029a0       $chain$0$KfRemoveMemoryBreakpoint 000000018000a9a0     breakpoint.obj
- 0002:000029b4       $chain$1$KfRemoveMemoryBreakpoint 000000018000a9b4     breakpoint.obj
- 0002:000029c4       $unwind$KfRemoveBreakpoint 000000018000a9c4     breakpoint.obj
- 0002:000029f0       $unwind$KfFindSwBpOrigByte 000000018000a9f0     breakpoint.obj
- 0002:00002a04       $unwind$KfRemoveAllBreakpoints 000000018000aa04     breakpoint.obj
- 0002:00002a30       $unwind$KfSingleStep       000000018000aa30     singlestep.obj
- 0002:00002a58       $unwind$KfReadRegisters    000000018000aa58     registers.obj
- 0002:00002a80       $unwind$KfWriteRegisters   000000018000aa80     registers.obj
- 0002:00002aa8       $unwind$KfEnumModules      000000018000aaa8     modules.obj
- 0002:00002ad4       $unwind$FindCrossThreadFlagsOffset 000000018000aad4     modules.obj
- 0002:00002adc       $chain$0$FindCrossThreadFlagsOffset 000000018000aadc     modules.obj
- 0002:00002af0       $chain$7$FindCrossThreadFlagsOffset 000000018000aaf0     modules.obj
- 0002:00002b1c       $chain$8$FindCrossThreadFlagsOffset 000000018000ab1c     modules.obj
- 0002:00002b30       $chain$10$FindCrossThreadFlagsOffset 000000018000ab30     modules.obj
- 0002:00002b48       $unwind$KfClearThreadHide  000000018000ab48     modules.obj
- 0002:00002b74       $unwind$KfEnumThreads      000000018000ab74     threads.obj
- 0002:00002ba0       $unwind$KfResolveSuspendApis 000000018000aba0     threads.obj
- 0002:00002ba8       $unwind$KfEnumProcesses    000000018000aba8     process.obj
- 0002:00002bd4       $unwind$KfWriteByteInContext 000000018000abd4     debughook.obj
- 0002:00002c10       $unwind$KfPatchBytes       000000018000ac10     debughook.obj
- 0002:00002c40       $unwind$KfPatternScanKdTrap 000000018000ac40     debughook.obj
- 0002:00002c48       $chain$0$KfPatternScanKdTrap 000000018000ac48     debughook.obj
- 0002:00002c5c       $chain$2$KfPatternScanKdTrap 000000018000ac5c     debughook.obj
- 0002:00002c70       $chain$10$KfPatternScanKdTrap 000000018000ac70     debughook.obj
- 0002:00002c9c       $chain$12$KfPatternScanKdTrap 000000018000ac9c     debughook.obj
- 0002:00002cc8       $unwind$KfFindKdpTrapCallSite 000000018000acc8     debughook.obj
- 0002:00002ce0       $unwind$KfFindKiDebugRoutineInCode 000000018000ace0     debughook.obj
- 0002:00002cf8       $unwind$KfFindKiDebugRoutine 000000018000acf8     debughook.obj
- 0002:00002d04       $chain$4$KfFindKiDebugRoutine 000000018000ad04     debughook.obj
- 0002:00002d28       $chain$6$KfFindKiDebugRoutine 000000018000ad28     debughook.obj
- 0002:00002d4c       $chain$7$KfFindKiDebugRoutine 000000018000ad4c     debughook.obj
- 0002:00002d5c       $unwind$KfFillDebugEvent   000000018000ad5c     debughook.obj
- 0002:00002d70       $unwind$KfReportAndBlock   000000018000ad70     debughook.obj
- 0002:00002d84       $unwind$KfDebugHandler     000000018000ad84     debughook.obj
- 0002:00002d9c       $unwind$KfCancelWaitIrp    000000018000ad9c     debughook.obj
- 0002:00002da4       $unwind$KfDumpBytes        000000018000ada4     debughook.obj
- 0002:00002db0       $chain$2$KfDumpBytes       000000018000adb0     debughook.obj
- 0002:00002dcc       $chain$3$KfDumpBytes       000000018000adcc     debughook.obj
- 0002:00002ddc       $unwind$KfInstallDebugHook 000000018000addc     debughook.obj
- 0002:00002df0       $chain$0$KfRemoveDebugHook 000000018000adf0     debughook.obj
- 0002:00002e04       $chain$1$KfRemoveDebugHook 000000018000ae04     debughook.obj
- 0002:00002e14       $unwind$KfNtQsiHandler     000000018000ae14     ntqsi_hook.obj
- 0002:00002e3c       $unwind$DecodeInsnLength   000000018000ae3c     ntqsi_hook.obj
- 0002:00002e44       $chain$0$DecodeInsnLength  000000018000ae44     ntqsi_hook.obj
- 0002:00002e58       $chain$1$DecodeInsnLength  000000018000ae58     ntqsi_hook.obj
- 0002:00002e68       $unwind$FindNtQuerySystemInformation 000000018000ae68     ntqsi_hook.obj
- 0002:00002e94       $unwind$KfInstallNtQsiHook 000000018000ae94     ntqsi_hook.obj
- 0002:00002eb0       $chain$7$KfInstallNtQsiHook 000000018000aeb0     ntqsi_hook.obj
- 0002:00002ecc       $chain$8$KfInstallNtQsiHook 000000018000aecc     ntqsi_hook.obj
- 0002:00002ee4       $unwind$KfProbeNtQsi       000000018000aee4     ntqsi_hook.obj
+ 0001:0000688a       repmovs10                  000000018000788a     ntoskrnl:memset.obj
+ 0001:000068bc       repmovs20                  00000001800078bc     ntoskrnl:memset.obj
+ 0001:00006900       $$000000                   0000000180007900     ntoskrnl:memset.obj
+ 0002:00001ef8       ?suffix@?1??KfPatternScanKdTrap@@9@9 0000000180009ef8     debughook.obj
+ 0002:00001f08       ?prefix@?1??KfPatternScanKdTrap@@9@9 0000000180009f08     debughook.obj
+ 0002:00001f10       ?target@?N@??FindNtQuerySystemInformation@@9@9 0000000180009f10     ntqsi_hook.obj
+ 0002:00002768       $unwind$DriverEntry        000000018000a768     main.obj
+ 0002:00002774       $unwind$KfUnload           000000018000a774     main.obj
+ 0002:0000277c       $unwind$KfCreateClose      000000018000a77c     main.obj
+ 0002:00002784       $unwind$KfDispatchIoctl    000000018000a784     ioctl.obj
+ 0002:0000279c       $chain$2$KfDispatchIoctl   000000018000a79c     ioctl.obj
+ 0002:000027b0       $chain$4$KfDispatchIoctl   000000018000a7b0     ioctl.obj
+ 0002:000027b0       $chain$6$KfDispatchIoctl   000000018000a7b0     ioctl.obj
+ 0002:000027b0       $chain$8$KfDispatchIoctl   000000018000a7b0     ioctl.obj
+ 0002:000027c4       $chain$9$KfDispatchIoctl   000000018000a7c4     ioctl.obj
+ 0002:000027d8       $chain$10$KfDispatchIoctl  000000018000a7d8     ioctl.obj
+ 0002:000027e8       $chain$11$KfDispatchIoctl  000000018000a7e8     ioctl.obj
+ 0002:000027f8       $unwind$KfSafeKernelRead   000000018000a7f8     memory.obj
+ 0002:00002824       $unwind$KfReadMemory       000000018000a824     memory.obj
+ 0002:0000284c       $unwind$KfSafeKernelWrite  000000018000a84c     memory.obj
+ 0002:00002890       $unwind$KfWriteMemory      000000018000a890     memory.obj
+ 0002:000028b8       $unwind$KfWriteProcessMemory 000000018000a8b8     breakpoint.obj
+ 0002:000028f4       $unwind$KfWriteKernelByte  000000018000a8f4     breakpoint.obj
+ 0002:00002920       $unwind$KfReadKernelByte   000000018000a920     breakpoint.obj
+ 0002:00002944       $unwind$KfSetSwBreakpoint  000000018000a944     breakpoint.obj
+ 0002:00002970       $unwind$KfSetHwBreakpoint  000000018000a970     breakpoint.obj
+ 0002:0000299c       $unwind$KfSetMemoryBreakpoint 000000018000a99c     breakpoint.obj
+ 0002:000029b0       $unwind$KfRemoveMemoryBreakpoint 000000018000a9b0     breakpoint.obj
+ 0002:000029bc       $chain$0$KfRemoveMemoryBreakpoint 000000018000a9bc     breakpoint.obj
+ 0002:000029d0       $chain$1$KfRemoveMemoryBreakpoint 000000018000a9d0     breakpoint.obj
+ 0002:000029e0       $unwind$KfRemoveBreakpoint 000000018000a9e0     breakpoint.obj
+ 0002:00002a0c       $unwind$KfFindSwBpOrigByte 000000018000aa0c     breakpoint.obj
+ 0002:00002a20       $unwind$KfRemoveAllBreakpoints 000000018000aa20     breakpoint.obj
+ 0002:00002a4c       $unwind$KfSingleStep       000000018000aa4c     singlestep.obj
+ 0002:00002a74       $unwind$KfReadRegisters    000000018000aa74     registers.obj
+ 0002:00002a9c       $unwind$KfWriteRegisters   000000018000aa9c     registers.obj
+ 0002:00002ac4       $unwind$KfEnumModules      000000018000aac4     modules.obj
+ 0002:00002af0       $unwind$FindCrossThreadFlagsOffset 000000018000aaf0     modules.obj
+ 0002:00002af8       $chain$0$FindCrossThreadFlagsOffset 000000018000aaf8     modules.obj
+ 0002:00002b0c       $chain$7$FindCrossThreadFlagsOffset 000000018000ab0c     modules.obj
+ 0002:00002b38       $chain$8$FindCrossThreadFlagsOffset 000000018000ab38     modules.obj
+ 0002:00002b4c       $chain$10$FindCrossThreadFlagsOffset 000000018000ab4c     modules.obj
+ 0002:00002b64       $unwind$KfClearThreadHide  000000018000ab64     modules.obj
+ 0002:00002b90       $unwind$KfEnumThreads      000000018000ab90     threads.obj
+ 0002:00002bbc       $unwind$KfResolveSuspendApis 000000018000abbc     threads.obj
+ 0002:00002bc4       $unwind$KfEnumProcesses    000000018000abc4     process.obj
+ 0002:00002bf0       $unwind$KfWriteByteInContext 000000018000abf0     debughook.obj
+ 0002:00002c2c       $unwind$KfPatchBytes       000000018000ac2c     debughook.obj
+ 0002:00002c5c       $unwind$KfPatternScanKdTrap 000000018000ac5c     debughook.obj
+ 0002:00002c64       $chain$0$KfPatternScanKdTrap 000000018000ac64     debughook.obj
+ 0002:00002c78       $chain$2$KfPatternScanKdTrap 000000018000ac78     debughook.obj
+ 0002:00002c8c       $chain$10$KfPatternScanKdTrap 000000018000ac8c     debughook.obj
+ 0002:00002cb8       $chain$12$KfPatternScanKdTrap 000000018000acb8     debughook.obj
+ 0002:00002ce4       $unwind$KfFindKdpTrapCallSite 000000018000ace4     debughook.obj
+ 0002:00002cfc       $unwind$KfFindKiDebugRoutineInCode 000000018000acfc     debughook.obj
+ 0002:00002d14       $unwind$KfFindKiDebugRoutine 000000018000ad14     debughook.obj
+ 0002:00002d20       $chain$4$KfFindKiDebugRoutine 000000018000ad20     debughook.obj
+ 0002:00002d44       $chain$6$KfFindKiDebugRoutine 000000018000ad44     debughook.obj
+ 0002:00002d68       $chain$7$KfFindKiDebugRoutine 000000018000ad68     debughook.obj
+ 0002:00002d78       $unwind$KfFillDebugEvent   000000018000ad78     debughook.obj
+ 0002:00002d8c       $unwind$KfReportAndBlock   000000018000ad8c     debughook.obj
+ 0002:00002da0       $unwind$KfDebugHandler     000000018000ada0     debughook.obj
+ 0002:00002db8       $unwind$KfCancelWaitIrp    000000018000adb8     debughook.obj
+ 0002:00002db8       $unwind$KfDebugHookDeactivate 000000018000adb8     debughook.obj
+ 0002:00002dc0       $unwind$KfDumpBytes        000000018000adc0     debughook.obj
+ 0002:00002dcc       $chain$2$KfDumpBytes       000000018000adcc     debughook.obj
+ 0002:00002de8       $chain$3$KfDumpBytes       000000018000ade8     debughook.obj
+ 0002:00002df8       $unwind$KfInstallDebugHook 000000018000adf8     debughook.obj
+ 0002:00002e0c       $unwind$KfDebugHookCleanup 000000018000ae0c     debughook.obj
+ 0002:00002e18       $unwind$KfNtQsiHandler     000000018000ae18     ntqsi_hook.obj
+ 0002:00002e40       $unwind$DecodeInsnLength   000000018000ae40     ntqsi_hook.obj
+ 0002:00002e48       $chain$0$DecodeInsnLength  000000018000ae48     ntqsi_hook.obj
+ 0002:00002e5c       $chain$1$DecodeInsnLength  000000018000ae5c     ntqsi_hook.obj
+ 0002:00002e6c       $unwind$FindNtQuerySystemInformation 000000018000ae6c     ntqsi_hook.obj
+ 0002:00002e98       $unwind$KfInstallNtQsiHook 000000018000ae98     ntqsi_hook.obj
+ 0002:00002eb4       $chain$7$KfInstallNtQsiHook 000000018000aeb4     ntqsi_hook.obj
+ 0002:00002ed0       $chain$8$KfInstallNtQsiHook 000000018000aed0     ntqsi_hook.obj
+ 0002:00002ee8       $unwind$KfProbeNtQsi       000000018000aee8     ntqsi_hook.obj
  0002:00002f18       $xdatasym$memcpy           000000018000af18     ntoskrnl:memcpy.obj
  0002:00002f18       $xdatasym$memset           000000018000af18     ntoskrnl:memset.obj
  0002:00002f20       $xdatasym$__memset_repmovs 000000018000af20     ntoskrnl:memset.obj

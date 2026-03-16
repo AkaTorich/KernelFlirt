@@ -18,6 +18,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly Disassembler _disasm = new();
     private readonly SymbolService _symbols;
     private readonly PluginManager _pluginManager;
+    public PluginManager PluginManager => _pluginManager;
 
     private uint? _tempBpHandle;  // For Step Over / Run to Cursor temp breakpoint
     private CancellationTokenSource? _listenerCts;
@@ -103,7 +104,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public void LoadPlugins()
     {
         var pluginsDir = Path.Combine(AppContext.BaseDirectory, "plugins");
-        var api = new DebuggerApiAdapter(
+
+        // Factory creates a per-plugin adapter so each can be enabled/disabled independently
+        DebuggerApiAdapter AdapterFactory() => new DebuggerApiAdapter(
             _driver, _symbols, _pluginManager,
             () => IsConnected,
             () => IsBreakState,
@@ -120,13 +123,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
             (peBase, name) => AddUnpackedModule(peBase, name),
             () => { _ = RefreshModulesAndSectionsAsync(); },
             (modName, sections) => AddModuleSections(modName, sections));
+
         // Wire Continue/SingleStep callbacks so plugins can resume execution
         _pluginManager.ContinueAction = () =>
             Application.Current.Dispatcher.InvokeAsync(async () => await PluginContinue());
         _pluginManager.SingleStepAction = () =>
             Application.Current.Dispatcher.InvokeAsync(async () => await PluginSingleStep());
 
-        _pluginManager.LoadPlugins(pluginsDir, api);
+        _pluginManager.LoadPlugins(pluginsDir, AdapterFactory);
     }
 
     /// <summary>
@@ -1311,6 +1315,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 Log($"Removed {bp.TypeName} BP at {bp.AddressHex}");
             Breakpoints.Clear();
 
+            // Deactivate hook target BEFORE continuing — prevents the thread from
+            // immediately re-entering KfReportAndBlock when Themida fires INT3/AV.
+            await Task.Run(() => _driver.SetTargetPid(0xFFFFFFFF));
+
             // Resume all threads if suspended via SuspendThread (attach path)
             if (_isPausedViaSuspend)
             {
@@ -1331,11 +1339,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
             _isPausedViaSuspend = false;
         }
 
-        // Send RESET — removes hook, all BPs, AND cancels pending WAIT IRP in driver.
-        // This unblocks the listener task's WaitDebugEvent call.
+        // Send RESET — deactivates hook (PID=invalid), removes BPs, cancels pending WAIT IRP.
+        // Hook stays installed but returns FALSE for everything.
         await Task.Run(() => _driver.ResetDriver());
         IsDebugHookActive = false;
-        Log("Driver reset (hook removed, pending WAIT cancelled)");
+        Log("Driver reset (hook deactivated, pending WAIT cancelled)");
 
         StopDebugListener();
 
@@ -3661,7 +3669,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         if (hasPeHeader)
         {
-            uint lfanew = BitConverter.ToUInt32(dosHeader, 0x3C);
+            uint lfanew = BitConverter.ToUInt32(dosHeader!, 0x3C);
             var peHeader = _driver.ReadMemory(pid, peBase + lfanew, 0x78);
             if (peHeader != null && peHeader.Length >= 0x58)
             {
@@ -5315,18 +5323,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (BitConverter.ToUInt32(image, (int)lfanew) != 0x4550) return; // PE\0\0
 
         ushort magic = BitConverter.ToUInt16(image, (int)lfanew + 0x18);
-        int optHeaderSize;
 
         // Patch ImageBase
         if (magic == 0x20B) // PE32+
         {
             BitConverter.TryWriteBytes(image.AsSpan((int)lfanew + 0x30), runtimeBase);
-            optHeaderSize = 0x70; // size of PE32+ specific fields before data dirs
         }
         else if (magic == 0x10B) // PE32
         {
             BitConverter.TryWriteBytes(image.AsSpan((int)lfanew + 0x34), (uint)runtimeBase);
-            optHeaderSize = 0x60;
         }
         else return;
 

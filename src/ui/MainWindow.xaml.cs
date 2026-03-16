@@ -51,6 +51,17 @@ public partial class MainWindow : Window
             MainTabControl.Items.Insert(MainTabControl.Items.Count - 1, tab); // Before Log tab
         };
         VM.LoadPlugins();
+
+        // Add Settings item to Plugins menu
+        if (PluginsMenu.Items.Count > 0)
+            PluginsMenu.Items.Insert(0, new Separator());
+        var settingsItem = new MenuItem { Header = "_Settings..." };
+        settingsItem.Click += (_, _) =>
+        {
+            var win = new PluginSettingsWindow(VM.PluginManager) { Owner = this };
+            win.ShowDialog();
+        };
+        PluginsMenu.Items.Insert(0, settingsItem);
     }
 
     private void LoadDecompilerHighlighting()

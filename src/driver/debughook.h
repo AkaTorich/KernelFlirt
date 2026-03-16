@@ -20,6 +20,9 @@ void KfRemoveDebugHook(void);
 /* Cleanup (call from DriverUnload) */
 void KfDebugHookCleanup(void);
 
+/* Deactivate hook without removing it — sets PID=invalid, wakes blocked threads, cancels WAIT IRP */
+void KfDebugHookDeactivate(void);
+
 /* IOCTL handlers */
 NTSTATUS KfWaitDebugEvent(PIRP Irp, PIO_STACK_LOCATION IoStack);
 NTSTATUS KfContinueDebugEvent(PIRP Irp, PIO_STACK_LOCATION IoStack);

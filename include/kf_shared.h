@@ -33,12 +33,14 @@
 #define IOCTL_KF_WAIT_DEBUG_EVENT   CTL_CODE(KF_DEVICE_TYPE, 0x842, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_KF_CONTINUE_DEBUG_EVENT CTL_CODE(KF_DEVICE_TYPE, 0x843, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_KF_GET_HOOK_STATS     CTL_CODE(KF_DEVICE_TYPE, 0x844, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_KF_SET_TARGET_PID     CTL_CODE(KF_DEVICE_TYPE, 0x845, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_KF_GET_PEB_ADDRESS    CTL_CODE(KF_DEVICE_TYPE, 0x836, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_KF_CLEAR_DEBUG_PORT   CTL_CODE(KF_DEVICE_TYPE, 0x837, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_KF_CLEAR_THREAD_HIDE  CTL_CODE(KF_DEVICE_TYPE, 0x838, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_KF_INSTALL_NTQSI_HOOK CTL_CODE(KF_DEVICE_TYPE, 0x850, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_KF_REMOVE_NTQSI_HOOK  CTL_CODE(KF_DEVICE_TYPE, 0x851, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_KF_PROBE_NTQSI        CTL_CODE(KF_DEVICE_TYPE, 0x852, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_KF_PROTECT_MEMORY     CTL_CODE(KF_DEVICE_TYPE, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_KF_RESET              CTL_CODE(KF_DEVICE_TYPE, 0x8FE, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_KF_PING               CTL_CODE(KF_DEVICE_TYPE, 0x8FF, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
@@ -85,6 +87,19 @@ typedef struct _KF_SET_BP_OUT {
 typedef struct _KF_REMOVE_BP_IN {
     ULONG   Handle;
 } KF_REMOVE_BP_IN, *PKF_REMOVE_BP_IN;
+
+/* IOCTL_KF_PROTECT_MEMORY input */
+typedef struct _KF_PROTECT_MEMORY_IN {
+    ULONG   ProcessId;
+    ULONG64 Address;
+    ULONG   Size;
+    ULONG   NewProtection;  /* PAGE_NOACCESS, PAGE_EXECUTE_READ, etc. */
+} KF_PROTECT_MEMORY_IN, *PKF_PROTECT_MEMORY_IN;
+
+/* IOCTL_KF_PROTECT_MEMORY output */
+typedef struct _KF_PROTECT_MEMORY_OUT {
+    ULONG   OldProtection;
+} KF_PROTECT_MEMORY_OUT, *PKF_PROTECT_MEMORY_OUT;
 
 /* IOCTL_KF_SINGLE_STEP / READ_REGISTERS / WRITE_REGISTERS input */
 typedef struct _KF_THREAD_TARGET {
@@ -194,6 +209,7 @@ typedef struct _KF_CLEAR_THREAD_HIDE_IN {
 #define KF_CONTINUE_RUN             0   /* Just resume (no SW BP hit, or HW BP) */
 #define KF_CONTINUE_STEP_PAST       1   /* Step past SW BP, then auto-continue (F9/Run) */
 #define KF_CONTINUE_STEP_INTO       2   /* Step past SW BP, then report SingleStep (F7) */
+#define KF_CONTINUE_HANDLED         3   /* AV was handled by plugin: return TRUE + set TF (single-step) */
 
 typedef struct _KF_CONTINUE_IN {
     ULONG   Mode;   /* KF_CONTINUE_* */
@@ -208,6 +224,8 @@ typedef struct _KF_DEBUG_EVENT {
     ULONG           PreviousMode;   /* 0=KernelMode, 1=UserMode */
     ULONG           ExceptionCode;  /* NTSTATUS exception code (e.g. 0xC0000005 for AV) */
     ULONG64         FaultAddress;   /* For AV: the target address that was accessed */
+    ULONG           AccessType;     /* For AV: 0=read, 1=write, 8=execute (ExceptionInformation[0]) */
+    ULONG           Reserved0;      /* Alignment padding */
     KF_REGISTERS    Registers;      /* Full register context */
 } KF_DEBUG_EVENT, *PKF_DEBUG_EVENT;
 
