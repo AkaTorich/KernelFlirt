@@ -128,6 +128,7 @@ public class MemoryApiAdapter : IMemoryApi
     }
 
     public bool WriteRip(uint pid, uint tid, ulong newRip) => _driver.WriteRip(pid, tid, newRip);
+    public bool WriteRipAndRsp(uint tid, ulong newRip, ulong newRsp) => _driver.WriteRipAndRsp(tid, newRip, newRsp);
 
     public (bool ok, uint oldProtection) ProtectMemory(uint pid, ulong address, uint size, uint newProtection)
         => _driver.ProtectMemory(pid, address, size, newProtection);

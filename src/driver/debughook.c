@@ -123,10 +123,22 @@ static BOOLEAN          g_ThreadBlocked  = FALSE;
 /* Continue mode (set by ContinueDebugEvent IOCTL before signaling) */
 static ULONG            g_ContinueMode  = KF_CONTINUE_RUN;
 
+/* Pending RIP/RSP override (for IAT tracing — applied to ContextRecord after wake) */
+static ULONG            g_ContinueFlags = 0;
+static ULONG64          g_ContinueNewRip = 0;
+static ULONG64          g_ContinueNewRsp = 0;
+
 /* Step-past state for target process */
 static BOOLEAN          g_StepPastPending = FALSE;
 static ULONG64          g_StepPastAddr    = 0;
 static BOOLEAN          g_StepPastAutoRun = TRUE;
+
+/* Fast trace mode: step internally without reporting until RIP exits range */
+static volatile BOOLEAN g_TraceActive     = FALSE;
+static ULONG64          g_TraceRangeBase  = 0;
+static ULONG64          g_TraceRangeEnd   = 0;
+static ULONG            g_TraceMaxSteps   = 0;
+static volatile ULONG   g_TraceStepCount  = 0;
 
 /* Transparent step-past for non-target processes */
 #define MAX_TRANSPARENT  16
@@ -904,6 +916,11 @@ static BOOLEAN KfDebugHandler(
     if (ExceptionRecord->ExceptionCode == STATUS_ACCESS_VIOLATION && isTargetAv) {
         KfReportAndBlock(TrapFrame, ExceptionRecord, ContextRecord, PreviousMode);
 
+        /* Apply pending RIP/RSP override */
+        if (g_ContinueFlags & KF_CONT_SET_RIP) ContextRecord->Rip = g_ContinueNewRip;
+        if (g_ContinueFlags & KF_CONT_SET_RSP) ContextRecord->Rsp = g_ContinueNewRsp;
+        g_ContinueFlags = 0;
+
         if (g_ContinueMode == KF_CONTINUE_HANDLED) {
             /* Plugin handled the AV (e.g. PAGE_NOACCESS guard):
              * Set TF for single-step, return TRUE to suppress AV from reaching SEH */
@@ -941,6 +958,11 @@ static BOOLEAN KfDebugHandler(
             InterlockedIncrement(&g_HookStepCount);
             KfReportAndBlock(TrapFrame, ExceptionRecord, ContextRecord, PreviousMode);
 
+            /* Apply pending RIP/RSP override (for IAT tracing) */
+            if (g_ContinueFlags & KF_CONT_SET_RIP) ContextRecord->Rip = g_ContinueNewRip;
+            if (g_ContinueFlags & KF_CONT_SET_RSP) ContextRecord->Rsp = g_ContinueNewRsp;
+            g_ContinueFlags = 0;
+
             /* After UI continues: check if another step was requested */
             if (g_ContinueMode == KF_CONTINUE_STEP_INTO) {
                 ContextRecord->EFlags |= 0x100UL; /* Set TF */
@@ -970,6 +992,18 @@ static BOOLEAN KfDebugHandler(
         /* Not a step-past SingleStep, fall through to normal handling */
         if (!isTarget)
             return FALSE;
+
+        /* Fast trace mode: keep stepping internally while RIP is in trace range */
+        if (g_TraceActive) {
+            InterlockedIncrement(&g_TraceStepCount);
+            if (excAddr >= g_TraceRangeBase && excAddr < g_TraceRangeEnd &&
+                g_TraceStepCount < g_TraceMaxSteps) {
+                ContextRecord->EFlags |= 0x100UL; /* Set TF — step again */
+                return TRUE;  /* Don't report to UI, keep stepping */
+            }
+            g_TraceActive = FALSE;
+            /* Fall through to report final RIP to UI */
+        }
 
         /* Target SingleStep (user-requested or HW BP) */
         goto report_to_ui;
@@ -1081,6 +1115,15 @@ static BOOLEAN KfDebugHandler(
 report_to_ui:
     KfReportAndBlock(TrapFrame, ExceptionRecord, ContextRecord, PreviousMode);
 
+    /* Apply pending RIP/RSP override (for IAT tracing) */
+    if (g_ContinueFlags & KF_CONT_SET_RIP) {
+        ContextRecord->Rip = g_ContinueNewRip;
+    }
+    if (g_ContinueFlags & KF_CONT_SET_RSP) {
+        ContextRecord->Rsp = g_ContinueNewRsp;
+    }
+    g_ContinueFlags = 0;
+
     /* After UI continues: set TF if step was requested */
     if (g_ContinueMode == KF_CONTINUE_STEP_INTO) {
         ContextRecord->EFlags |= 0x100UL;
@@ -1123,6 +1166,7 @@ NTSTATUS KfDebugHookInit(void)
     g_ThreadBlocked   = FALSE;
     g_StepPastPending = FALSE;
     g_ContinueMode    = KF_CONTINUE_RUN;
+    g_TraceActive     = FALSE;
 
     RtlZeroMemory(&g_DebugEvent, sizeof(g_DebugEvent));
     RtlZeroMemory(g_Transparent, sizeof(g_Transparent));
@@ -1685,8 +1729,31 @@ NTSTATUS KfContinueDebugEvent(PIRP Irp, PIO_STACK_LOCATION IoStack)
         KfPatchBytes(g_pKdDebuggerNotPresent, &val, sizeof(BOOLEAN));
     }
 
-    /* Set mode BEFORE signaling (handler reads it after wake) */
-    g_ContinueMode = mode;
+    /* Set mode and pending RIP/RSP BEFORE signaling (handler reads after wake) */
+    if (mode == KF_CONTINUE_TRACE) {
+        /* Fast trace mode: set up range and switch to STEP_INTO for first step */
+        g_ContinueMode = KF_CONTINUE_STEP_INTO;
+    } else {
+        g_ContinueMode = mode;
+    }
+
+    if (IoStack->Parameters.DeviceIoControl.InputBufferLength >= sizeof(KF_CONTINUE_IN)) {
+        PKF_CONTINUE_IN input = (PKF_CONTINUE_IN)Irp->AssociatedIrp.SystemBuffer;
+        g_ContinueFlags  = input->Flags;
+        g_ContinueNewRip = input->NewRip;
+        g_ContinueNewRsp = input->NewRsp;
+
+        if (mode == KF_CONTINUE_TRACE) {
+            g_TraceRangeBase = input->TraceRangeBase;
+            g_TraceRangeEnd  = input->TraceRangeEnd;
+            g_TraceMaxSteps  = input->TraceMaxSteps;
+            if (g_TraceMaxSteps == 0) g_TraceMaxSteps = 500000;
+            g_TraceStepCount = 0;
+            g_TraceActive    = TRUE;
+        }
+    } else {
+        g_ContinueFlags = 0;
+    }
 
     KeSetEvent(&g_ContinueEvent, 0, FALSE);
 

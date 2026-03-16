@@ -2911,7 +2911,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                         mode = DriverComm.CONTINUE_STEP_PAST;
                     else
                         mode = DriverComm.CONTINUE_RUN;
-                    _driver.ContinueDebugEvent(mode);
+                    _driver.ContinueDebugEvent(mode, pluginEvt.NewRip, pluginEvt.NewRsp,
+                        pluginEvt.TraceRangeBase, pluginEvt.TraceRangeEnd, pluginEvt.TraceMaxSteps);
                     continue; // Loop back to WaitDebugEvent
                 }
 

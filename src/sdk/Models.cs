@@ -90,4 +90,23 @@ public class PluginDebugEvent
     /// 0=Run (default), 1=StepPast, 2=StepInto, 3=Handled (suppress AV + single-step).
     /// </summary>
     public uint ContinueMode { get; set; }
+
+    /// <summary>
+    /// Optional: override RIP before resuming (for IAT tracing).
+    /// Set to non-zero to redirect execution. Applied via ContextRecord in kernel.
+    /// </summary>
+    public ulong NewRip { get; set; }
+
+    /// <summary>
+    /// Optional: override RSP before resuming. Set to non-zero to restore stack pointer.
+    /// </summary>
+    public ulong NewRsp { get; set; }
+
+    /// <summary>
+    /// For ContinueMode=4 (Trace): driver steps internally while RIP is in [TraceRangeBase, TraceRangeEnd).
+    /// Reports SingleStep only when RIP exits range or TraceMaxSteps reached.
+    /// </summary>
+    public ulong TraceRangeBase { get; set; }
+    public ulong TraceRangeEnd { get; set; }
+    public uint TraceMaxSteps { get; set; }
 }

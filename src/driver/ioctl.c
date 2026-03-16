@@ -17,6 +17,7 @@ extern NTSTATUS KfSingleStep(PIRP Irp, PIO_STACK_LOCATION IoStack);
 extern NTSTATUS KfProtectMemory(PIRP Irp, PIO_STACK_LOCATION IoStack);
 extern NTSTATUS KfReadRegisters(PIRP Irp, PIO_STACK_LOCATION IoStack);
 extern NTSTATUS KfWriteRegisters(PIRP Irp, PIO_STACK_LOCATION IoStack);
+extern NTSTATUS KfWriteRip(PIRP Irp, PIO_STACK_LOCATION IoStack);
 extern NTSTATUS KfEnumModules(PIRP Irp, PIO_STACK_LOCATION IoStack);
 extern NTSTATUS KfEnumKernelModules(PIRP Irp, PIO_STACK_LOCATION IoStack);
 extern NTSTATUS KfEnumThreads(PIRP Irp, PIO_STACK_LOCATION IoStack);
@@ -102,6 +103,10 @@ KfDispatchIoctl(
 
     case IOCTL_KF_WRITE_REGISTERS:
         status = KfWriteRegisters(Irp, ioStack);
+        break;
+
+    case IOCTL_KF_WRITE_RIP:
+        status = KfWriteRip(Irp, ioStack);
         break;
 
     case IOCTL_KF_ENUM_MODULES:

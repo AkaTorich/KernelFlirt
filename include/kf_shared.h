@@ -41,6 +41,7 @@
 #define IOCTL_KF_REMOVE_NTQSI_HOOK  CTL_CODE(KF_DEVICE_TYPE, 0x851, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_KF_PROBE_NTQSI        CTL_CODE(KF_DEVICE_TYPE, 0x852, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_KF_PROTECT_MEMORY     CTL_CODE(KF_DEVICE_TYPE, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_KF_WRITE_RIP          CTL_CODE(KF_DEVICE_TYPE, 0x812, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_KF_RESET              CTL_CODE(KF_DEVICE_TYPE, 0x8FE, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_KF_PING               CTL_CODE(KF_DEVICE_TYPE, 0x8FF, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
@@ -124,6 +125,17 @@ typedef struct _KF_WRITE_REGISTERS_IN {
     KF_THREAD_TARGET Target;
     KF_REGISTERS     Registers;
 } KF_WRITE_REGISTERS_IN, *PKF_WRITE_REGISTERS_IN;
+
+/* IOCTL_KF_WRITE_RIP input — modifies ONLY RIP (and optionally RSP) in trap frame.
+ * Safe for IAT tracing — does NOT touch R12-R15, segments, or debug registers. */
+typedef struct _KF_WRITE_RIP_IN {
+    ULONG   ThreadId;
+    ULONG   Flags;      /* bit 0: also write RSP */
+    ULONG64 NewRip;
+    ULONG64 NewRsp;     /* only written if Flags & 1 */
+} KF_WRITE_RIP_IN, *PKF_WRITE_RIP_IN;
+
+#define KF_WRIP_SET_RSP  0x01
 
 /* IOCTL_KF_ENUM_MODULES input */
 typedef struct _KF_ENUM_MODULES_IN {
@@ -210,10 +222,21 @@ typedef struct _KF_CLEAR_THREAD_HIDE_IN {
 #define KF_CONTINUE_STEP_PAST       1   /* Step past SW BP, then auto-continue (F9/Run) */
 #define KF_CONTINUE_STEP_INTO       2   /* Step past SW BP, then report SingleStep (F7) */
 #define KF_CONTINUE_HANDLED         3   /* AV was handled by plugin: return TRUE + set TF (single-step) */
+#define KF_CONTINUE_TRACE           4   /* Fast trace: step internally while RIP in [TraceRangeBase,TraceRangeEnd), report when exit */
 
 typedef struct _KF_CONTINUE_IN {
-    ULONG   Mode;   /* KF_CONTINUE_* */
+    ULONG   Mode;       /* KF_CONTINUE_* */
+    ULONG   Flags;      /* bit 0: apply NewRip, bit 1: apply NewRsp */
+    ULONG64 NewRip;     /* set RIP in ContextRecord before resume (if Flags & 1) */
+    ULONG64 NewRsp;     /* set RSP in ContextRecord before resume (if Flags & 2) */
+    ULONG64 TraceRangeBase;  /* For KF_CONTINUE_TRACE: keep stepping while RIP >= Base */
+    ULONG64 TraceRangeEnd;   /* For KF_CONTINUE_TRACE: keep stepping while RIP < End */
+    ULONG   TraceMaxSteps;   /* For KF_CONTINUE_TRACE: max steps (0 = 500000 default) */
+    ULONG   TraceReserved;   /* Alignment padding */
 } KF_CONTINUE_IN, *PKF_CONTINUE_IN;
+
+#define KF_CONT_SET_RIP  0x01
+#define KF_CONT_SET_RSP  0x02
 
 /* IOCTL_KF_WAIT_DEBUG_EVENT output */
 typedef struct _KF_DEBUG_EVENT {

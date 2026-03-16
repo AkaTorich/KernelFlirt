@@ -263,3 +263,55 @@ KfWriteRegisters(
     Irp->IoStatus.Information = 0;
     return status;
 }
+
+/*
+ * KfWriteRip — Modifies ONLY the RIP field in the trap frame.
+ * Unlike KfWriteRegisters, this does NOT touch any other registers
+ * (R12-R15, segments, debug regs), preventing state corruption.
+ */
+NTSTATUS
+KfWriteRip(
+    _In_ PIRP               Irp,
+    _In_ PIO_STACK_LOCATION  IoStack
+)
+{
+    PKF_WRITE_RIP_IN    input;
+    PETHREAD            thread = NULL;
+    NTSTATUS            status;
+    PVOID               pTrapFrame;
+
+    if (IoStack->Parameters.DeviceIoControl.InputBufferLength < sizeof(KF_WRITE_RIP_IN)) {
+        Irp->IoStatus.Information = 0;
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    input = (PKF_WRITE_RIP_IN)Irp->AssociatedIrp.SystemBuffer;
+
+    status = PsLookupThreadByThreadId((HANDLE)(ULONG_PTR)input->ThreadId, &thread);
+    if (!NT_SUCCESS(status)) {
+        Irp->IoStatus.Information = 0;
+        return status;
+    }
+
+    pTrapFrame = *(PVOID *)((UCHAR *)thread + KTHREAD_TRAPFRAME_OFFSET);
+
+    if (!IS_KERN_PTR(pTrapFrame)) {
+        ObDereferenceObject(thread);
+        Irp->IoStatus.Information = 0;
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    __try {
+        *(ULONG64 *)((UCHAR *)pTrapFrame + TF_RIP) = input->NewRip;
+        if (input->Flags & KF_WRIP_SET_RSP)
+            *(ULONG64 *)((UCHAR *)pTrapFrame + TF_RSP) = input->NewRsp;
+        status = STATUS_SUCCESS;
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        status = GetExceptionCode();
+    }
+
+    ObDereferenceObject(thread);
+    Irp->IoStatus.Information = 0;
+    return status;
+}
