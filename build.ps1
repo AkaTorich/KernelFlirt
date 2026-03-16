@@ -199,8 +199,25 @@ foreach ($pluginRelPath in $pluginProjects) {
             $pluginDll = Join-Path $pluginDir "bin\$Configuration\net9.0\$pluginName.dll"
         }
         if (Test-Path $pluginDll) {
-            Copy-Item $pluginDll $pluginsDir -Force
-            Write-Host "  -> bin\UI\plugins\$pluginName.dll" -ForegroundColor DarkGreen
+            try {
+                Copy-Item $pluginDll $pluginsDir -Force -ErrorAction Stop
+                Write-Host "  -> bin\UI\plugins\$pluginName.dll" -ForegroundColor DarkGreen
+            } catch {
+                Write-Host "  -> bin\UI\plugins\$pluginName.dll (LOCKED, skipped)" -ForegroundColor Yellow
+            }
+            # Copy plugin dependencies (NuGet DLLs) that aren't already in UI output
+            $pluginOutDir = [System.IO.Path]::GetDirectoryName($pluginDll)
+            $uiOutDir = Join-Path $Root "src\ui\bin\$Configuration\net9.0-windows"
+            foreach ($dep in Get-ChildItem $pluginOutDir -Filter "*.dll") {
+                if ($dep.Name -ne "$pluginName.dll" -and !(Test-Path (Join-Path $uiOutDir $dep.Name))) {
+                    try {
+                        Copy-Item $dep.FullName $pluginsDir -Force -ErrorAction Stop
+                        Write-Host "  -> bin\UI\plugins\$($dep.Name)" -ForegroundColor DarkGray
+                    } catch {
+                        Write-Host "  -> bin\UI\plugins\$($dep.Name) (LOCKED, skipped)" -ForegroundColor Yellow
+                    }
+                }
+            }
         }
     }
 }

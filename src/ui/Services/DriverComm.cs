@@ -43,6 +43,7 @@ public class DriverComm : IDisposable
     private static readonly uint IOCTL_KF_PROTECT_MEMORY  = CTL_CODE(DeviceType, 0x805, 0, 0);
     private static readonly uint IOCTL_KF_READ_REGISTERS  = CTL_CODE(DeviceType, 0x810, 0, 0);
     private static readonly uint IOCTL_KF_WRITE_REGISTERS = CTL_CODE(DeviceType, 0x811, 0, 0);
+    private static readonly uint IOCTL_KF_WRITE_RIP       = CTL_CODE(DeviceType, 0x812, 0, 0);
     private static readonly uint IOCTL_KF_ENUM_MODULES    = CTL_CODE(DeviceType, 0x820, 0, 0);
     private static readonly uint IOCTL_KF_ENUM_KERNEL_MODULES = CTL_CODE(DeviceType, 0x821, 0, 0);
     private static readonly uint IOCTL_KF_ENUM_THREADS    = CTL_CODE(DeviceType, 0x830, 0, 0);
@@ -101,6 +102,15 @@ public class DriverComm : IDisposable
         public ulong Rflags;
         public ushort Cs, Ds, Es, Fs, Gs, Ss;
         public ulong Dr0, Dr1, Dr2, Dr3, Dr6, Dr7;
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    private struct KF_WRITE_RIP_IN
+    {
+        public uint ThreadId;
+        public uint Flags;      // bit 0: also write RSP
+        public ulong NewRip;
+        public ulong NewRsp;    // only written if Flags & 1
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -796,51 +806,18 @@ public class DriverComm : IDisposable
 
     public bool WriteRip(uint pid, uint tid, ulong newRip)
     {
-        // Read current registers, modify RIP, write back
-        var regs = ReadRegisters(pid, tid);
-        if (regs.Count == 0) return false;
+        // Use dedicated WRITE_RIP IOCTL that modifies ONLY RIP in trap frame.
+        // The old approach (read all regs, modify RIP, write all back) zeroed
+        // R12-R15 and could corrupt segment/debug registers, causing BSOD.
+        var input = new KF_WRITE_RIP_IN { ThreadId = tid, Flags = 0, NewRip = newRip, NewRsp = 0 };
+        var (ok, _) = SendIoctl(IOCTL_KF_WRITE_RIP, StructToBytes(input), 0);
+        return ok;
+    }
 
-        var r = new KF_REGISTERS();
-        foreach (var reg in regs)
-        {
-            switch (reg.Name)
-            {
-                case "RAX": case "EAX": r.Rax = reg.Value; break;
-                case "RBX": case "EBX": r.Rbx = reg.Value; break;
-                case "RCX": case "ECX": r.Rcx = reg.Value; break;
-                case "RDX": case "EDX": r.Rdx = reg.Value; break;
-                case "RSI": case "ESI": r.Rsi = reg.Value; break;
-                case "RDI": case "EDI": r.Rdi = reg.Value; break;
-                case "RBP": case "EBP": r.Rbp = reg.Value; break;
-                case "RSP": case "ESP": r.Rsp = reg.Value; break;
-                case "R8":  r.R8  = reg.Value; break;
-                case "R9":  r.R9  = reg.Value; break;
-                case "R10": r.R10 = reg.Value; break;
-                case "R11": r.R11 = reg.Value; break;
-                case "R12": r.R12 = reg.Value; break;
-                case "R13": r.R13 = reg.Value; break;
-                case "R14": r.R14 = reg.Value; break;
-                case "R15": r.R15 = reg.Value; break;
-                case "RIP": case "EIP": r.Rip = reg.Value; break;
-                case "RFLAGS": case "EFLAGS": r.Rflags = reg.Value; break;
-                case "DR0": r.Dr0 = reg.Value; break;
-                case "DR1": r.Dr1 = reg.Value; break;
-                case "DR2": r.Dr2 = reg.Value; break;
-                case "DR3": r.Dr3 = reg.Value; break;
-                case "DR6": r.Dr6 = reg.Value; break;
-                case "DR7": r.Dr7 = reg.Value; break;
-            }
-        }
-
-        // Override RIP
-        r.Rip = newRip;
-
-        var input = new KF_WRITE_REGISTERS_IN
-        {
-            Target = new KF_THREAD_TARGET { ProcessId = pid, ThreadId = tid },
-            Registers = r
-        };
-        var (ok, _) = SendIoctl(IOCTL_KF_WRITE_REGISTERS, StructToBytes(input), 0);
+    public bool WriteRipAndRsp(uint tid, ulong newRip, ulong newRsp)
+    {
+        var input = new KF_WRITE_RIP_IN { ThreadId = tid, Flags = 1, NewRip = newRip, NewRsp = newRsp };
+        var (ok, _) = SendIoctl(IOCTL_KF_WRITE_RIP, StructToBytes(input), 0);
         return ok;
     }
 
@@ -926,12 +903,35 @@ public class DriverComm : IDisposable
     public const uint CONTINUE_STEP_PAST  = 1;
     public const uint CONTINUE_STEP_INTO  = 2;
     public const uint CONTINUE_HANDLED    = 3;
+    public const uint CONTINUE_TRACE      = 4;
 
-    public bool ContinueDebugEvent(uint mode = CONTINUE_RUN)
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    private struct KF_CONTINUE_IN
     {
-        var input = BitConverter.GetBytes(mode);
+        public uint Mode;
+        public uint Flags;      // bit 0: set RIP, bit 1: set RSP
+        public ulong NewRip;
+        public ulong NewRsp;
+        public ulong TraceRangeBase;  // For CONTINUE_TRACE
+        public ulong TraceRangeEnd;   // For CONTINUE_TRACE
+        public uint TraceMaxSteps;    // For CONTINUE_TRACE (0 = 500K default)
+        public uint TraceReserved;
+    }
+
+    public bool ContinueDebugEvent(uint mode = CONTINUE_RUN, ulong newRip = 0, ulong newRsp = 0,
+        ulong traceRangeBase = 0, ulong traceRangeEnd = 0, uint traceMaxSteps = 0)
+    {
+        uint flags = 0;
+        if (newRip != 0) flags |= 1; // KF_CONT_SET_RIP
+        if (newRsp != 0) flags |= 2; // KF_CONT_SET_RSP
+
+        var input = new KF_CONTINUE_IN {
+            Mode = mode, Flags = flags, NewRip = newRip, NewRsp = newRsp,
+            TraceRangeBase = traceRangeBase, TraceRangeEnd = traceRangeEnd,
+            TraceMaxSteps = traceMaxSteps
+        };
         // Must use CMD channel — DBG channel's _dbgRemoteLock is held by WaitDebugEvent
-        var (ok, _) = SendIoctl(IOCTL_KF_CONTINUE_DEBUG_EVENT, input, 0);
+        var (ok, _) = SendIoctl(IOCTL_KF_CONTINUE_DEBUG_EVENT, StructToBytes(input), 0);
         return ok;
     }
 
