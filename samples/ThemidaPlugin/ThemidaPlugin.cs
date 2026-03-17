@@ -524,6 +524,17 @@ public class ThemidaPanel : ScrollViewer
             return true;
         }
 
+        // ── Done: OEP breakpoint hit after IAT trace ──
+        if (_phase == Phase.Done && evt.Type == PluginDebugEventType.Breakpoint && rip == _oepAddr)
+        {
+            _api.Log.Warning($"Stopped at OEP 0x{_oepAddr:X}");
+            bool autoDump = false;
+            try { Application.Current?.Dispatcher.Invoke(() => autoDump = _chkAutoDump.IsChecked == true); }
+            catch { }
+            if (autoDump) DumpPe();
+            return false; // let UI handle the break
+        }
+
         return false;
     }
 
@@ -826,10 +837,10 @@ public class ThemidaPanel : ScrollViewer
         if (rsp < _traceStartSP)
         {
             _antiTraceSkips++;
-            if (_antiTraceSkips > 50)
+            if (_antiTraceSkips > 15)
             {
                 // Too many fake calls — VM wrapper, keep original wrapper in place
-                _api.Log.Warning($"Anti-trace skip limit (50) at [{_iatIdx}] — keeping wrapper");
+                _api.Log.Warning($"Anti-trace skip limit at [{_iatIdx}] — keeping wrapper");
                 _iatFailedCount++;
                 AdvanceOrFinish(pid, evt);
                 return;
@@ -852,6 +863,16 @@ public class ThemidaPanel : ScrollViewer
         }
 
         // SP >= start — this is the real resolved API
+        // Kernel RIP = trace aborted due to kernel exception — skip this wrapper
+        if (rip >= 0xFFFF800000000000UL)
+        {
+            _iatFailedCount++;
+            _api.Log.Warning($"Kernel RIP 0x{rip:X} at [{_iatIdx}] — keeping wrapper");
+            AdvanceOrFinish(pid, evt);
+            return;
+        }
+
+        // Filter out results pointing back into our image
         if (rip >= 0x10000 && !(rip >= _imageBase && rip < _imageBoundary))
         {
             _iatData[_iatIdx] = rip;
@@ -907,13 +928,11 @@ public class ThemidaPanel : ScrollViewer
         _api.Log.Warning($"IAT Done: {_iatResolvedCount} resolved, {_iatFailedCount} failed.");
         SetStatus($"IAT: {_iatResolvedCount} resolved. OEP=0x{_oepAddr:X}");
 
+        // Set BP on OEP so process breaks there after Run
+        _api.Breakpoints.SetBreakpoint(pid, 0, _oepAddr, PluginBreakpointType.Software);
+        _api.Log.Info($"BP set on OEP 0x{_oepAddr:X}");
+
         _phase = Phase.Done;
-
-        bool autoDump = false;
-        try { Application.Current?.Dispatcher.Invoke(() => autoDump = _chkAutoDump.IsChecked == true); }
-        catch { }
-
-        if (autoDump) DumpPe();
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -1583,6 +1602,26 @@ internal class RemoteDumper
         return totalDelta;
     }
 
+    private byte[]? ReadMemoryChunked(uint pid, ulong address, uint totalSize)
+    {
+        const uint chunkSize = 0x100000; // 1MB
+        var result = new byte[totalSize];
+        uint offset = 0;
+        while (offset < totalSize)
+        {
+            uint sz = Math.Min(chunkSize, totalSize - offset);
+            var chunk = _api.Memory.ReadMemory(pid, address + offset, sz);
+            if (chunk == null)
+            {
+                _api.Log.Error($"[Dump] Chunk read failed at 0x{address + offset:X} size=0x{sz:X}");
+                return null;
+            }
+            Array.Copy(chunk, 0, result, offset, chunk.Length);
+            offset += sz;
+        }
+        return result;
+    }
+
     // ── Process and Dump (Magicmida Dumper.Process + DumpToFile) ──
 
     public byte[]? ProcessAndDump(uint pid, ulong iat, int iatCount, ulong[] iatData,
@@ -1590,9 +1629,15 @@ internal class RemoteDumper
     {
         if (iat == 0 || iatCount == 0) return SimpleDump(pid);
 
-        // Read full image
-        var pe = _api.Memory.ReadMemory(pid, _imageBase, (uint)(_imageBoundary - _imageBase));
-        if (pe == null) return null;
+        // Read full image in 1MB chunks (driver METHOD_BUFFERED can't handle 10MB+ at once)
+        uint imageSize = (uint)(_imageBoundary - _imageBase);
+        _api.Log.Info($"[Dump] Reading image: base=0x{_imageBase:X} size=0x{imageSize:X} ({imageSize} bytes)");
+        var pe = ReadMemoryChunked(pid, _imageBase, imageSize);
+        if (pe == null)
+        {
+            _api.Log.Error($"[Dump] ReadMemory failed at 0x{_imageBase:X}");
+            return null;
+        }
 
         uint lfanew = BitConverter.ToUInt32(pe, 0x3C);
 
@@ -1848,7 +1893,7 @@ internal class RemoteDumper
 
     private byte[]? SimpleDump(uint pid)
     {
-        var pe = _api.Memory.ReadMemory(pid, _imageBase, (uint)(_imageBoundary - _imageBase));
+        var pe = ReadMemoryChunked(pid, _imageBase, (uint)(_imageBoundary - _imageBase));
         if (pe == null) return null;
 
         uint lfanew = BitConverter.ToUInt32(pe, 0x3C);

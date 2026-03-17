@@ -1,6 +1,6 @@
  KernelFlirt
 
- Timestamp is 69b957ce (Tue Mar 17 21:31:58 2026)
+ Timestamp is 69b9668d (Tue Mar 17 22:34:53 2026)
 
  Preferred load address is 0000000180000000
 
@@ -72,13 +72,13 @@
  0001:00003910       KfEnumThreads              0000000180004910 f   threads.obj
  0001:00003bc0       KfEnumProcesses            0000000180004bc0 f   process.obj
  0001:00003f00       KfPatchBytes               0000000180004f00 f   debughook.obj
- 0001:00005610       KfInstallDebugHook         0000000180006610 f   debughook.obj
- 0001:00005d00       KfRemoveDebugHook          0000000180006d00 f   debughook.obj
- 0001:00005f60       KfDebugHookDeactivate      0000000180006f60 f   debughook.obj
- 0001:000064b0       KfInstallNtQsiHook         00000001800074b0 f   ntqsi_hook.obj
- 0001:000069b0       KfProbeNtQsi               00000001800079b0 f   ntqsi_hook.obj
- 0001:00006ad1       __C_specific_handler       0000000180007ad1 f   ntoskrnl:ntoskrnl.exe
- 0001:00006ae0       __cpu_features_init        0000000180007ae0 f   ntoskrnl:cpuinfo.obj
+ 0001:00005620       KfInstallDebugHook         0000000180006620 f   debughook.obj
+ 0001:00005d10       KfRemoveDebugHook          0000000180006d10 f   debughook.obj
+ 0001:00005f70       KfDebugHookDeactivate      0000000180006f70 f   debughook.obj
+ 0001:000064c0       KfInstallNtQsiHook         00000001800074c0 f   ntqsi_hook.obj
+ 0001:000069c0       KfProbeNtQsi               00000001800079c0 f   ntqsi_hook.obj
+ 0001:00006ae1       __C_specific_handler       0000000180007ae1 f   ntoskrnl:ntoskrnl.exe
+ 0001:00006af0       __cpu_features_init        0000000180007af0 f   ntoskrnl:cpuinfo.obj
  0001:00006bc0       memcpy                     0000000180007bc0 f   ntoskrnl:memcpy.obj
  0001:00006bc0       memmove                    0000000180007bc0 f   ntoskrnl:memcpy.obj
  0001:00006e80       memset                     0000000180007e80 f   ntoskrnl:memset.obj
@@ -372,11 +372,11 @@
  0001:00004b70       KfCompleteWaitIrp          0000000180005b70 f   debughook.obj
  0001:00004c20       KfReportAndBlock           0000000180005c20 f   debughook.obj
  0001:00004e30       KfDebugHandler             0000000180005e30 f   debughook.obj
- 0001:00005450       KfCancelWaitIrp            0000000180006450 f   debughook.obj
- 0001:000054c0       KfDumpBytes                00000001800064c0 f   debughook.obj
- 0001:00006020       KfNtQsiHandler             0000000180007020 f   ntqsi_hook.obj
- 0001:00006090       DecodeInsnLength           0000000180007090 f   ntqsi_hook.obj
- 0001:00006250       FindNtQuerySystemInformation 0000000180007250 f   ntqsi_hook.obj
+ 0001:00005460       KfCancelWaitIrp            0000000180006460 f   debughook.obj
+ 0001:000054d0       KfDumpBytes                00000001800064d0 f   debughook.obj
+ 0001:00006030       KfNtQsiHandler             0000000180007030 f   ntqsi_hook.obj
+ 0001:000060a0       DecodeInsnLength           00000001800070a0 f   ntqsi_hook.obj
+ 0001:00006260       FindNtQuerySystemInformation 0000000180007260 f   ntqsi_hook.obj
  0001:00006bc0       $$000000                   0000000180007bc0     ntoskrnl:memcpy.obj
  0001:00006be0       mcpy00                     0000000180007be0     ntoskrnl:memcpy.obj
  0001:00006c00       mcpy10                     0000000180007c00     ntoskrnl:memcpy.obj

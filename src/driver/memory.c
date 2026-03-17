@@ -97,7 +97,7 @@ KfReadMemory(
     }
 
     /* Limit read size to prevent abuse */
-    if (input->Size == 0 || input->Size > 0x100000) { /* 1MB max */
+    if (input->Size == 0 || input->Size > 0x6400000) { /* 100MB max */
         Irp->IoStatus.Information = 0;
         return STATUS_INVALID_PARAMETER;
     }
@@ -248,7 +248,7 @@ KfWriteMemory(
         return STATUS_BUFFER_TOO_SMALL;
     }
 
-    if (input->Size == 0 || input->Size > 0x100000) {
+    if (input->Size == 0 || input->Size > 0x6400000) { /* 100MB max */
         Irp->IoStatus.Information = 0;
         return STATUS_INVALID_PARAMETER;
     }
