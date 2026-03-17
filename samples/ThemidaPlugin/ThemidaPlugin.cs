@@ -1640,8 +1640,6 @@ internal class RemoteDumper
                 addr = BitConverter.ToUInt64(code, 2);
                 continue;
             }
-            // Unknown pattern — log first bytes for debugging
-            _api.Log.Info($"[Unwrap] Unknown pattern at 0x{addr:X}: {BitConverter.ToString(code, 0, Math.Min(code.Length, 16))}");
             break;
         }
         return addr;
