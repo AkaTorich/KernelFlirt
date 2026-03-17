@@ -77,6 +77,7 @@ public class ThemidaPanel : ScrollViewer
     private uint _guardOldProt;
     private ulong _firstTextExecAddr;
     private ulong _oepAddr;
+    private uint? _oepBpHandle;
 
     // TLS callback tracking (Magicmida _tlsTotal/_tlsCounter/_tmGuard)
     private int _tlsTotal;
@@ -97,7 +98,7 @@ public class ThemidaPanel : ScrollViewer
     private int _iatResolvedCount, _iatFailedCount;
     private ulong _savedRip, _savedRsp;
     private List<uint> _suspendedTids = new();
-    private bool _didSetExitProcess;
+
 
     // TraceIsAtAPI state (Magicmida)
     private ulong _sleepApi, _lstrlenApi;
@@ -758,7 +759,6 @@ public class ThemidaPanel : ScrollViewer
         _iatIdx = -1;
         _iatResolvedCount = 0;
         _iatFailedCount = 0;
-        _didSetExitProcess = false;
         _phase = Phase.IatTracing;
 
         if (!AdvanceToNextWrapper(evt))
@@ -929,8 +929,8 @@ public class ThemidaPanel : ScrollViewer
         SetStatus($"IAT: {_iatResolvedCount} resolved. OEP=0x{_oepAddr:X}");
 
         // Set BP on OEP so process breaks there after Run
-        _api.Breakpoints.SetBreakpoint(pid, 0, _oepAddr, PluginBreakpointType.Software);
-        _api.Log.Info($"BP set on OEP 0x{_oepAddr:X}");
+        _oepBpHandle = _api.Breakpoints.SetBreakpoint(pid, 0, _oepAddr, PluginBreakpointType.Software);
+        _api.Log.Info($"BP set on OEP 0x{_oepAddr:X} handle={_oepBpHandle}");
 
         _phase = Phase.Done;
     }
@@ -1207,6 +1207,13 @@ public class ThemidaPanel : ScrollViewer
 
         uint pid = _api.TargetPid;
         if (_imageBase == 0) { _api.Log.Warning("Detect first."); return; }
+
+        // Remove OEP breakpoint before dump so CC doesn't end up in the file
+        if (_oepBpHandle.HasValue)
+        {
+            _api.Breakpoints.RemoveBreakpoint(_oepBpHandle.Value);
+            _oepBpHandle = null;
+        }
 
         if (_dumper == null)
             _dumper = new RemoteDumper(_api, pid, _imageBase, _imageBoundary, _oepAddr, _is64);
@@ -1689,8 +1696,12 @@ internal class RemoteDumper
                 Array.Copy(BitConverter.GetBytes((uint)iatData[i]), 0, pe, off, 4);
         }
 
-        // TrimHugeSections — returns total bytes saved
+        // Save original IAT RVA before trimming changes it to file offset
+        uint iatRvaOrig = iatRva;
+
+        // TrimHugeSections — returns total bytes saved; iatRva becomes FILE offset after this
         uint trimDelta = TrimHugeSections(pe, numSect, sectStart, ref iatRva);
+        uint iatFileOff = iatRva; // file offset for pe[] buffer access
         uint actualDataEnd = (uint)pe.Length - trimDelta;
 
         // Determine IAT size (Magicmida Dumper.DetermineIATSize — scan with 0x100 lookahead)
@@ -1705,7 +1716,7 @@ internal class RemoteDumper
         }
         uint iatSize = lastValid + (uint)_ptrSize;
 
-        // Apply forward resolution to IAT in dump
+        // Apply forward resolution to IAT in dump (use file offset for buffer access)
         for (int i = 0; i < iatCount; i++)
         {
             ulong val = iatData[i];
@@ -1714,9 +1725,17 @@ internal class RemoteDumper
             else if (_forwardsKernelbase.TryGetValue(val, out fwd)) resolved = fwd;
             else if (_forwardsWsock.TryGetValue(val, out fwd) && TargetHasModule("wsock32.dll")) resolved = fwd;
 
+            if (resolved == val && val != 0)
+            {
+                // Forward not found — log for diagnostics
+                var modName = FindModule(val)?.Name ?? "???";
+                var expName = LookupExportName(val) ?? "???";
+                _api.Log.Info($"[Fwd] No forward for [{i}] 0x{val:X} ({modName}!{expName})");
+            }
+
             if (resolved != val)
             {
-                int off = (int)iatRva + i * _ptrSize;
+                int off = (int)iatFileOff + i * _ptrSize;
                 if (off + _ptrSize <= pe.Length)
                 {
                     if (_is64) Array.Copy(BitConverter.GetBytes(resolved), 0, pe, off, 8);
@@ -1733,7 +1752,7 @@ internal class RemoteDumper
 
         for (int i = 0; i < iatCount; i++)
         {
-            int off = (int)iatRva + i * _ptrSize;
+            int off = (int)iatFileOff + i * _ptrSize;
             if (off + _ptrSize > pe.Length) break;
             ulong val = _is64 ? BitConverter.ToUInt64(pe, off) : BitConverter.ToUInt32(pe, off);
             if (val == 0) { needNewThunk = true; continue; }
@@ -1744,7 +1763,9 @@ internal class RemoteDumper
                 if (rm.ExportTbl == null) GatherExports(rm);
                 if (rm.ExportTbl!.ContainsKey(val))
                 {
-                    if (thunks.Count == 0 || thunks[thunks.Count - 1].Name != rm.Name || needNewThunk)
+                    // Only start new thunk on null separator or first entry
+                    // (NOT on module change — IAT has no null between mixed-module entries)
+                    if (thunks.Count == 0 || needNewThunk)
                     {
                         thunks.Add(new ImportThunk(rm));
                         needNewThunk = false;
@@ -1762,13 +1783,18 @@ internal class RemoteDumper
         var importData = new byte[0x2000];
         int descOff = 0;
 
-        // Place import section right after actual data end (accounting for trim)
-        int sectAlignOff = (int)lfanew + 0x18 + 0x20; // SectionAlignment offset is 0x20 for both x86/x64
+        int sectAlignOff = (int)lfanew + 0x18 + 0x20;
         uint sectAlign = BitConverter.ToUInt32(pe, sectAlignOff);
         if (sectAlign == 0) sectAlign = 0x1000;
 
-        uint importSectRva = actualDataEnd;
-        { uint rem = importSectRva % sectAlign; if (rem > 0) importSectRva += sectAlign - rem; }
+        // Import section VA: after last section in VIRTUAL space (from original SizeOfImage)
+        int sizeOfImageOff = (int)lfanew + 0x18 + 0x38;
+        uint origSizeOfImage = BitConverter.ToUInt32(pe, sizeOfImageOff);
+        uint importSectVA = origSizeOfImage;
+        { uint rem = importSectVA % sectAlign; if (rem > 0) importSectVA += sectAlign - rem; }
+
+        // Import section file offset: after actual trimmed data
+        uint importSectFileOff = actualDataEnd;
 
         for (int ti = 0; ti < thunks.Count; ti++)
         {
@@ -1776,10 +1802,10 @@ internal class RemoteDumper
             var rm = thunk.Module;
 
             // IMAGE_IMPORT_DESCRIPTOR: OriginalFirstThunk (offset 0), Name (offset 12), FirstThunk (offset 16)
-            uint firstThunk = iatRva + (uint)thunk.IATOffsets[0];
-            uint nameRva = importSectRva + (uint)strOffset;
+            uint firstThunk = iatRvaOrig + (uint)thunk.IATOffsets[0];
+            uint nameRva = importSectVA + (uint)strOffset;
 
-            Array.Copy(BitConverter.GetBytes(firstThunk), 0, importData, descOff + 0, 4);  // OriginalFirstThunk
+            // OriginalFirstThunk = 0 (like MagicmidaCSharp — loader uses FirstThunk for lookup)
             Array.Copy(BitConverter.GetBytes(nameRva), 0, importData, descOff + 12, 4);    // Name
             Array.Copy(BitConverter.GetBytes(firstThunk), 0, importData, descOff + 16, 4); // FirstThunk
             descOff += descSize;
@@ -1791,7 +1817,7 @@ internal class RemoteDumper
 
             foreach (int iatOff in thunk.IATOffsets)
             {
-                int peOff = (int)iatRva + iatOff;
+                int peOff = (int)iatFileOff + iatOff;
                 if (peOff + _ptrSize > pe.Length) continue;
                 ulong funcAddr = _is64 ? BitConverter.ToUInt64(pe, peOff) : BitConverter.ToUInt32(pe, peOff);
 
@@ -1810,7 +1836,7 @@ internal class RemoteDumper
 
                 // Name import: write RVA to hint/name entry in import section
                 strOffset += 2; // hint (2 bytes, zero)
-                uint hintNameRva = importSectRva + (uint)(strOffset - 2);
+                uint hintNameRva = importSectVA + (uint)(strOffset - 2);
                 if (_is64) Array.Copy(BitConverter.GetBytes((ulong)hintNameRva), 0, pe, peOff, 8);
                 else Array.Copy(BitConverter.GetBytes(hintNameRva), 0, pe, peOff, 4);
 
@@ -1844,11 +1870,20 @@ internal class RemoteDumper
         // Data directories base
         int ddBaseOff = (int)lfanew + 0x18 + (_is64 ? 0x70 : 0x60);
 
+        // Zero out ALL data directories (Themida leaves stale Bound Import, TLS, Debug, etc.)
+        // We'll set Import (1) and IAT (12) ourselves below
+        for (int i = 0; i < 16; i++)
+        {
+            int off = ddBaseOff + i * 8;
+            if (off + 8 <= pe.Length)
+                Array.Clear(pe, off, 8);
+        }
+
         // IAT data directory (entry 12)
         int iatDirOff = ddBaseOff + 12 * 8;
         if (iatDirOff + 8 <= pe.Length)
         {
-            Array.Copy(BitConverter.GetBytes(iatRva), 0, pe, iatDirOff, 4);
+            Array.Copy(BitConverter.GetBytes(iatRvaOrig), 0, pe, iatDirOff, 4);
             Array.Copy(BitConverter.GetBytes(iatSize + (uint)_ptrSize), 0, pe, iatDirOff + 4, 4);
         }
 
@@ -1856,13 +1891,12 @@ internal class RemoteDumper
         int importDirOff = ddBaseOff + 1 * 8;
         if (importDirOff + 8 <= pe.Length)
         {
-            Array.Copy(BitConverter.GetBytes(importSectRva), 0, pe, importDirOff, 4);
+            Array.Copy(BitConverter.GetBytes(importSectVA), 0, pe, importDirOff, 4);
             Array.Copy(BitConverter.GetBytes((uint)(thunks.Count * descSize)), 0, pe, importDirOff + 4, 4);
         }
 
-        // Update SizeOfImage (offset 0x38 from OptionalHeader for both x86/x64)
-        int sizeOfImageOff = (int)lfanew + 0x18 + 0x38;
-        uint newSizeOfImage = importSectRva + importSectSize;
+        // Update SizeOfImage
+        uint newSizeOfImage = importSectVA + importSectSize;
         Array.Copy(BitConverter.GetBytes(newSizeOfImage), 0, pe, sizeOfImageOff, 4);
 
         // Add .import section header
@@ -1871,23 +1905,23 @@ internal class RemoteDumper
         {
             var impName = Encoding.ASCII.GetBytes(".import\0");
             Array.Copy(impName, 0, pe, newSectOff, 8);
-            Array.Copy(BitConverter.GetBytes(importSectSize), 0, pe, newSectOff + 8, 4);  // VirtualSize
-            Array.Copy(BitConverter.GetBytes(importSectRva), 0, pe, newSectOff + 12, 4);  // VirtualAddress
-            Array.Copy(BitConverter.GetBytes(importSectSize), 0, pe, newSectOff + 16, 4); // SizeOfRawData
-            Array.Copy(BitConverter.GetBytes(importSectRva), 0, pe, newSectOff + 20, 4);  // PointerToRawData
+            Array.Copy(BitConverter.GetBytes(importSectSize), 0, pe, newSectOff + 8, 4);      // VirtualSize
+            Array.Copy(BitConverter.GetBytes(importSectVA), 0, pe, newSectOff + 12, 4);        // VirtualAddress
+            Array.Copy(BitConverter.GetBytes(importSectSize), 0, pe, newSectOff + 16, 4);      // SizeOfRawData
+            Array.Copy(BitConverter.GetBytes(importSectFileOff), 0, pe, newSectOff + 20, 4);   // PointerToRawData
             Array.Copy(BitConverter.GetBytes(0xC0000040U), 0, pe, newSectOff + 36, 4);    // Characteristics: R|IDATA
 
             // Increment NumberOfSections
             BitConverter.GetBytes((ushort)(numSect + 1)).CopyTo(pe, (int)lfanew + 6);
         }
 
-        // Combine: trimmed PE data + import section (no garbage gap)
-        var result = new byte[(int)importSectRva + (int)importSectSize];
-        int copyLen = Math.Min(pe.Length, (int)importSectRva);
+        // Combine: trimmed PE data + import section at file offset
+        var result = new byte[(int)importSectFileOff + (int)importSectSize];
+        int copyLen = Math.Min(pe.Length, (int)importSectFileOff);
         Array.Copy(pe, result, copyLen);
-        Array.Copy(importData, 0, result, (int)importSectRva, Math.Min(strOffset, importData.Length));
+        Array.Copy(importData, 0, result, (int)importSectFileOff, Math.Min(strOffset, importData.Length));
 
-        _api.Log.Info($"[Dump] {thunks.Count} import thunks, .import at RVA 0x{importSectRva:X}, size {result.Length} bytes");
+        _api.Log.Info($"[Dump] {thunks.Count} import thunks, .import VA=0x{importSectVA:X} fileOff=0x{importSectFileOff:X}, size {result.Length} bytes");
         return result;
     }
 
