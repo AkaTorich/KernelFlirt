@@ -234,10 +234,17 @@ static BOOL HandleCreateProcess(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, D
     PROCESS_INFORMATION pi = {0};
     si.cb = sizeof(si);
 
+    /* Disable Application Compatibility shims (aclayers.dll) for the child.
+       aclayers hooks HeapAlloc/HeapSize/HeapReAlloc which breaks IAT resolution. */
+    SetEnvironmentVariableW(L"__COMPAT_LAYER", L"");
+
     BOOL ok = CreateProcessW(
         exePath, NULL, NULL, NULL, FALSE,
         CREATE_SUSPENDED,
         NULL, NULL, &si, &pi);
+
+    /* Restore: remove __COMPAT_LAYER from our own environment */
+    SetEnvironmentVariableW(L"__COMPAT_LAYER", NULL);
 
     if (!ok) {
         printf("[relay] CreateProcess failed: %lu\n", GetLastError());
