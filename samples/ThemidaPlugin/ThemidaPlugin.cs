@@ -597,6 +597,19 @@ public class ThemidaPanel : ScrollViewer
             }
         }
 
+        // Check for Themida stolen bytes: "sub rsp, 28h" (48 83 EC 28) right before detected OEP.
+        // Themida steals the first instruction and executes it in VM, then jumps to the next one.
+        if (_is64)
+        {
+            var pre = _api.Memory.ReadMemory(pid, rip - 4, 4);
+            if (pre != null && pre.Length == 4 &&
+                pre[0] == 0x48 && pre[1] == 0x83 && pre[2] == 0xEC && pre[3] == 0x28)
+            {
+                rip -= 4;
+                _api.Log.Info($"[OEP] Adjusted for stolen 'sub rsp,28h': 0x{rip:X}");
+            }
+        }
+
         _oepAddr = rip;
         _api.Log.Warning($"OEP = 0x{_oepAddr:X}");
         SetStatus($"OEP = 0x{_oepAddr:X}");
@@ -1294,12 +1307,13 @@ internal class RemoteModule
     public Dictionary<ulong, string>? ExportTbl;
 }
 
+internal record ImportEntry(int IATOffset, string ExportName);
+
 internal class ImportThunk
 {
-    public RemoteModule Module;
     public string Name;
-    public List<int> IATOffsets = new();
-    public ImportThunk(RemoteModule m) { Module = m; Name = m.Name; }
+    public List<ImportEntry> Entries = new();
+    public ImportThunk(string dllName) { Name = dllName; }
 }
 
 internal class RemoteDumper
@@ -1315,10 +1329,13 @@ internal class RemoteDumper
     private List<RemoteModule>? _allModules;
     public ulong IAT { get; set; }
 
-    // Forward tables (built from local DLLs — same arch)
-    private Dictionary<ulong, ulong> _forwards = new();
-    private Dictionary<ulong, ulong> _forwardsKernelbase = new();
-    private Dictionary<ulong, ulong> _forwardsWsock = new();
+    // Forward name map: "ntdll.RtlInitializeSListHead" → ("kernel32.dll", "InitializeSListHead")
+    // Maps target module.function → (source DLL name, source export name)
+    private Dictionary<string, (string DllName, string ExportName)> _forwardNameMap
+        = new(StringComparer.OrdinalIgnoreCase);
+
+    // All kernel32 export names (for fallback: if kernel32 exports the same name, use kernel32)
+    private HashSet<string> _kernel32ExportNames = new(StringComparer.OrdinalIgnoreCase);
 
     public RemoteDumper(IDebuggerApi api, uint pid, ulong imageBase, ulong imageBoundary, ulong oep, bool is64)
     {
@@ -1333,28 +1350,41 @@ internal class RemoteDumper
         CollectForwards();
     }
 
-    // ── Forward resolution (Magicmida CollectNTFwd) ──
-    // Uses local DLLs since host is same architecture. Maps forwarded addresses back to exporting DLL.
+    // ── Forward resolution (name-based) ──
+    // Builds _forwardNameMap: "ntdll.RtlInitializeSListHead" → ("kernel32.dll", "InitializeSListHead")
+    // No address manipulation — works regardless of DLL base differences between host and target.
     private unsafe void CollectForwards()
     {
         try
         {
-            CollectForwardsFrom(_forwards, "kernel32.dll");
-            CollectForwardsFrom(_forwards, "user32.dll");
-            CollectForwardsFrom(_forwards, "ole32.dll");
-            CollectForwardsFrom(_forwards, "advapi32.dll");
-            LoadAndCollect(_forwards, "netapi32.dll", "srvcli.dll", "samcli.dll");
+            BuildExportNameSet("kernel32.dll", _kernel32ExportNames);
+            _api.Log.Info($"[Fwd] kernel32 has {_kernel32ExportNames.Count} export names");
+            CollectForwardsFromDll("kernel32.dll");
+            CollectForwardsFromDll("user32.dll");
+            CollectForwardsFromDll("ole32.dll");
+            CollectForwardsFromDll("advapi32.dll");
+            CollectForwardsFromDll("kernelbase.dll");
+            LoadAndCollectFwd("netapi32.dll", "srvcli.dll", "samcli.dll");
             if (Environment.OSVersion.Version.Major >= 6)
-                LoadAndCollect(_forwards, "crypt32.dll", "dpapi.dll");
-            LoadAndCollect(_forwards, "dbghelp.dll", "dbgcore.dll");
-            LoadAndCollect(_forwards, "setupapi.dll", "cfgmgr32.dll");
-            LoadAndCollect(_forwardsWsock, "wsock32.dll", "ws2_32.dll");
-            CollectForwardsFrom(_forwardsKernelbase, "kernelbase.dll");
+                LoadAndCollectFwd("crypt32.dll", "dpapi.dll");
+            LoadAndCollectFwd("dbghelp.dll", "dbgcore.dll");
+            LoadAndCollectFwd("setupapi.dll", "cfgmgr32.dll");
+            LoadAndCollectFwd("wsock32.dll", "ws2_32.dll");
         }
-        catch { } // Non-critical — forward resolution is best-effort
+        catch (Exception ex)
+        {
+            _api.Log.Error($"[Fwd] CollectForwards exception: {ex.GetType().Name}: {ex.Message}");
+        }
+        _api.Log.Info($"[Fwd] Collected {_forwardNameMap.Count} name-based forwards");
+        int shown = 0;
+        foreach (var kv in _forwardNameMap)
+        {
+            if (shown++ >= 5) break;
+            _api.Log.Info($"[Fwd]   '{kv.Key}' -> ({kv.Value.DllName}, {kv.Value.ExportName})");
+        }
     }
 
-    private unsafe void LoadAndCollect(Dictionary<ulong, ulong> fwds, string mainDll, params string[] deps)
+    private unsafe void LoadAndCollectFwd(string mainDll, params string[] deps)
     {
         var handles = new List<IntPtr>();
         foreach (var dep in deps)
@@ -1365,13 +1395,45 @@ internal class RemoteDumper
         var hMain = NativeMethods.LoadLibraryW(mainDll);
         if (hMain != IntPtr.Zero)
         {
-            CollectForwardsFromHandle(fwds, hMain);
+            CollectForwardsFromHandle(hMain, mainDll);
             NativeMethods.FreeLibrary(hMain);
         }
         foreach (var h in handles) NativeMethods.FreeLibrary(h);
     }
 
-    private unsafe void CollectForwardsFromHandle(Dictionary<ulong, ulong> fwds, IntPtr hMod)
+    private unsafe void CollectForwardsFromDll(string dllName)
+    {
+        var hMod = NativeMethods.GetModuleHandleA(dllName);
+        if (hMod == IntPtr.Zero) hMod = NativeMethods.LoadLibraryW(dllName);
+        if (hMod == IntPtr.Zero) return;
+        try { CollectForwardsFromHandle(hMod, dllName); } catch { }
+    }
+
+    /// <summary>
+    /// Build set of ALL export names from a DLL (forwarded + direct).
+    /// Used as fallback: if kernelbase exports "FlsAlloc" and kernel32 also exports "FlsAlloc",
+    /// we can safely map it to kernel32 (kernel32 forwards to kernelbase anyway).
+    /// </summary>
+    private unsafe void BuildExportNameSet(string dllName, HashSet<string> nameSet)
+    {
+        var hMod = NativeMethods.GetModuleHandleA(dllName);
+        if (hMod == IntPtr.Zero) return;
+        byte* modBase = (byte*)hMod;
+        int lfanew = *(int*)(modBase + 0x3C);
+        int ddOff = _is64 ? lfanew + 4 + 20 + 0x70 : lfanew + 4 + 20 + 0x60;
+        uint expRva = *(uint*)(modBase + ddOff);
+        if (expRva == 0) return;
+        byte* expDir = modBase + expRva;
+        uint numNames = *(uint*)(expDir + 24);
+        uint* addrNames = (uint*)(modBase + *(uint*)(expDir + 32));
+        for (uint j = 0; j < numNames; j++)
+        {
+            string name = Marshal.PtrToStringAnsi((IntPtr)(modBase + addrNames[j])) ?? "";
+            if (name.Length > 0) nameSet.Add(name);
+        }
+    }
+
+    private unsafe void CollectForwardsFromHandle(IntPtr hMod, string srcDllName)
     {
         byte* modBase = (byte*)hMod;
         int lfanew = *(int*)(modBase + 0x3C);
@@ -1382,7 +1444,18 @@ internal class RemoteDumper
 
         byte* expDir = modBase + expRva;
         uint numFuncs = *(uint*)(expDir + 20);
+        uint numNames = *(uint*)(expDir + 24);
         uint* addrFuncs = (uint*)(modBase + *(uint*)(expDir + 28));
+        uint* addrNames = (uint*)(modBase + *(uint*)(expDir + 32));
+        ushort* addrOrdinals = (ushort*)(modBase + *(uint*)(expDir + 36));
+
+        // Build ordinal → export name map
+        var ordToName = new Dictionary<uint, string>();
+        for (uint j = 0; j < numNames; j++)
+        {
+            string name = Marshal.PtrToStringAnsi((IntPtr)(modBase + addrNames[j])) ?? "";
+            ordToName[addrOrdinals[j]] = name;
+        }
 
         for (uint i = 0; i < numFuncs; i++)
         {
@@ -1395,27 +1468,79 @@ internal class RemoteDumper
                     ((dot > 0 && dot < 15) || fwdStr.Contains("api-ms-win")) &&
                     !fwdStr.Contains(".#"))
                 {
-                    string modName = fwdStr.Substring(0, dot);
-                    string procName = fwdStr.Substring(dot + 1);
-                    var hTarget = NativeMethods.GetModuleHandleA(modName);
-                    if (hTarget == IntPtr.Zero) hTarget = NativeMethods.LoadLibraryW(modName + ".dll");
+                    string targetMod = fwdStr.Substring(0, dot);
+                    string targetProc = fwdStr.Substring(dot + 1);
+
+                    // Get source export name for this ordinal
+                    if (!ordToName.TryGetValue(i, out string? srcExportName))
+                        continue; // no name → skip
+
+                    // Store direct: "ntdll.RtlInitializeSListHead" → ("kernel32.dll", "InitializeSListHead")
+                    _forwardNameMap[$"{targetMod}.{targetProc}"] = (srcDllName, srcExportName);
+
+                    // Chase forward chain for api-ms-win → kernelbase → ntdll etc.
+                    var hTarget = NativeMethods.GetModuleHandleA(targetMod);
+                    if (hTarget == IntPtr.Zero) hTarget = NativeMethods.LoadLibraryW(targetMod + ".dll");
                     if (hTarget != IntPtr.Zero)
-                    {
-                        var procAddr = NativeMethods.GetProcAddress(hTarget, procName);
-                        if (procAddr != IntPtr.Zero)
-                            fwds[(ulong)(long)procAddr] = (ulong)(long)hMod + addrFuncs[i];
-                    }
+                        ChaseForwardChain(hTarget, targetProc, srcDllName, srcExportName);
                 }
             }
         }
     }
 
-    private unsafe void CollectForwardsFrom(Dictionary<ulong, ulong> fwds, string dllName)
+    /// <summary>
+    /// Follows forward chains: kernel32→api-ms-win.Foo→kernelbase.Foo→ntdll.Bar
+    /// Stores all intermediate and final mappings back to the original source.
+    /// </summary>
+    private unsafe void ChaseForwardChain(IntPtr hMod, string procName, string srcDllName, string srcExportName)
     {
-        var hMod = NativeMethods.GetModuleHandleA(dllName);
-        if (hMod == IntPtr.Zero) hMod = NativeMethods.LoadLibraryW(dllName);
-        if (hMod == IntPtr.Zero) return;
-        try { CollectForwardsFromHandle(fwds, hMod); } catch { }
+        for (int hop = 0; hop < 4; hop++)
+        {
+            byte* modBase = (byte*)hMod;
+            int lfanew = *(int*)(modBase + 0x3C);
+            int ddOff = _is64 ? lfanew + 4 + 20 + 0x70 : lfanew + 4 + 20 + 0x60;
+            uint eRva = *(uint*)(modBase + ddOff);
+            uint eSize = *(uint*)(modBase + ddOff + 4);
+            if (eRva == 0 || eSize == 0) return;
+
+            byte* eDir = modBase + eRva;
+            uint nNames = *(uint*)(eDir + 24);
+            uint* aFuncs = (uint*)(modBase + *(uint*)(eDir + 28));
+            uint* aNames = (uint*)(modBase + *(uint*)(eDir + 32));
+            ushort* aOrds = (ushort*)(modBase + *(uint*)(eDir + 36));
+
+            bool found = false;
+            for (uint j = 0; j < nNames; j++)
+            {
+                string name = Marshal.PtrToStringAnsi((IntPtr)(modBase + aNames[j])) ?? "";
+                if (!string.Equals(name, procName, StringComparison.Ordinal)) continue;
+
+                uint funcRva = aFuncs[aOrds[j]];
+                byte* funcPtr = modBase + funcRva;
+                if (funcPtr >= eDir && funcPtr < eDir + eSize)
+                {
+                    string chainStr = Marshal.PtrToStringAnsi((IntPtr)funcPtr) ?? "";
+                    int chainDot = chainStr.IndexOf('.');
+                    if (chainDot > 0 && chainStr.Length > chainDot + 1)
+                    {
+                        string chainMod = chainStr.Substring(0, chainDot);
+                        string chainProc = chainStr.Substring(chainDot + 1);
+                        _forwardNameMap[$"{chainMod}.{chainProc}"] = (srcDllName, srcExportName);
+
+                        var hNext = NativeMethods.GetModuleHandleA(chainMod);
+                        if (hNext == IntPtr.Zero) hNext = NativeMethods.LoadLibraryW(chainMod + ".dll");
+                        if (hNext != IntPtr.Zero)
+                        {
+                            hMod = hNext;
+                            procName = chainProc;
+                            found = true;
+                        }
+                    }
+                }
+                break;
+            }
+            if (!found) return;
+        }
     }
 
     // ── Module snapshot and export table parsing ──
@@ -1462,6 +1587,64 @@ internal class RemoteDumper
             }
         }
         return null;
+    }
+
+    /// <summary>
+    /// Follow JMP/CALL trampolines (aclayers shim hooks, Themida wrappers) to find real target.
+    /// </summary>
+    private ulong TryUnwrapTrampoline(ulong addr, int maxHops = 5)
+    {
+        for (int hop = 0; hop < maxHops; hop++)
+        {
+            var code = _api.Memory.ReadMemory(_pid, addr, 16);
+            if (code == null || code.Length < 6) return addr;
+
+            // E9 rel32 — JMP rel32
+            if (code[0] == 0xE9)
+            {
+                int disp = BitConverter.ToInt32(code, 1);
+                addr = (ulong)((long)addr + 5 + disp);
+                continue;
+            }
+            // FF 25 disp32 — JMP [RIP+disp32]
+            if (code[0] == 0xFF && code[1] == 0x25)
+            {
+                int disp = BitConverter.ToInt32(code, 2);
+                ulong ptr = (ulong)((long)addr + 6 + disp);
+                var ptrData = _api.Memory.ReadMemory(_pid, ptr, (uint)_ptrSize);
+                if (ptrData == null) return addr;
+                addr = _is64 ? BitConverter.ToUInt64(ptrData) : BitConverter.ToUInt32(ptrData);
+                continue;
+            }
+            // 48 FF 25 disp32 — REX.W JMP [RIP+disp32]
+            if (_is64 && code[0] == 0x48 && code[1] == 0xFF && code[2] == 0x25)
+            {
+                int disp = BitConverter.ToInt32(code, 3);
+                ulong ptr = (ulong)((long)addr + 7 + disp);
+                var ptrData = _api.Memory.ReadMemory(_pid, ptr, 8);
+                if (ptrData == null) return addr;
+                addr = BitConverter.ToUInt64(ptrData);
+                continue;
+            }
+            // 48 B8 imm64; FF E0 — mov rax, imm64; jmp rax
+            if (_is64 && code.Length >= 12 && code[0] == 0x48 && code[1] == 0xB8
+                && code[10] == 0xFF && code[11] == 0xE0)
+            {
+                addr = BitConverter.ToUInt64(code, 2);
+                continue;
+            }
+            // 48 B8 imm64; FF D0 — mov rax, imm64; call rax (tail-call style)
+            if (_is64 && code.Length >= 12 && code[0] == 0x48 && code[1] == 0xB8
+                && code[10] == 0xFF && code[11] == 0xD0)
+            {
+                addr = BitConverter.ToUInt64(code, 2);
+                continue;
+            }
+            // Unknown pattern — log first bytes for debugging
+            _api.Log.Info($"[Unwrap] Unknown pattern at 0x{addr:X}: {BitConverter.ToString(code, 0, Math.Min(code.Length, 16))}");
+            break;
+        }
+        return addr;
     }
 
     private RemoteModule? FindModule(ulong address)
@@ -1716,65 +1899,100 @@ internal class RemoteDumper
         }
         uint iatSize = lastValid + (uint)_ptrSize;
 
-        // Apply forward resolution to IAT in dump (use file offset for buffer access)
-        for (int i = 0; i < iatCount; i++)
-        {
-            ulong val = iatData[i];
-            ulong resolved = val;
-            if (_forwards.TryGetValue(val, out var fwd)) resolved = fwd;
-            else if (_forwardsKernelbase.TryGetValue(val, out fwd)) resolved = fwd;
-            else if (_forwardsWsock.TryGetValue(val, out fwd) && TargetHasModule("wsock32.dll")) resolved = fwd;
-
-            if (resolved == val && val != 0)
-            {
-                // Forward not found — log for diagnostics
-                var modName = FindModule(val)?.Name ?? "???";
-                var expName = LookupExportName(val) ?? "???";
-                _api.Log.Info($"[Fwd] No forward for [{i}] 0x{val:X} ({modName}!{expName})");
-            }
-
-            if (resolved != val)
-            {
-                int off = (int)iatFileOff + i * _ptrSize;
-                if (off + _ptrSize <= pe.Length)
-                {
-                    if (_is64) Array.Copy(BitConverter.GetBytes(resolved), 0, pe, off, 8);
-                    else Array.Copy(BitConverter.GetBytes((uint)resolved), 0, pe, off, 4);
-                }
-            }
-        }
-
-        // Build import directory (Magicmida Dumper.Process)
+        // Build import directory with forward resolution by NAME
+        // No IAT address modification — resolves module/name during thunk building
         if (_allModules == null) TakeModuleSnapshot();
 
         var thunks = new List<ImportThunk>();
         bool needNewThunk = false;
+        int fwdHits = 0;
 
-        for (int i = 0; i < iatCount; i++)
+        int iatSlotCount = (int)(iatSize / (uint)_ptrSize);
+        for (int i = 0; i < iatSlotCount; i++)
         {
-            int off = (int)iatFileOff + i * _ptrSize;
-            if (off + _ptrSize > pe.Length) break;
-            ulong val = _is64 ? BitConverter.ToUInt64(pe, off) : BitConverter.ToUInt32(pe, off);
+            ulong val = iatData[i];
             if (val == 0) { needNewThunk = true; continue; }
 
             var rm = FindModule(val);
-            if (rm != null)
+            if (rm != null && rm.ExportTbl == null) GatherExports(rm);
+
+            // If not found or not in export table, try unwrapping trampolines
+            // (aclayers shim hooks, Themida wrappers that JMP to real functions)
+            if (rm == null || !rm.ExportTbl!.ContainsKey(val))
             {
-                if (rm.ExportTbl == null) GatherExports(rm);
-                if (rm.ExportTbl!.ContainsKey(val))
+                ulong unwrapped = TryUnwrapTrampoline(val);
+                if (unwrapped != val)
                 {
-                    // Only start new thunk on null separator or first entry
-                    // (NOT on module change — IAT has no null between mixed-module entries)
-                    if (thunks.Count == 0 || needNewThunk)
+                    var rm2 = FindModule(unwrapped);
+                    if (rm2 != null)
                     {
-                        thunks.Add(new ImportThunk(rm));
-                        needNewThunk = false;
+                        if (rm2.ExportTbl == null) GatherExports(rm2);
+                        if (rm2.ExportTbl!.ContainsKey(unwrapped))
+                        {
+                            _api.Log.Info($"[IAT] Slot {i}: unwrapped 0x{val:X} → 0x{unwrapped:X} ({rm2.Name})");
+                            val = unwrapped;
+                            rm = rm2;
+                        }
                     }
-                    thunks[thunks.Count - 1].IATOffsets.Add(i * _ptrSize);
                 }
-                else needNewThunk = true;
             }
-            else needNewThunk = true;
+
+            if (rm == null)
+            {
+                _api.Log.Warning($"[IAT] Slot {i}: 0x{val:X} — no module found");
+                needNewThunk = true; continue;
+            }
+            if (!rm.ExportTbl!.ContainsKey(val))
+            {
+                _api.Log.Warning($"[IAT] Slot {i}: 0x{val:X} in {rm.Name} — not in export table");
+                needNewThunk = true; continue;
+            }
+
+            string exportName = rm.ExportTbl[val];
+            string dllName = rm.Name;
+
+            // Forward resolution: if this is e.g. ntdll!RtlInitializeSListHead,
+            // map it to kernel32!InitializeSListHead
+            string modShort = rm.Name.Replace(".dll", "");
+            string nameKey = $"{modShort}.{exportName}";
+            if (_forwardNameMap.TryGetValue(nameKey, out var fwdInfo))
+            {
+                dllName = fwdInfo.DllName;
+                exportName = fwdInfo.ExportName;
+                fwdHits++;
+            }
+            else if (!dllName.Equals("kernel32.dll", StringComparison.OrdinalIgnoreCase)
+                     && _kernel32ExportNames.Contains(exportName))
+            {
+                // Fallback: kernel32 exports the same name (via forwarding to kernelbase/ntdll).
+                // api-ms-win virtual DLLs prevent ChaseForwardChain from following the full chain,
+                // so "kernelbase.FlsAlloc" etc. aren't in the forward map. But kernel32 exports them.
+                dllName = "kernel32.dll";
+                fwdHits++;
+            }
+
+            // Start new thunk only on gap/skip — NOT on DLL name change.
+            // Within a contiguous IAT group, all entries were imported from the same DLL.
+            if (thunks.Count == 0 || needNewThunk)
+            {
+                thunks.Add(new ImportThunk(dllName));
+                needNewThunk = false;
+            }
+            thunks[thunks.Count - 1].Entries.Add(new ImportEntry(i * _ptrSize, exportName));
+        }
+        _api.Log.Info($"[Fwd] {fwdHits} forwards resolved by name");
+
+        // Zero out entire IAT region so skipped/unresolved entries become null terminators.
+        // This prevents the PE loader from reading stale runtime addresses (aclayers, internal ptrs)
+        // past the end of each import descriptor's thunk list.
+        {
+            int iatZeroStart = (int)iatFileOff;
+            int iatZeroLen = (int)iatSize + _ptrSize; // include trailing null
+            if (iatZeroStart >= 0 && iatZeroStart + iatZeroLen <= pe.Length)
+            {
+                Array.Clear(pe, iatZeroStart, iatZeroLen);
+                _api.Log.Info($"[IAT] Zeroed IAT region: file offset 0x{iatZeroStart:X} len 0x{iatZeroLen:X}");
+            }
         }
 
         // Build .import section data
@@ -1799,10 +2017,9 @@ internal class RemoteDumper
         for (int ti = 0; ti < thunks.Count; ti++)
         {
             var thunk = thunks[ti];
-            var rm = thunk.Module;
 
             // IMAGE_IMPORT_DESCRIPTOR: OriginalFirstThunk (offset 0), Name (offset 12), FirstThunk (offset 16)
-            uint firstThunk = iatRvaOrig + (uint)thunk.IATOffsets[0];
+            uint firstThunk = iatRvaOrig + (uint)thunk.Entries[0].IATOffset;
             uint nameRva = importSectVA + (uint)strOffset;
 
             // OriginalFirstThunk = 0 (like MagicmidaCSharp — loader uses FirstThunk for lookup)
@@ -1815,14 +2032,12 @@ internal class RemoteDumper
                 Array.Copy(nameBytes, 0, importData, strOffset, nameBytes.Length);
             strOffset += nameBytes.Length + 1;
 
-            foreach (int iatOff in thunk.IATOffsets)
+            foreach (var entry in thunk.Entries)
             {
-                int peOff = (int)iatFileOff + iatOff;
+                int peOff = (int)iatFileOff + entry.IATOffset;
                 if (peOff + _ptrSize > pe.Length) continue;
-                ulong funcAddr = _is64 ? BitConverter.ToUInt64(pe, peOff) : BitConverter.ToUInt32(pe, peOff);
 
-                string? funcName = rm.ExportTbl!.TryGetValue(funcAddr, out var n) ? n : null;
-                if (funcName == null) continue;
+                string funcName = entry.ExportName;
 
                 if (funcName.StartsWith("#"))
                 {
@@ -1869,15 +2084,6 @@ internal class RemoteDumper
 
         // Data directories base
         int ddBaseOff = (int)lfanew + 0x18 + (_is64 ? 0x70 : 0x60);
-
-        // Zero out ALL data directories (Themida leaves stale Bound Import, TLS, Debug, etc.)
-        // We'll set Import (1) and IAT (12) ourselves below
-        for (int i = 0; i < 16; i++)
-        {
-            int off = ddBaseOff + i * 8;
-            if (off + 8 <= pe.Length)
-                Array.Clear(pe, off, 8);
-        }
 
         // IAT data directory (entry 12)
         int iatDirOff = ddBaseOff + 12 * 8;
