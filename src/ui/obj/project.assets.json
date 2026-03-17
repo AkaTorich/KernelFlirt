@@ -342,11 +342,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\psysh\\OneDrive\\Desktop\\KernelFlirt\\src\\ui\\KernelFlirt.UI.csproj",
+      "projectUniqueName": "C:\\Users\\psysh\\OneDrive\\Desktop\\Magicmida\\KernelFlirt\\src\\ui\\KernelFlirt.UI.csproj",
       "projectName": "KernelFlirt",
-      "projectPath": "C:\\Users\\psysh\\OneDrive\\Desktop\\KernelFlirt\\src\\ui\\KernelFlirt.UI.csproj",
+      "projectPath": "C:\\Users\\psysh\\OneDrive\\Desktop\\Magicmida\\KernelFlirt\\src\\ui\\KernelFlirt.UI.csproj",
       "packagesPath": "C:\\Users\\psysh\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\psysh\\OneDrive\\Desktop\\KernelFlirt\\src\\ui\\obj\\",
+      "outputPath": "C:\\Users\\psysh\\OneDrive\\Desktop\\Magicmida\\KernelFlirt\\src\\ui\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
@@ -368,8 +368,8 @@
         "net9.0-windows7.0": {
           "targetAlias": "net9.0-windows",
           "projectReferences": {
-            "C:\\Users\\psysh\\OneDrive\\Desktop\\KernelFlirt\\src\\sdk\\KernelFlirt.SDK.csproj": {
-              "projectPath": "C:\\Users\\psysh\\OneDrive\\Desktop\\KernelFlirt\\src\\sdk\\KernelFlirt.SDK.csproj"
+            "C:\\Users\\psysh\\OneDrive\\Desktop\\Magicmida\\KernelFlirt\\src\\sdk\\KernelFlirt.SDK.csproj": {
+              "projectPath": "C:\\Users\\psysh\\OneDrive\\Desktop\\Magicmida\\KernelFlirt\\src\\sdk\\KernelFlirt.SDK.csproj"
             }
           }
         }

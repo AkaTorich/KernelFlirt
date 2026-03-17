@@ -119,6 +119,7 @@ static PIRP             g_WaitIrp        = NULL;
 static KSPIN_LOCK       g_DbgLock;
 static KEVENT           g_ContinueEvent;
 static BOOLEAN          g_ThreadBlocked  = FALSE;
+static volatile LONG    g_ContinueReady  = 0;  /* Backup flag: set by IOCTL handler, checked by wait loop */
 
 /* Continue mode (set by ContinueDebugEvent IOCTL before signaling) */
 static ULONG            g_ContinueMode  = KF_CONTINUE_RUN;
@@ -139,6 +140,19 @@ static ULONG64          g_TraceRangeBase  = 0;
 static ULONG64          g_TraceRangeEnd   = 0;
 static ULONG            g_TraceMaxSteps   = 0;
 static volatile ULONG   g_TraceStepCount  = 0;
+
+/* Trace diagnostics: exception counters during fast trace */
+static volatile ULONG   g_TraceAvCount    = 0;
+static volatile ULONG   g_TraceInt3Count  = 0;
+static volatile ULONG   g_TraceUnkCount   = 0;
+static volatile ULONG   g_TraceLastExcCode = 0;
+static volatile ULONG64 g_TraceLastExcAddr = 0;
+
+/* Diagnostics */
+static volatile ULONG   g_DiagIrql        = 0;  /* IRQL at KfReportAndBlock entry */
+static volatile ULONG   g_DiagWaitResult  = 0;  /* Last KeWaitForSingleObject result */
+static volatile ULONG   g_DiagWaitCount   = 0;  /* How many times timeout loop iterated */
+static volatile ULONG   g_DiagReportCount = 0;  /* How many times KfReportAndBlock called */
 
 /* Transparent step-past for non-target processes */
 #define MAX_TRANSPARENT  16
@@ -837,17 +851,57 @@ static void KfReportAndBlock(
     }
 
     g_ThreadBlocked = TRUE;
+    InterlockedExchange(&g_ContinueReady, 0);
     KeClearEvent(&g_ContinueEvent);
+    InterlockedIncrement(&g_DiagReportCount);
 
     KeReleaseSpinLock(&g_DbgLock, oldIrql);
 
     if (irpToComplete)
         KfCompleteWaitIrp(irpToComplete, &g_DebugEvent);
 
-    /* Block until ContinueDebugEvent */
-    if (KeGetCurrentIrql() <= APC_LEVEL) {
-        KeWaitForSingleObject(&g_ContinueEvent, Executive,
-                              KernelMode, FALSE, NULL);
+    /* Block until ContinueDebugEvent.
+     * Use timeout + backup flag to work around rare event signal loss.
+     * Also check g_ContinueReady immediately after IRP completion —
+     * if the UI responds very fast, the IOCTL may have already set it. */
+    {
+        KIRQL curIrql = KeGetCurrentIrql();
+        g_DiagIrql = (ULONG)curIrql;
+        g_DiagWaitCount = 0;
+
+        /* Fast check: IOCTL may have already arrived */
+        if (InterlockedCompareExchange(&g_ContinueReady, 0, 0) != 0)
+            goto wait_done;
+
+        if (curIrql <= APC_LEVEL) {
+            LARGE_INTEGER timeout;
+            timeout.QuadPart = -500000LL; /* 50ms timeout */
+            for (;;) {
+                NTSTATUS st = KeWaitForSingleObject(&g_ContinueEvent, Executive,
+                                                     KernelMode, FALSE, &timeout);
+                g_DiagWaitResult = (ULONG)st;
+                InterlockedIncrement(&g_DiagWaitCount);
+                if (st == STATUS_SUCCESS)
+                    break;
+                /* Timeout: check backup flag (set by IOCTL handler) */
+                if (InterlockedCompareExchange(&g_ContinueReady, 0, 0) != 0)
+                    break;
+                /* Check if driver is being unloaded */
+                if (!g_HookInstalled)
+                    break;
+            }
+        } else {
+            /* IRQL too high for KeWaitForSingleObject — busy-poll g_ContinueReady */
+            for (;;) {
+                InterlockedIncrement(&g_DiagWaitCount);
+                if (InterlockedCompareExchange(&g_ContinueReady, 0, 0) != 0)
+                    break;
+                if (!g_HookInstalled)
+                    break;
+                KeStallExecutionProcessor(50); /* 50 microseconds */
+            }
+        }
+    wait_done:;
     }
 
     KeAcquireSpinLock(&g_DbgLock, &oldIrql);
@@ -899,6 +953,26 @@ static BOOLEAN KfDebugHandler(
         ExceptionRecord->ExceptionCode != STATUS_SINGLE_STEP &&
         ExceptionRecord->ExceptionCode != STATUS_GUARD_PAGE_VIOLATION &&
         !(ExceptionRecord->ExceptionCode == STATUS_ACCESS_VIOLATION && isTargetAv && !SecondChance)) {
+        /* During fast trace: unknown exception hit (e.g. ILLEGAL_INSTRUCTION).
+         * Don't return FALSE — that lets SEH clear TF and kills the trace.
+         * Instead, keep TF set and continue stepping past it.
+         * BUT: kernel-address exceptions would loop forever — abort trace. */
+        if (g_TraceActive && isTarget) {
+            InterlockedIncrement(&g_TraceUnkCount);
+            g_TraceLastExcCode = ExceptionRecord->ExceptionCode;
+            g_TraceLastExcAddr = excAddr;
+            if (excAddr >= 0xFFFF800000000000ULL) {
+                /* Kernel exception during user-mode trace — abort trace,
+                 * don't preserve TF (would cause infinite loop). */
+                g_TraceActive = FALSE;
+                return FALSE;
+            }
+            ContextRecord->EFlags |= 0x100UL;
+            if (TrapFrame != NULL) {
+                *(ULONG64 *)((UCHAR *)TrapFrame + 0x178) = ContextRecord->EFlags;
+            }
+            return FALSE;  /* SEH handles exception, but TF is preserved */
+        }
         return FALSE;  /* Not handled — let normal exception dispatch continue */
     }
 
@@ -914,6 +988,20 @@ static BOOLEAN KfDebugHandler(
     /*  (user sees the crash, app gets the unhandled exception).       */
     /* ============================================================== */
     if (ExceptionRecord->ExceptionCode == STATUS_ACCESS_VIOLATION && isTargetAv) {
+        /* During fast trace: AV is likely Themida's intentional AV+SEH anti-debug.
+         * Don't report to UI — just preserve TF and let SEH handle the AV.
+         * SEH will run its handler, and because TF is set, stepping resumes after. */
+        if (g_TraceActive) {
+            InterlockedIncrement(&g_TraceAvCount);
+            g_TraceLastExcCode = STATUS_ACCESS_VIOLATION;
+            g_TraceLastExcAddr = excAddr;
+            ContextRecord->EFlags |= 0x100UL;
+            if (TrapFrame != NULL) {
+                *(ULONG64 *)((UCHAR *)TrapFrame + 0x178) = ContextRecord->EFlags;
+            }
+            return FALSE;  /* SEH handles AV, TF preserved for continued trace */
+        }
+
         KfReportAndBlock(TrapFrame, ExceptionRecord, ContextRecord, PreviousMode);
 
         /* Apply pending RIP/RSP override */
@@ -925,6 +1013,12 @@ static BOOLEAN KfDebugHandler(
             /* Plugin handled the AV (e.g. PAGE_NOACCESS guard):
              * Set TF for single-step, return TRUE to suppress AV from reaching SEH */
             ContextRecord->EFlags |= 0x100UL;
+            /* Sync to TrapFrame (belt-and-suspenders) */
+            if (TrapFrame != NULL) {
+                *(ULONG64 *)((UCHAR *)TrapFrame + 0x168) = ContextRecord->Rip;
+                *(ULONG64 *)((UCHAR *)TrapFrame + 0x178) = ContextRecord->EFlags;
+                *(ULONG64 *)((UCHAR *)TrapFrame + 0x180) = ContextRecord->Rsp;
+            }
             return TRUE;
         }
         /* Default: return FALSE to pass AV to app's SEH */
@@ -954,6 +1048,18 @@ static BOOLEAN KfDebugHandler(
                 return TRUE;
             }
 
+            /* If fast trace mode is active, don't report to UI —
+             * just set TF and let the trace loop handle the next step.
+             * This avoids a race where reporting to UI during trace
+             * overwrites g_TraceActive/g_ContinueMode. */
+            if (g_TraceActive) {
+                ContextRecord->EFlags |= 0x100UL; /* Set TF — continue stepping */
+                if (TrapFrame != NULL) {
+                    *(ULONG64 *)((UCHAR *)TrapFrame + 0x178) = ContextRecord->EFlags;
+                }
+                return TRUE;
+            }
+
             /* StepIn mode: report SingleStep event to UI */
             InterlockedIncrement(&g_HookStepCount);
             KfReportAndBlock(TrapFrame, ExceptionRecord, ContextRecord, PreviousMode);
@@ -966,6 +1072,12 @@ static BOOLEAN KfDebugHandler(
             /* After UI continues: check if another step was requested */
             if (g_ContinueMode == KF_CONTINUE_STEP_INTO) {
                 ContextRecord->EFlags |= 0x100UL; /* Set TF */
+            }
+            /* Sync to TrapFrame (belt-and-suspenders) */
+            if (TrapFrame != NULL) {
+                *(ULONG64 *)((UCHAR *)TrapFrame + 0x168) = ContextRecord->Rip;
+                *(ULONG64 *)((UCHAR *)TrapFrame + 0x178) = ContextRecord->EFlags;
+                *(ULONG64 *)((UCHAR *)TrapFrame + 0x180) = ContextRecord->Rsp;
             }
             return TRUE;
         }
@@ -999,6 +1111,12 @@ static BOOLEAN KfDebugHandler(
             if (excAddr >= g_TraceRangeBase && excAddr < g_TraceRangeEnd &&
                 g_TraceStepCount < g_TraceMaxSteps) {
                 ContextRecord->EFlags |= 0x100UL; /* Set TF — step again */
+                /* Sync TF to TrapFrame: CPU clears TF on trap, so TrapFrame
+                 * has EFlags without TF. Must write directly to ensure the
+                 * thread actually single-steps on resume. */
+                if (TrapFrame != NULL) {
+                    *(ULONG64 *)((UCHAR *)TrapFrame + 0x178) = ContextRecord->EFlags;
+                }
                 return TRUE;  /* Don't report to UI, keep stepping */
             }
             g_TraceActive = FALSE;
@@ -1037,6 +1155,19 @@ static BOOLEAN KfDebugHandler(
                 InterlockedIncrement(&g_HookBpNotFoundCount);
                 if (bpAddr >= 0xFFFF800000000000ULL) {
                     goto report_to_ui;
+                }
+                /* During fast trace: INT3 is Themida's anti-debug INT3+SEH.
+                 * Skip past INT3 (RIP+1), keep TF, let SEH handle it. */
+                if (g_TraceActive) {
+                    InterlockedIncrement(&g_TraceInt3Count);
+                    g_TraceLastExcAddr = bpAddr;
+                    ContextRecord->Rip = bpAddr + 1;
+                    ContextRecord->EFlags |= 0x100UL;
+                    if (TrapFrame != NULL) {
+                        *(ULONG64 *)((UCHAR *)TrapFrame + 0x168) = ContextRecord->Rip;
+                        *(ULONG64 *)((UCHAR *)TrapFrame + 0x178) = ContextRecord->EFlags;
+                    }
+                    return TRUE;  /* Suppress INT3 from SEH, continue trace */
                 }
                 return FALSE;
             }
@@ -1124,10 +1255,24 @@ report_to_ui:
     }
     g_ContinueFlags = 0;
 
-    /* After UI continues: set TF if step was requested */
-    if (g_ContinueMode == KF_CONTINUE_STEP_INTO) {
+    /* After UI continues: set TF if step or trace was requested */
+    if (g_ContinueMode == KF_CONTINUE_STEP_INTO ||
+        g_ContinueMode == KF_CONTINUE_TRACE) {
         ContextRecord->EFlags |= 0x100UL;
     }
+
+    /*
+     * Belt-and-suspenders: sync modified Context directly to TrapFrame.
+     * Some Windows builds may not call KeContextToKframes after KdTrap
+     * returns TRUE, or may sanitize EFlags (strip TF). Writing directly
+     * to TrapFrame ensures the modifications take effect regardless.
+     */
+    if (TrapFrame != NULL) {
+        *(ULONG64 *)((UCHAR *)TrapFrame + 0x168) = ContextRecord->Rip;
+        *(ULONG64 *)((UCHAR *)TrapFrame + 0x178) = ContextRecord->EFlags;
+        *(ULONG64 *)((UCHAR *)TrapFrame + 0x180) = ContextRecord->Rsp;
+    }
+
     return TRUE;
 }
 
@@ -1478,10 +1623,32 @@ void KfRemoveDebugHook(void)
         DbgPrint("[KernelFlirt] KdDebuggerNotPresent restored to %u\n", g_OrigKdDebuggerNotPresent);
     }
 
-    /* Small delay to let any in-flight calls through our handler finish */
+    /* Wake any blocked thread BEFORE restoring code, so it can finish
+     * executing our handler while the code is still valid. */
+    {
+        KIRQL irql2;
+        KeAcquireSpinLock(&g_DbgLock, &irql2);
+        if (g_ThreadBlocked) {
+            g_ContinueMode = KF_CONTINUE_RUN;
+            g_TraceActive  = FALSE;
+            InterlockedExchange(&g_ContinueReady, 1);
+            KeSetEvent(&g_ContinueEvent, 0, FALSE);
+        }
+        KeReleaseSpinLock(&g_DbgLock, irql2);
+    }
+
+    /* Wait for blocked thread to finish executing our handler code */
     {
         LARGE_INTEGER delay;
-        delay.QuadPart = -10 * 1000 * 50;  /* 50ms */
+        int waitIter;
+        delay.QuadPart = -10 * 1000 * 10;  /* 10ms */
+        for (waitIter = 0; waitIter < 50; waitIter++) { /* max 500ms */
+            if (!g_ThreadBlocked)
+                break;
+            KeDelayExecutionThread(KernelMode, FALSE, &delay);
+        }
+        /* Final safety delay for any in-flight calls */
+        delay.QuadPart = -10 * 1000 * 100;  /* 100ms */
         KeDelayExecutionThread(KernelMode, FALSE, &delay);
     }
 
@@ -1508,12 +1675,6 @@ void KfRemoveDebugHook(void)
 
     g_HookInstalled  = FALSE;
     g_UsedInlineHook = FALSE;
-
-    /* Wake any blocked thread */
-    KeAcquireSpinLock(&g_DbgLock, &oldIrql);
-    if (g_ThreadBlocked)
-        KeSetEvent(&g_ContinueEvent, 0, FALSE);
-    KeReleaseSpinLock(&g_DbgLock, oldIrql);
 
     DbgPrint("[KernelFlirt] Debug hook removed\n");
 }
@@ -1623,6 +1784,19 @@ NTSTATUS KfGetHookStats(PIRP Irp, PIO_STACK_LOCATION IoStack)
     out->KiDebugRoutineNow  = g_pKiDebugRoutine ? (ULONG64)*g_pKiDebugRoutine : 0;
     out->HookedFuncAddr = (ULONG64)g_KdpTrap;
     out->KdTrapAddr     = (ULONG64)g_KdTrap;
+    out->TraceStepCount = (ULONG)g_TraceStepCount;
+    out->TraceActive    = g_TraceActive ? 1 : 0;
+    out->ThreadBlocked  = g_ThreadBlocked ? 1 : 0;
+    out->ContinueMode   = (ULONG)g_ContinueMode;
+    out->DiagIrql       = g_DiagIrql;
+    out->DiagWaitResult = g_DiagWaitResult;
+    out->DiagWaitCount  = g_DiagWaitCount;
+    out->DiagReportCount = g_DiagReportCount;
+    out->TraceAvCount    = (ULONG)g_TraceAvCount;
+    out->TraceInt3Count  = (ULONG)g_TraceInt3Count;
+    out->TraceUnkCount   = (ULONG)g_TraceUnkCount;
+    out->TraceLastExcCode = (ULONG)g_TraceLastExcCode;
+    out->TraceLastExcAddr = g_TraceLastExcAddr;
 
     Irp->IoStatus.Information = sizeof(KF_HOOK_STATS_OUT);
     Irp->IoStatus.Status = STATUS_SUCCESS;
@@ -1749,12 +1923,18 @@ NTSTATUS KfContinueDebugEvent(PIRP Irp, PIO_STACK_LOCATION IoStack)
             g_TraceMaxSteps  = input->TraceMaxSteps;
             if (g_TraceMaxSteps == 0) g_TraceMaxSteps = 500000;
             g_TraceStepCount = 0;
+            g_TraceAvCount   = 0;
+            g_TraceInt3Count = 0;
+            g_TraceUnkCount  = 0;
+            g_TraceLastExcCode = 0;
+            g_TraceLastExcAddr = 0;
             g_TraceActive    = TRUE;
         }
     } else {
         g_ContinueFlags = 0;
     }
 
+    InterlockedExchange(&g_ContinueReady, 1);  /* Backup flag for timeout loop */
     KeSetEvent(&g_ContinueEvent, 0, FALSE);
 
     Irp->IoStatus.Information = 0;

@@ -270,6 +270,19 @@ typedef struct _KF_HOOK_STATS_OUT {
     ULONG64 KiDebugRoutineNow;   /* Current value */
     ULONG64 HookedFuncAddr;      /* Address of inline-hooked function (KdpStub) */
     ULONG64 KdTrapAddr;          /* Address of KdTrap */
+    ULONG   TraceStepCount;      /* Current trace step count (g_TraceStepCount) */
+    ULONG   TraceActive;         /* 1 if g_TraceActive, 0 otherwise */
+    ULONG   ThreadBlocked;       /* 1 if g_ThreadBlocked (handler waiting for continue) */
+    ULONG   ContinueMode;       /* Current g_ContinueMode value */
+    ULONG   DiagIrql;           /* IRQL at KfReportAndBlock entry */
+    ULONG   DiagWaitResult;     /* Last KeWaitForSingleObject NTSTATUS */
+    ULONG   DiagWaitCount;      /* Timeout loop iteration count */
+    ULONG   DiagReportCount;    /* KfReportAndBlock call count */
+    ULONG   TraceAvCount;       /* AVs during fast trace */
+    ULONG   TraceInt3Count;     /* INT3s (not in BP table) during fast trace */
+    ULONG   TraceUnkCount;      /* Unknown exceptions during fast trace */
+    ULONG   TraceLastExcCode;   /* Last exception code during trace */
+    ULONG64 TraceLastExcAddr;   /* Last exception address during trace */
 } KF_HOOK_STATS_OUT, *PKF_HOOK_STATS_OUT;
 
 /* IOCTL_KF_PING output */

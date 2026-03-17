@@ -311,6 +311,19 @@ public class DriverComm : IDisposable
         public ulong KiDebugRoutineNow;
         public ulong HookedFuncAddr;
         public ulong KdTrapAddr;
+        public uint TraceStepCount;
+        public uint TraceActive;
+        public uint ThreadBlocked;
+        public uint ContinueMode;
+        public uint DiagIrql;
+        public uint DiagWaitResult;
+        public uint DiagWaitCount;
+        public uint DiagReportCount;
+        public uint TraceAvCount;
+        public uint TraceInt3Count;
+        public uint TraceUnkCount;
+        public uint TraceLastExcCode;
+        public ulong TraceLastExcAddr;
     }
 
     #endregion
@@ -968,7 +981,11 @@ public class DriverComm : IDisposable
     public (uint hookCalls, uint bpHits, uint bpNotFound, uint steps, byte kdEnabled, byte kdNotPresent,
             uint targetCalls, ulong lastTargetAddr, uint lastTargetCode, uint lastNonTargetPid,
             ulong kiDebugAddr, ulong kiDebugOrig, ulong kiDebugNow,
-            ulong hookedFunc, ulong kdTrap)? GetHookStats()
+            ulong hookedFunc, ulong kdTrap,
+            uint traceSteps, uint traceActive, uint threadBlocked, uint continueMode,
+            uint diagIrql, uint diagWaitResult, uint diagWaitCount, uint diagReportCount,
+            uint traceAvCount, uint traceInt3Count, uint traceUnkCount,
+            uint traceLastExcCode, ulong traceLastExcAddr)? GetHookStats()
     {
         var (ok, data) = SendIoctl(IOCTL_KF_GET_HOOK_STATS, null, Marshal.SizeOf<KF_HOOK_STATS_OUT>());
         if (!ok || data == null) return null;
@@ -976,7 +993,11 @@ public class DriverComm : IDisposable
         return (s.HookCallCount, s.BpHitCount, s.BpNotFoundCount, s.StepCount, s.KdDebuggerEnabled, s.KdDebuggerNotPresent,
                 s.TargetCallCount, s.LastTargetAddr, s.LastTargetCode, s.LastNonTargetPid,
                 s.KiDebugRoutineAddr, s.KiDebugRoutineOrig, s.KiDebugRoutineNow,
-                s.HookedFuncAddr, s.KdTrapAddr);
+                s.HookedFuncAddr, s.KdTrapAddr,
+                s.TraceStepCount, s.TraceActive, s.ThreadBlocked, s.ContinueMode,
+                s.DiagIrql, s.DiagWaitResult, s.DiagWaitCount, s.DiagReportCount,
+                s.TraceAvCount, s.TraceInt3Count, s.TraceUnkCount,
+                s.TraceLastExcCode, s.TraceLastExcAddr);
     }
 
     public List<ProcessInfo> EnumProcesses()

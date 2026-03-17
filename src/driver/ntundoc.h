@@ -84,16 +84,10 @@ NTSYSAPI NTSTATUS NTAPI PsSetContextThread(
     _In_ KPROCESSOR_MODE Mode
 );
 
-/* ZwSuspendThread / ZwResumeThread — resolved dynamically in threads.c
-   because they are not exported by ntoskrnl on all Windows 10 builds */
-
-/* Open thread by ID */
-NTSYSAPI NTSTATUS NTAPI ZwOpenThread(
-    _Out_ PHANDLE ThreadHandle,
-    _In_ ACCESS_MASK DesiredAccess,
-    _In_ POBJECT_ATTRIBUTES ObjectAttributes,
-    _In_ PCLIENT_ID ClientId
-);
+/* Process suspend/resume — resolved dynamically in threads.c
+   because they may not be in WDK .lib */
+typedef NTSTATUS (NTAPI *PFN_PsSuspendProcess)(PEPROCESS Process);
+typedef NTSTATUS (NTAPI *PFN_PsResumeProcess)(PEPROCESS Process);
 
 /* System information query */
 NTSYSAPI NTSTATUS NTAPI ZwQuerySystemInformation(
@@ -108,10 +102,7 @@ NTKERNELAPI PEPROCESS IoThreadToProcess(
     _In_ PETHREAD Thread
 );
 
-/* Process suspend/resume — resolved dynamically in threads.c
-   because they may not be in WDK .lib */
-typedef NTSTATUS (NTAPI *PFN_PsSuspendProcess)(PEPROCESS Process);
-typedef NTSTATUS (NTAPI *PFN_PsResumeProcess)(PEPROCESS Process);
+/* ZwSuspendThread / ZwResumeThread — resolved dynamically in threads.c */
 
 
 /* Virtual memory protection (for memory breakpoints via PAGE_GUARD) */
