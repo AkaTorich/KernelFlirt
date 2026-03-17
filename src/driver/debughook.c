@@ -962,9 +962,14 @@ static BOOLEAN KfDebugHandler(
             g_TraceLastExcCode = ExceptionRecord->ExceptionCode;
             g_TraceLastExcAddr = excAddr;
             if (excAddr >= 0xFFFF800000000000ULL) {
-                /* Kernel exception during user-mode trace — abort trace,
-                 * don't preserve TF (would cause infinite loop). */
+                /* Kernel exception during user-mode trace — abort trace.
+                 * Keep TF set so the next user-mode SingleStep reports
+                 * the result to UI (otherwise plugin hangs waiting). */
                 g_TraceActive = FALSE;
+                ContextRecord->EFlags |= 0x100UL;
+                if (TrapFrame != NULL) {
+                    *(ULONG64 *)((UCHAR *)TrapFrame + 0x178) = ContextRecord->EFlags;
+                }
                 return FALSE;
             }
             ContextRecord->EFlags |= 0x100UL;
