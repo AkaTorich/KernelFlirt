@@ -102,8 +102,9 @@ public class ThemidaPanel : ScrollViewer
     // TraceIsAtAPI state (Magicmida)
     private ulong _sleepApi, _lstrlenApi;
     private ulong _traceStartSP;
-    private bool _traceInVM;
-    private ulong _tracedAPI;
+    private bool _vmProbePhase; // true = first phase (5K steps to detect VM), false = full trace
+    private int _traceMaxSteps;
+    private int _antiTraceSkips; // count of anti-trace fake call skips per wrapper
 
     // UI
     private TextBlock _statusText;
@@ -251,10 +252,12 @@ public class ThemidaPanel : ScrollViewer
             return;
         }
 
-        // Resolve Sleep/lstrlen addresses for anti-trace skip
+        // Resolve Sleep/lstrlen addresses for anti-trace skip (Magicmida uses GetProcAddress)
         _sleepApi = _api.Symbols.ResolveNameToAddress("kernel32!Sleep");
-        _lstrlenApi = _api.Symbols.ResolveNameToAddress("kernel32!lstrlenA");
         if (_sleepApi == 0) _sleepApi = _api.Symbols.ResolveNameToAddress("kernel32.dll!Sleep");
+        // Original uses "lstrlen" (not "lstrlenA") — try both
+        _lstrlenApi = _api.Symbols.ResolveNameToAddress("kernel32!lstrlen");
+        if (_lstrlenApi == 0) _lstrlenApi = _api.Symbols.ResolveNameToAddress("kernel32!lstrlenA");
         if (_lstrlenApi == 0) _lstrlenApi = _api.Symbols.ResolveNameToAddress("kernel32.dll!lstrlenA");
 
         // TLS callback tracking (Magicmida TMInit: parse TLS directory)
@@ -301,7 +304,8 @@ public class ThemidaPanel : ScrollViewer
         _detected = true;
         _guardAddrs.Clear();
         _isVmOep = false;
-        _api.Log.Warning($"Themida detected! .text=0x{_textBase:X} (sz=0x{_textVSize:X}), TM=0x{_tmBase:X}-0x{_tmEnd:X}");
+        _api.Log.Warning($"TMSect: {_tmBase} ({_tmEnd - _tmBase} bytes)");
+        _api.Log.Warning($"Text base: 0x{_textBase:X}, code size: 0x{_textVSize:X}");
         SetStatus($"Detected. .text=0x{_textBase:X}");
     }
 
@@ -412,7 +416,7 @@ public class ThemidaPanel : ScrollViewer
             {
                 _guardAddrs.Add(fault);
                 if (_guardHitCount <= 5 || _guardHitCount % 1000 == 0)
-                    _api.Log.Info($"[Guard] TM {(access == 0 ? "read" : "write")} 0x{fault:X} from 0x{rip:X} (#{_guardHitCount})");
+                    _api.Log.Info($"[Guard] {(access == 8 ? "Execute" : access == 0 ? "Read" : "Write")} {fault}");
                 _phase = Phase.TextStepRearm;
                 evt.ContinueMode = 3;
                 return true;
@@ -436,11 +440,11 @@ public class ThemidaPanel : ScrollViewer
             if (_traceMsvcOep && access == 8)
             {
                 WriteMsvcOep(fault); // writes stub at _msvcOep: call initcookie + jmp fault
-                _api.Log.Warning($"[OEP] MSVC virtualized OEP fixed at 0x{_msvcOep:X}");
+                _api.Log.Warning($"Virtualized MSVC9+ OEP restored: {_msvcOep}");
                 _oepAddr = _msvcOep;
                 _traceMsvcOep = false;
                 SetStatus($"OEP = 0x{_oepAddr:X}");
-                _api.UI.NavigateDisassembly(_oepAddr);
+
 
                 // Suppress AV, redirect to restored OEP
                 evt.ContinueMode = 3; // HANDLED: suppress AV + set TF
@@ -466,7 +470,7 @@ public class ThemidaPanel : ScrollViewer
             if (access == 8)
             {
                 _firstTextExecAddr = fault;
-                _api.Log.Warning($"[OEP] Execute .text 0x{fault:X} (#{_guardHitCount})");
+                _api.Log.Warning($"[Guard] Execute {fault}");
                 _phase = Phase.OepStepThrough;
                 evt.ContinueMode = 3;
                 return true;
@@ -474,7 +478,7 @@ public class ThemidaPanel : ScrollViewer
 
             // Read/write from non-TM image code
             if (_guardHitCount <= 5 || _guardHitCount % 1000 == 0)
-                _api.Log.Info($"[Guard] {(access == 0 ? "read" : "write")} 0x{fault:X} from 0x{rip:X} (#{_guardHitCount})");
+                _api.Log.Info($"[Guard] {(access == 8 ? "Execute" : access == 0 ? "Read" : "Write")} {fault}");
 
             if (_guardHitCount > 500000)
             {
@@ -538,7 +542,7 @@ public class ThemidaPanel : ScrollViewer
             if (IsInTmRange(target))
             {
                 _isVmOep = true;
-                _api.Log.Warning($"[OEP] Virtualized: jmp 0x{target:X} (.themida)");
+                _api.Log.Warning($"Virtualized OEP: jmp 0x{target:X} (.themida)");
             }
         }
 
@@ -553,7 +557,7 @@ public class ThemidaPanel : ScrollViewer
                 ulong retAddr = _is64 ? BitConverter.ToUInt64(retData) : BitConverter.ToUInt32(retData);
                 if (IsInTmRange(retAddr))
                 {
-                    _api.Log.Info($"[OEP] Return addr 0x{retAddr:X} in .themida → MSVC OEP search");
+                    _api.Log.Info($"Return address points into Themida section: {retAddr}");
                     ulong realOep = TryFindMsvcOep(pid, _firstTextExecAddr);
 
                     if (realOep != 0 && _traceMsvcOep)
@@ -561,7 +565,7 @@ public class ThemidaPanel : ScrollViewer
                         // Guard fallback path: TryFindMsvcOep set _traceMsvcOep=true
                         // Need to skip to retAddr and re-enter guard mode for WriteMSVCOEP on next .text hit
                         _msvcOep = realOep;
-                        _api.Log.Info($"[OEP] MSVC: will trace to next .text exec for OEP stub write (OEP=0x{realOep:X})");
+                        _api.Log.Info($"MSVC: will trace to next .text exec for OEP stub write (OEP=0x{realOep:X})");
                         // Redirect RIP to return address, pop stack
                         evt.NewRip = retAddr;
                         evt.NewRsp = rsp + (ulong)_ptrSize;
@@ -573,17 +577,16 @@ public class ThemidaPanel : ScrollViewer
                     }
                     else if (realOep != 0)
                     {
-                        _api.Log.Warning($"[OEP] Real MSVC OEP: 0x{realOep:X}");
+                        _api.Log.Warning($"Real MSVC OEP: 0x{realOep:X}");
                         rip = realOep;
-                        _api.Memory.WriteRip(pid, evt.ThreadId, rip);
+                        evt.NewRip = rip; // Applied by driver via g_ContinueFlags
                     }
                 }
             }
         }
 
         _oepAddr = rip;
-        _api.Log.Warning($"[OEP] ★ OEP = 0x{_oepAddr:X}");
-        _api.UI.NavigateDisassembly(_oepAddr);
+        _api.Log.Warning($"OEP = 0x{_oepAddr:X}");
         SetStatus($"OEP = 0x{_oepAddr:X}");
 
         bool autoIat = false;
@@ -656,7 +659,7 @@ public class ThemidaPanel : ScrollViewer
         Array.Copy(BitConverter.GetBytes(jmpRel), 0, code, 14, 4);
 
         _api.Memory.WriteMemory(pid, _msvcOep, code);
-        _api.Log.Warning($"[MSVC] Virtualized OEP restored at 0x{_msvcOep:X}");
+        _api.Log.Warning($"Virtualized MSVC9+ OEP restored: {_msvcOep}");
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -678,7 +681,7 @@ public class ThemidaPanel : ScrollViewer
         }
 
         _iatBase = iatAddr;
-        _api.Log.Warning($"[IAT] IAT at 0x{_iatBase:X}");
+        _api.Log.Warning($"IAT: {_iatBase}");
 
         // Read IAT (Magicmida TraceImports)
         int maxSlots = RemoteDumper.MAX_IAT_SLOTS;
@@ -720,7 +723,7 @@ public class ThemidaPanel : ScrollViewer
         }
         _iatCount = effectiveCount;
 
-        _api.Log.Warning($"[IAT] {_iatCount} slots, {wrappedCount} wrapped");
+        _api.Log.Warning($"Determined IAT size: {_iatCount}");
 
         if (wrappedCount == 0)
         {
@@ -735,17 +738,11 @@ public class ThemidaPanel : ScrollViewer
         _savedRsp = GetReg(regsNow, _is64 ? "RSP" : "ESP");
         _traceStartSP = _savedRsp;
 
-        // Suspend other threads (Magicmida tracer suspends spurious threads)
+        // NOTE: Do NOT suspend threads here — driver's SuspendThread uses
+        // PsSuspendProcess which suspends the ENTIRE process (including our
+        // target thread), causing the fast trace to hang.
+        // Thread suspension will be done after trace completes if needed.
         _suspendedTids.Clear();
-        var threads = _api.Process.EnumThreads(pid);
-        foreach (var t in threads)
-        {
-            if (t.ThreadId != _api.SelectedThreadId)
-            {
-                _api.Process.SuspendThread(t.ThreadId);
-                _suspendedTids.Add(t.ThreadId);
-            }
-        }
 
         _iatIdx = -1;
         _iatResolvedCount = 0;
@@ -773,109 +770,104 @@ public class ThemidaPanel : ScrollViewer
 
         ulong wrapperAddr = _iatData[_iatIdx];
 
-        if (_iatResolvedCount < 10 || _iatResolvedCount % 50 == 0)
-            _api.Log.Info($"[IAT] Trace [{_iatIdx}] wrapper 0x{wrapperAddr:X}...");
+        ulong slotAddr = _iatBase + (ulong)(_iatIdx * _ptrSize);
+        _api.Log.Info($"Trace: {wrapperAddr} [{slotAddr}]");
 
-        // ContinueMode=4: driver-side trace. Stay in TM range, exit = API found.
+        // Reset per-wrapper state
+        _vmProbePhase = true;
+        _traceMaxSteps = 5000; // Phase 1: quick VM probe
+        _antiTraceSkips = 0;
+
+        // Driver-side fast trace: driver single-steps internally within TM range,
+        // reports only when RIP exits range or max steps reached.
         evt.NewRip = wrapperAddr;
         evt.NewRsp = _savedRsp;
-        evt.ContinueMode = 4; // KF_CONTINUE_TRACE
+        evt.ContinueMode = 4; // Trace — driver-side fast trace
         evt.TraceRangeBase = _tmBase;
         evt.TraceRangeEnd = _tmEnd;
-        evt.TraceMaxSteps = 500000;
+        evt.TraceMaxSteps = (uint)_traceMaxSteps;
 
         return true;
     }
 
     private void HandleTraceResult(uint pid, ulong rip, PluginDebugEvent evt)
     {
-        ulong slotAddr = _iatBase + (ulong)(_iatIdx * _ptrSize);
-
-        // Check TraceIsAtAPI logic (Magicmida)
-        bool exited = !IsInTmRange(rip);
-
-        if (!exited)
+        // RIP still in TM range — driver hit max steps (wrapper didn't exit TM range)
+        if (IsInTmRange(rip))
         {
-            // Still in TM range — limit reached. Check for VM stuck (lock cmpxchg pattern)
-            var insnData = _api.Memory.ReadMemory(pid, rip, 4);
-            if (insnData != null && insnData.Length == 4 &&
-                insnData[0] == 0xF0 && insnData[1] == 0x0F && insnData[2] == 0xB1 && insnData[3] == 0x0C)
+            if (_vmProbePhase)
             {
-                _traceInVM = true;
-                _api.Log.Info($"[IAT] [{_iatIdx}] Themida VM detected (lock cmpxchg)");
-            }
-            else
-            {
-                _api.Log.Info($"[IAT] [{_iatIdx}] Trace limit at 0x{rip:X}");
-            }
-
-            // VM fallback: set to ExitProcess (Magicmida)
-            if (_traceInVM)
-            {
-                if (!_didSetExitProcess)
-                {
-                    _didSetExitProcess = true;
-                    ulong exitProc = _api.Symbols.ResolveNameToAddress("kernel32!ExitProcess");
-                    if (exitProc == 0) exitProc = _api.Symbols.ResolveNameToAddress("kernel32.dll!ExitProcess");
-                    if (exitProc != 0)
-                    {
-                        _iatData[_iatIdx] = exitProc;
-                        _api.Log.Info("[IAT] Setting API to ExitProcess (VM fallback)");
-                    }
-                }
-                else
-                    _api.Log.Warning($"[IAT] Unable to resolve [{_iatIdx}] (VM)");
+                // Phase 1 (5K steps) done, still in TM — retry with full 500K steps
+                _vmProbePhase = false;
+                _traceMaxSteps = 500000;
+                _api.Log.Info($"Phase 1 done, retrying with 500K steps");
+                evt.NewRip = _iatData[_iatIdx];
+                evt.NewRsp = _savedRsp;
+                evt.ContinueMode = 4; // Trace
+                evt.TraceRangeBase = _tmBase;
+                evt.TraceRangeEnd = _tmEnd;
+                evt.TraceMaxSteps = 500000;
+                return;
             }
 
-            _traceInVM = false;
+            // Phase 2 exhausted — VM wrapper, leave original wrapper in place
+            _api.Log.Warning($"Trace limit at 0x{rip:X} — VM detected, keeping wrapper [{_iatIdx}]");
+            _iatFailedCount++;
+
             AdvanceOrFinish(pid, evt);
             return;
         }
 
-        // RIP exited TM range. Check anti-trace APIs (Magicmida TraceIsAtAPI)
-        // Sleep/lstrlen called by wrapper as anti-trace — ONLY if SP < start (still in wrapper frame)
-        if (rip == _sleepApi || rip == _lstrlenApi)
+        // RIP exited TM range — Magicmida TraceIsAtAPI logic
+        var traceRegs = _api.Memory.ReadRegisters(pid, evt.ThreadId);
+        ulong rsp = GetReg(traceRegs, _is64 ? "RSP" : "ESP");
+
+        // SP < start: anti-trace fake call — simulate return and continue tracing
+        if (rsp < _traceStartSP)
         {
-            var traceRegs = _api.Memory.ReadRegisters(pid, evt.ThreadId);
-            ulong rsp = GetReg(traceRegs, _is64 ? "RSP" : "ESP");
-            if (rsp < _traceStartSP)
+            _antiTraceSkips++;
+            if (_antiTraceSkips > 50)
             {
-                _api.Log.Info($"[IAT] Skipping anti-trace API 0x{rip:X} (SP=0x{rsp:X} < start=0x{_traceStartSP:X})");
+                // Too many fake calls — VM wrapper, keep original wrapper in place
+                _api.Log.Warning($"Anti-trace skip limit (50) at [{_iatIdx}] — keeping wrapper");
                 _iatFailedCount++;
                 AdvanceOrFinish(pid, evt);
                 return;
             }
-            // SP >= start → legitimate API call, fall through to validation
+
+            var retData = _api.Memory.ReadMemory(pid, rsp, (uint)_ptrSize);
+            if (retData != null)
+            {
+                ulong retAddr = _is64 ? BitConverter.ToUInt64(retData) : BitConverter.ToUInt32(retData);
+                rsp += (ulong)_ptrSize;
+                _api.Log.Info($"Skipping anti-trace API at {rip}");
+                evt.NewRip = retAddr;
+                evt.NewRsp = rsp;
+                evt.ContinueMode = 4; // Trace — continue driver-side trace
+                evt.TraceRangeBase = _tmBase;
+                evt.TraceRangeEnd = _tmEnd;
+                evt.TraceMaxSteps = (uint)_traceMaxSteps;
+                return;
+            }
         }
 
-        // Validate result (Magicmida checks)
-        bool isApi = rip >= 0x10000 &&
-                     !(rip >= _imageBase && rip < _imageBoundary);
-
-        if (isApi)
+        // SP >= start — this is the real resolved API
+        if (rip >= 0x10000 && !(rip >= _imageBase && rip < _imageBoundary))
         {
             _iatData[_iatIdx] = rip;
             _iatResolvedCount++;
-
-            if (_iatResolvedCount <= 10 || _iatResolvedCount % 20 == 0)
-            {
-                string name = _api.Symbols.ResolveAddress(rip) ?? $"0x{rip:X}";
-                _api.Log.Info($"[IAT] #{_iatResolvedCount} [0x{slotAddr:X}] → {name}");
-            }
+            _api.Log.Info($"-> {rip}");
         }
         else
         {
             _iatFailedCount++;
-            if (rip < 0x10000 || (rip >= _imageBase && rip < _imageBoundary))
-            {
-                _api.Log.Warning($"[IAT] [{_iatIdx}] → 0x{rip:X} (bad result, aborting trace)");
-                WriteIatBack(pid);
-                FinishIatTrace(pid);
-                evt.ContinueMode = 0;
-                evt.NewRip = _savedRip;
-                evt.NewRsp = _savedRsp;
-                return;
-            }
+            _api.Log.Warning($"Bad result at [{_iatIdx}] → 0x{rip:X}, aborting trace");
+            WriteIatBack(pid);
+            FinishIatTrace(pid);
+            evt.ContinueMode = 0;
+            evt.NewRip = _savedRip;
+            evt.NewRsp = _savedRsp;
+            return;
         }
 
         AdvanceOrFinish(pid, evt);
@@ -906,16 +898,16 @@ public class ThemidaPanel : ScrollViewer
 
     private void FinishIatTrace(uint pid)
     {
-        _api.Memory.WriteRipAndRsp(_api.SelectedThreadId, _savedRip, _savedRsp);
+        // Note: RIP/RSP restoration is done via evt.NewRip/NewRsp at call sites,
+        // not via WriteRipAndRsp (which writes to wrong trap frame while thread is blocked).
 
         foreach (var tid in _suspendedTids) _api.Process.ResumeThread(tid);
         _suspendedTids.Clear();
 
-        _api.Log.Warning($"[IAT] Done: {_iatResolvedCount} resolved, {_iatFailedCount} failed.");
+        _api.Log.Warning($"IAT Done: {_iatResolvedCount} resolved, {_iatFailedCount} failed.");
         SetStatus($"IAT: {_iatResolvedCount} resolved. OEP=0x{_oepAddr:X}");
 
         _phase = Phase.Done;
-        _api.UI.NavigateDisassembly(_oepAddr);
 
         bool autoDump = false;
         try { Application.Current?.Dispatcher.Invoke(() => autoDump = _chkAutoDump.IsChecked == true); }
@@ -1008,7 +1000,7 @@ public class ThemidaPanel : ScrollViewer
         }
 
         if (iatRef == 0) { _api.Log.Error("[IAT] No IAT reference found."); return 0; }
-        _api.Log.Info($"[IAT] First ref: 0x{iatRef:X}");
+        _api.Log.Info($"First IAT ref: {iatRef}");
 
         // Walk backward to find IAT start (Magicmida)
         int maxSlots = RemoteDumper.MAX_IAT_SLOTS;
@@ -1081,7 +1073,10 @@ public class ThemidaPanel : ScrollViewer
                         ulong target = _is64 ? BitConverter.ToUInt64(ptrData) : BitConverter.ToUInt32(ptrData);
                         // If pointer target is outside .text → IAT ref
                         if (target > textBase + codeSize || target < textBase)
+                        {
+                            _api.Log.Info($"Found {address} : {instr}");
                             return memAddr;
+                        }
                     }
                 }
             }
@@ -1529,9 +1524,10 @@ internal class RemoteDumper
     // ── TrimHugeSections (Magicmida PEHeader.TrimHugeSections) ──
     // Trims trailing zeros from sections >1MB to reduce dump size
 
-    private void TrimHugeSections(byte[] buf, int numSect, int sectStart, ref uint iatRawAddr)
+    private uint TrimHugeSections(byte[] buf, int numSect, int sectStart, ref uint iatRawAddr)
     {
         uint sectionAlign = 0x1000u;
+        uint totalDelta = 0;
         for (int i = 0; i < numSect; i++)
         {
             int o = sectStart + i * 40;
@@ -1559,14 +1555,13 @@ internal class RemoteDumper
                 if (newSize >= oldSize) continue;
 
                 uint delta = oldSize - newSize;
+                totalDelta += delta;
                 // Update section header
                 Array.Copy(BitConverter.GetBytes(newSize), 0, buf, o + 16, 4);
 
                 // Shift subsequent data
                 if (i < numSect - 1)
                 {
-                    int nextSectOff = sectStart + (i + 1) * 40;
-                    uint nextPtrRaw = BitConverter.ToUInt32(buf, nextSectOff + 20);
                     int remaining = buf.Length - (int)(ptrRaw + oldSize);
                     if (remaining > 0)
                         Array.Copy(buf, (int)(ptrRaw + oldSize), buf, (int)(ptrRaw + newSize), remaining);
@@ -1585,6 +1580,7 @@ internal class RemoteDumper
                 _api.Log.Info($"[Trim] Section {i}: 0x{oldSize:X} → 0x{newSize:X} (saved {delta} bytes)");
             }
         }
+        return totalDelta;
     }
 
     // ── Process and Dump (Magicmida Dumper.Process + DumpToFile) ──
@@ -1615,12 +1611,25 @@ internal class RemoteDumper
             // SizeOfRawData = VirtualSize
             Array.Copy(BitConverter.GetBytes(vsz), 0, pe, o + 16, 4);
         }
-        // SizeOfHeaders = first section's RVA
+
+        // SizeOfHeaders = first section's RVA (offset 0x3C from OptionalHeader for both x86/x64)
         if (numSect > 0)
         {
             uint firstRva = BitConverter.ToUInt32(pe, sectStart + 12);
-            int headersOff = (int)lfanew + 0x18 + (_is64 ? 0x3C : 0x2C); // SizeOfHeaders in optional header
+            int headersOff = (int)lfanew + 0x18 + 0x3C;
             Array.Copy(BitConverter.GetBytes(firstRva), 0, pe, headersOff, 4);
+        }
+
+        // Make .text writable (Magicmida Sanitize sets IMAGE_SCN_MEM_WRITE on first section)
+        if (numSect > 0)
+        {
+            int firstSectCharsOff = sectStart + 36;
+            if (firstSectCharsOff + 4 <= pe.Length)
+            {
+                uint chars = BitConverter.ToUInt32(pe, firstSectCharsOff);
+                chars |= 0x80000000; // IMAGE_SCN_MEM_WRITE
+                Array.Copy(BitConverter.GetBytes(chars), 0, pe, firstSectCharsOff, 4);
+            }
         }
 
         // Write resolved IAT
@@ -1635,28 +1644,21 @@ internal class RemoteDumper
                 Array.Copy(BitConverter.GetBytes((uint)iatData[i]), 0, pe, off, 4);
         }
 
-        // TrimHugeSections (Magicmida PEHeader.TrimHugeSections)
-        TrimHugeSections(pe, numSect, sectStart, ref iatRva);
+        // TrimHugeSections — returns total bytes saved
+        uint trimDelta = TrimHugeSections(pe, numSect, sectStart, ref iatRva);
+        uint actualDataEnd = (uint)pe.Length - trimDelta;
 
-        // Determine IAT size (Magicmida Dumper.DetermineIATSize)
+        // Determine IAT size (Magicmida Dumper.DetermineIATSize — scan with 0x100 lookahead)
         uint lastValid = 0;
-        for (int i = 0; i < iatCount; i++)
+        uint iatI = 0;
+        while (iatI < (uint)(iatCount * _ptrSize) && (lastValid == 0 || iatI < lastValid + 0x100))
         {
-            if (IsAPIAddress(iatData[i]))
-                lastValid = (uint)((i + 1) * _ptrSize);
+            int slot = (int)(iatI / (uint)_ptrSize);
+            if (slot < iatCount && IsAPIAddress(iatData[slot]))
+                lastValid = iatI;
+            iatI += (uint)_ptrSize;
         }
-        // Scan 0x100 bytes beyond last valid for strays
-        if (lastValid > 0)
-        {
-            int startSlot = (int)(lastValid / (uint)_ptrSize);
-            int extra = Math.Min(0x100 / _ptrSize, iatCount - startSlot);
-            for (int i = startSlot; i < startSlot + extra; i++)
-            {
-                if (i < iatCount && IsAPIAddress(iatData[i]))
-                    lastValid = (uint)((i + 1) * _ptrSize);
-            }
-        }
-        uint iatSize = lastValid > 0 ? lastValid : (uint)(iatCount * _ptrSize);
+        uint iatSize = lastValid + (uint)_ptrSize;
 
         // Apply forward resolution to IAT in dump
         for (int i = 0; i < iatCount; i++)
@@ -1697,12 +1699,12 @@ internal class RemoteDumper
                 if (rm.ExportTbl == null) GatherExports(rm);
                 if (rm.ExportTbl!.ContainsKey(val))
                 {
-                    if (thunks.Count == 0 || thunks[^1].Name != rm.Name || needNewThunk)
+                    if (thunks.Count == 0 || thunks[thunks.Count - 1].Name != rm.Name || needNewThunk)
                     {
                         thunks.Add(new ImportThunk(rm));
                         needNewThunk = false;
                     }
-                    thunks[^1].IATOffsets.Add(i * _ptrSize);
+                    thunks[thunks.Count - 1].IATOffsets.Add(i * _ptrSize);
                 }
                 else needNewThunk = true;
             }
@@ -1715,29 +1717,26 @@ internal class RemoteDumper
         var importData = new byte[0x2000];
         int descOff = 0;
 
-        // We'll place import section right after the image in the dump
-        uint importSectRva = (uint)pe.Length;
-        // Align to section alignment
-        ushort magic = BitConverter.ToUInt16(pe, (int)lfanew + 0x18);
-        int sectAlignOff = (int)lfanew + 0x18 + (magic == 0x20B ? 0x20 : 0x20);
+        // Place import section right after actual data end (accounting for trim)
+        int sectAlignOff = (int)lfanew + 0x18 + 0x20; // SectionAlignment offset is 0x20 for both x86/x64
         uint sectAlign = BitConverter.ToUInt32(pe, sectAlignOff);
-        if (sectAlign > 0)
-        {
-            uint rem = importSectRva % sectAlign;
-            if (rem > 0) importSectRva += sectAlign - rem;
-        }
+        if (sectAlign == 0) sectAlign = 0x1000;
+
+        uint importSectRva = actualDataEnd;
+        { uint rem = importSectRva % sectAlign; if (rem > 0) importSectRva += sectAlign - rem; }
 
         for (int ti = 0; ti < thunks.Count; ti++)
         {
             var thunk = thunks[ti];
             var rm = thunk.Module;
 
-            // IMAGE_IMPORT_DESCRIPTOR: FirstThunk (offset 16), Name (offset 12)
+            // IMAGE_IMPORT_DESCRIPTOR: OriginalFirstThunk (offset 0), Name (offset 12), FirstThunk (offset 16)
             uint firstThunk = iatRva + (uint)thunk.IATOffsets[0];
             uint nameRva = importSectRva + (uint)strOffset;
 
-            Array.Copy(BitConverter.GetBytes(firstThunk), 0, importData, descOff + 16, 4);
-            Array.Copy(BitConverter.GetBytes(nameRva), 0, importData, descOff + 12, 4);
+            Array.Copy(BitConverter.GetBytes(firstThunk), 0, importData, descOff + 0, 4);  // OriginalFirstThunk
+            Array.Copy(BitConverter.GetBytes(nameRva), 0, importData, descOff + 12, 4);    // Name
+            Array.Copy(BitConverter.GetBytes(firstThunk), 0, importData, descOff + 16, 4); // FirstThunk
             descOff += descSize;
 
             var nameBytes = Encoding.ASCII.GetBytes(thunk.Name);
@@ -1764,31 +1763,29 @@ internal class RemoteDumper
                     continue;
                 }
 
-                // Name import: write RVA to hint/name entry
-                strOffset += 2; // hint
+                // Name import: write RVA to hint/name entry in import section
+                strOffset += 2; // hint (2 bytes, zero)
                 uint hintNameRva = importSectRva + (uint)(strOffset - 2);
                 if (_is64) Array.Copy(BitConverter.GetBytes((ulong)hintNameRva), 0, pe, peOff, 8);
                 else Array.Copy(BitConverter.GetBytes(hintNameRva), 0, pe, peOff, 4);
 
                 var fnBytes = Encoding.ASCII.GetBytes(funcName);
-                if (strOffset + fnBytes.Length + 1 < importData.Length)
-                    Array.Copy(fnBytes, 0, importData, strOffset, fnBytes.Length);
+                if (strOffset + fnBytes.Length + 1 >= importData.Length - 0x100)
+                    Array.Resize(ref importData, importData.Length + 0x2000);
+                Array.Copy(fnBytes, 0, importData, strOffset, fnBytes.Length);
                 strOffset += fnBytes.Length + 1;
-
-                if (strOffset > importData.Length - 0x100)
-                    Array.Resize(ref importData, importData.Length + 0x1000);
             }
         }
 
         uint importSectSize = (uint)strOffset;
-        if (sectAlign > 0) { uint r = importSectSize % sectAlign; if (r > 0) importSectSize += sectAlign - r; }
+        { uint r = importSectSize % sectAlign; if (r > 0) importSectSize += sectAlign - r; }
 
         // Fix PE headers
         // EP
         Array.Copy(BitConverter.GetBytes((uint)(_oep - _imageBase)), 0, pe, (int)lfanew + 0x28, 4);
 
-        // Disable ASLR
-        int dllCharsOff = (int)lfanew + 0x18 + (_is64 ? 0x46 : 0x2E);
+        // Disable ASLR (DllCharacteristics offset is 0x46 from OptionalHeader for both x86/x64)
+        int dllCharsOff = (int)lfanew + 0x18 + 0x46;
         if (dllCharsOff + 2 <= pe.Length)
         {
             ushort dc = BitConverter.ToUInt16(pe, dllCharsOff);
@@ -1799,8 +1796,10 @@ internal class RemoteDumper
             }
         }
 
-        // IAT data directory
+        // Data directories base
         int ddBaseOff = (int)lfanew + 0x18 + (_is64 ? 0x70 : 0x60);
+
+        // IAT data directory (entry 12)
         int iatDirOff = ddBaseOff + 12 * 8;
         if (iatDirOff + 8 <= pe.Length)
         {
@@ -1808,7 +1807,7 @@ internal class RemoteDumper
             Array.Copy(BitConverter.GetBytes(iatSize + (uint)_ptrSize), 0, pe, iatDirOff + 4, 4);
         }
 
-        // Import data directory
+        // Import data directory (entry 1)
         int importDirOff = ddBaseOff + 1 * 8;
         if (importDirOff + 8 <= pe.Length)
         {
@@ -1816,8 +1815,8 @@ internal class RemoteDumper
             Array.Copy(BitConverter.GetBytes((uint)(thunks.Count * descSize)), 0, pe, importDirOff + 4, 4);
         }
 
-        // Update SizeOfImage
-        int sizeOfImageOff = (int)lfanew + 0x18 + (_is64 ? 0x38 : 0x38);
+        // Update SizeOfImage (offset 0x38 from OptionalHeader for both x86/x64)
+        int sizeOfImageOff = (int)lfanew + 0x18 + 0x38;
         uint newSizeOfImage = importSectRva + importSectSize;
         Array.Copy(BitConverter.GetBytes(newSizeOfImage), 0, pe, sizeOfImageOff, 4);
 
@@ -1827,25 +1826,23 @@ internal class RemoteDumper
         {
             var impName = Encoding.ASCII.GetBytes(".import\0");
             Array.Copy(impName, 0, pe, newSectOff, 8);
-            Array.Copy(BitConverter.GetBytes(importSectSize), 0, pe, newSectOff + 8, 4); // VirtualSize
-            Array.Copy(BitConverter.GetBytes(importSectRva), 0, pe, newSectOff + 12, 4); // VirtualAddress
+            Array.Copy(BitConverter.GetBytes(importSectSize), 0, pe, newSectOff + 8, 4);  // VirtualSize
+            Array.Copy(BitConverter.GetBytes(importSectRva), 0, pe, newSectOff + 12, 4);  // VirtualAddress
             Array.Copy(BitConverter.GetBytes(importSectSize), 0, pe, newSectOff + 16, 4); // SizeOfRawData
-            Array.Copy(BitConverter.GetBytes(importSectRva), 0, pe, newSectOff + 20, 4); // PointerToRawData
-            Array.Copy(BitConverter.GetBytes(0xC0000040U), 0, pe, newSectOff + 36, 4); // Characteristics: R|IDATA
+            Array.Copy(BitConverter.GetBytes(importSectRva), 0, pe, newSectOff + 20, 4);  // PointerToRawData
+            Array.Copy(BitConverter.GetBytes(0xC0000040U), 0, pe, newSectOff + 36, 4);    // Characteristics: R|IDATA
 
             // Increment NumberOfSections
             BitConverter.GetBytes((ushort)(numSect + 1)).CopyTo(pe, (int)lfanew + 6);
         }
 
-        // Combine PE + import section
-        var result = new byte[pe.Length + (int)importSectSize];
-        Array.Copy(pe, result, pe.Length);
-        // Pad between pe.Length and importSectRva
-        int padSize = (int)importSectRva - pe.Length;
-        // Import data starts at importSectRva offset in the file
+        // Combine: trimmed PE data + import section (no garbage gap)
+        var result = new byte[(int)importSectRva + (int)importSectSize];
+        int copyLen = Math.Min(pe.Length, (int)importSectRva);
+        Array.Copy(pe, result, copyLen);
         Array.Copy(importData, 0, result, (int)importSectRva, Math.Min(strOffset, importData.Length));
 
-        _api.Log.Info($"[Dump] {thunks.Count} import thunks, .import at RVA 0x{importSectRva:X}");
+        _api.Log.Info($"[Dump] {thunks.Count} import thunks, .import at RVA 0x{importSectRva:X}, size {result.Length} bytes");
         return result;
     }
 
@@ -1858,7 +1855,8 @@ internal class RemoteDumper
         uint oepRva = (uint)(_oep - _imageBase);
         Array.Copy(BitConverter.GetBytes(oepRva), 0, pe, (int)lfanew + 0x28, 4);
 
-        int dllCharsOff = (int)lfanew + 0x18 + (_is64 ? 0x46 : 0x2E);
+        // Disable ASLR (DllCharacteristics offset 0x46 from OptionalHeader for both x86/x64)
+        int dllCharsOff = (int)lfanew + 0x18 + 0x46;
         if (dllCharsOff + 2 <= pe.Length)
         {
             ushort dc = BitConverter.ToUInt16(pe, dllCharsOff);

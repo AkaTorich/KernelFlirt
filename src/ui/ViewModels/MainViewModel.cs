@@ -2911,8 +2911,44 @@ public partial class MainViewModel : ObservableObject, IDisposable
                         mode = DriverComm.CONTINUE_STEP_PAST;
                     else
                         mode = DriverComm.CONTINUE_RUN;
-                    _driver.ContinueDebugEvent(mode, pluginEvt.NewRip, pluginEvt.NewRsp,
+                    var contOk = _driver.ContinueDebugEvent(mode, pluginEvt.NewRip, pluginEvt.NewRsp,
                         pluginEvt.TraceRangeBase, pluginEvt.TraceRangeEnd, pluginEvt.TraceMaxSteps);
+
+                    if (mode == DriverComm.CONTINUE_TRACE)
+                    {
+                        Application.Current?.Dispatcher.InvokeAsync(() =>
+                            Log($"[TraceStart] ContinueDebugEvent(mode=4) ok={contOk} " +
+                                $"newRip=0x{pluginEvt.NewRip:X} newRsp=0x{pluginEvt.NewRsp:X} " +
+                                $"range=[0x{pluginEvt.TraceRangeBase:X}..0x{pluginEvt.TraceRangeEnd:X}) " +
+                                $"maxSteps={pluginEvt.TraceMaxSteps}"));
+                    }
+
+                    // Trace diagnostics: poll stats while trace is active
+                    if (mode == DriverComm.CONTINUE_TRACE)
+                    {
+                        _ = Task.Run(async () =>
+                        {
+                            await Task.Delay(300);
+                            for (int poll = 0; poll < 60; poll++) // up to 30s
+                            {
+                                var stats = _driver.GetHookStats();
+                                if (stats == null) break;
+                                var s = stats.Value;
+                                Application.Current?.Dispatcher.InvokeAsync(() =>
+                                {
+                                    Log($"[TraceDiag] steps={s.traceSteps} active={s.traceActive} " +
+                                        $"AV={s.traceAvCount} INT3={s.traceInt3Count} UNK={s.traceUnkCount} " +
+                                        $"lastExc=0x{s.traceLastExcCode:X} lastAddr=0x{s.traceLastExcAddr:X} " +
+                                        $"blocked={s.threadBlocked} mode={s.continueMode} " +
+                                        $"irql=0x{s.diagIrql:X} waitCnt={s.diagWaitCount} reportCnt={s.diagReportCount} " +
+                                        $"targetCalls={s.targetCalls} lastTgtAddr=0x{s.lastTargetAddr:X} lastTgtCode=0x{s.lastTargetCode:X}");
+                                });
+                                if (s.traceActive == 0) break;
+                                await Task.Delay(500);
+                            }
+                        });
+                    }
+
                     continue; // Loop back to WaitDebugEvent
                 }
 
@@ -5634,6 +5670,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         string entry = $"[{DateTime.Now:HH:mm:ss}] {message}";
         LogMessages.Add(entry);
+        while (LogMessages.Count > 500)
+            LogMessages.RemoveAt(0);
     }
 
     public void Dispose()

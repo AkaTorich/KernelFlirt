@@ -159,7 +159,7 @@ public class AntiDebugPanel : ScrollViewer
         root.Children.Add(MakeGroup("NtQueryInformationProcess (via ClearDebugPort)", [ChkDebugPort, ChkDebugObjectHandle, ChkDebugFlags], white));
 
         // ── NtQuerySystemInformation ──
-        ChkSystemKernelDebugger = MakeCheckBox("SystemKernelDebuggerInfo", true, "Hook NtQuerySystemInformation to spoof class 0x23", true, white);
+        ChkSystemKernelDebugger = MakeCheckBox("SystemKernelDebuggerInfo", false, "Hook NtQuerySystemInformation to spoof class 0x23 (DANGER: triggers PatchGuard BSOD!)", true, white);
         root.Children.Add(MakeGroup("NtQuerySystemInformation (via inline hook)", [ChkSystemKernelDebugger], white));
 
         // ── NtSetInformationThread ──
