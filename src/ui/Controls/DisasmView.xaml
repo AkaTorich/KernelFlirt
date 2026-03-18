@@ -24,6 +24,8 @@
                             <MenuItem Header="Set Log Breakpoint..." Click="OnContextSetLogBp" />
                             <Separator />
                             <MenuItem Header="Run to Cursor (F4)" Click="OnContextRunToCursor" InputGestureText="F4" />
+                            <MenuItem Header="Skip Instruction (Ctrl+F8)" Click="OnContextSkipInstruction" InputGestureText="Ctrl+F8" />
+                            <MenuItem Header="Set RIP Here" Click="OnContextSetRipHere" />
                             <MenuItem Header="Add Bookmark..." Click="OnContextAddBookmark" />
                             <Separator />
                             <MenuItem Header="Follow in Dump" Click="OnContextFollowInDump" />

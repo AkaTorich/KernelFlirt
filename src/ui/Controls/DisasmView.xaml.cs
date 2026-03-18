@@ -401,6 +401,17 @@ public partial class DisasmView : UserControl
         GetViewModel()?.RunToCursorCommand.Execute(null);
     }
 
+    private void OnContextSkipInstruction(object sender, RoutedEventArgs e)
+    {
+        GetViewModel()?.SkipInstructionCommand.Execute(null);
+    }
+
+    private void OnContextSetRipHere(object sender, RoutedEventArgs e)
+    {
+        if (SelectedAddress != 0)
+            GetViewModel()?.SetInstructionPointer(SelectedAddress);
+    }
+
     private void OnContextAddBookmark(object sender, RoutedEventArgs e)
     {
         GetViewModel()?.AddBookmarkCommand.Execute(null);
