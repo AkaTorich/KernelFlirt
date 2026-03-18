@@ -33,6 +33,11 @@
                     <StackPanel x:Name="PanelDisasm" />
                 </ScrollViewer>
             </TabItem>
+            <TabItem Header="Stack">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="8">
+                    <StackPanel x:Name="PanelStack" />
+                </ScrollViewer>
+            </TabItem>
             <TabItem Header="Per-Tab Headers">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="8">
                     <StackPanel x:Name="PanelPerTab" />

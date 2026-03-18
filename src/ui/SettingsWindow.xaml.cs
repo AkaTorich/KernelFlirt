@@ -51,6 +51,10 @@ public partial class SettingsWindow : Window
         ["DsmBpRow"]        = "#8B2020",
         ["DsmCurrentLine"]  = "#264F78",
         ["DsmFunction"]     = "#DCDCAA",
+        // Stack
+        ["StackOffset"]     = "#569CD6",
+        ["StackAddress"]    = "#D4D4D4",
+        ["StackAnnotation"] = "#4EC9B0",
         // Tab style
         ["TabBg"]           = "#2D2D30",
         ["TabFg"]           = "#808080",
@@ -67,6 +71,8 @@ public partial class SettingsWindow : Window
         ["DsmAddress", "DsmMnemonic", "DsmRegister", "DsmBytes", "DsmNumber", "DsmJump",
          "DsmPunctuation", "DsmString", "DsmComment", "DsmSymbol", "DsmFunction",
          "DsmBpMarker", "DsmBpRow", "DsmCurrentLine"];
+    private static readonly string[] StackKeys =
+        ["StackOffset", "StackAddress", "StackAnnotation"];
     private static readonly string[] TabStyleKeys =
         ["TabBg", "TabFg", "TabSelBg", "TabSelFg", "TabSelBorder", "TabHoverBg"];
 
@@ -92,6 +98,7 @@ public partial class SettingsWindow : Window
 
         BuildGeneralPanel();
         BuildDisasmPanel();
+        BuildStackPanel();
         BuildTabStylePanel();
         BuildPerTabPanel();
     }
@@ -254,6 +261,21 @@ public partial class SettingsWindow : Window
 
         foreach (var (key, label) in items)
             AddColorRow(PanelDisasm, key, label);
+    }
+
+    private void BuildStackPanel()
+    {
+        PanelStack.Children.Add(CreateThemeBar(StackKeys));
+
+        var items = new (string Key, string Label)[]
+        {
+            ("StackOffset", "Offset (RSP+XX)"),
+            ("StackAddress", "Address Value"),
+            ("StackAnnotation", "Annotation / Hint"),
+        };
+
+        foreach (var (key, label) in items)
+            AddColorRow(PanelStack, key, label);
     }
 
     private void BuildTabStylePanel()

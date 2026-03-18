@@ -57,7 +57,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public RangeObservableCollection<KernelModuleInfo> KernelModules { get; } = [];
     public ObservableCollection<Breakpoint> Breakpoints { get; } = [];
     public ObservableCollection<string> LogMessages { get; } = [];
-    public RangeObservableCollection<string> StackEntries { get; } = [];
+    public RangeObservableCollection<StackEntry> StackEntries { get; } = [];
     public RangeObservableCollection<CallStackFrame> CallStack { get; } = [];
     public ObservableCollection<Bookmark> Bookmarks { get; } = [];
     public ObservableCollection<Patch> Patches { get; } = [];
@@ -665,14 +665,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var stackData = stackTask.Result;
         if (stackData != null && rspReg != null)
         {
-            var stackItems = new List<string>();
+            var stackItems = new List<StackEntry>();
             int sp = PointerSize;
             string spName = SpRegName;
             for (int i = 0; i < stackData.Length; i += sp)
             {
                 if (i + sp > stackData.Length) break;
                 ulong val = Is32Bit ? BitConverter.ToUInt32(stackData, i) : BitConverter.ToUInt64(stackData, i);
-                stackItems.Add($"{spName}+{i:X2}  {FormatAddr(val)}");
+                stackItems.Add(new StackEntry { Offset = $"{spName}+{i:X2}", Address = FormatAddr(val) });
             }
             StackEntries.ReplaceAll(stackItems);
         }
@@ -947,7 +947,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             var sysModList = Modules.ToList();
             var sysKmodList = KernelModules.ToList();
-            var stackItems = new List<string>();
+            var stackItems = new List<StackEntry>();
             int sp = PointerSize;
             string spName = SpRegName;
             for (int i = 0; i < stackData.Length; i += sp)
@@ -957,9 +957,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 var annotation = ResolveStackValue(TargetPid, val, sysModList, sysKmodList);
                 if (annotation == null && val != 0)
                     annotation = await TryReadStringAtAsync(TargetPid, val);
-                stackItems.Add(annotation != null
-                    ? $"{spName}+{i:X2}  {FormatAddr(val)}  {annotation}"
-                    : $"{spName}+{i:X2}  {FormatAddr(val)}");
+                stackItems.Add(new StackEntry { Offset = $"{spName}+{i:X2}", Address = FormatAddr(val), Annotation = annotation });
             }
             StackEntries.ReplaceAll(stackItems);
         }
@@ -1145,7 +1143,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             var moduleList = Modules.ToList();
             var kmodList = KernelModules.ToList();
-            var stackItems = new List<string>();
+            var stackItems = new List<StackEntry>();
             int sp = PointerSize;
             string spName = SpRegName;
             for (int i = 0; i < stackData.Length; i += sp)
@@ -1155,9 +1153,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 var annotation = ResolveStackValue(pid, val, moduleList, kmodList);
                 if (annotation == null && val != 0)
                     annotation = await TryReadStringAtAsync(pid, val);
-                stackItems.Add(annotation != null
-                    ? $"{spName}+{i:X2}  {FormatAddr(val)}  {annotation}"
-                    : $"{spName}+{i:X2}  {FormatAddr(val)}");
+                stackItems.Add(new StackEntry { Offset = $"{spName}+{i:X2}", Address = FormatAddr(val), Annotation = annotation });
             }
             StackEntries.ReplaceAll(stackItems);
         }
@@ -4487,7 +4483,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         var moduleList = Modules.ToList();
         var kmodList = KernelModules.ToList();
-        var items = new List<string>();
+        var items = new List<StackEntry>();
         int sp = PointerSize;
         string spName = SpRegName;
         for (int i = 0; i < data.Length; i += sp)
@@ -4497,9 +4493,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             var annotation = ResolveStackValue(pid, val, moduleList, kmodList);
             if (annotation == null && val != 0)
                 annotation = await TryReadStringAtAsync(pid, val);
-            items.Add(annotation != null
-                ? $"{spName}+{i:X2}  {FormatAddr(val)}  {annotation}"
-                : $"{spName}+{i:X2}  {FormatAddr(val)}");
+            items.Add(new StackEntry { Offset = $"{spName}+{i:X2}", Address = FormatAddr(val), Annotation = annotation });
         }
         StackEntries.ReplaceAll(items);
     }
@@ -4704,14 +4698,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var stackData = stackTask.Result;
         if (stackData != null && rspReg != null)
         {
-            var stackItems = new List<string>();
+            var stackItems = new List<StackEntry>();
             int sp = PointerSize;
             string spName = SpRegName;
             for (int i = 0; i < stackData.Length; i += sp)
             {
                 if (i + sp > stackData.Length) break;
                 ulong val = Is32Bit ? BitConverter.ToUInt32(stackData, i) : BitConverter.ToUInt64(stackData, i);
-                stackItems.Add($"{spName}+{i:X2}  {FormatAddr(val)}");
+                stackItems.Add(new StackEntry { Offset = $"{spName}+{i:X2}", Address = FormatAddr(val) });
             }
             StackEntries.ReplaceAll(stackItems);
         }
@@ -5039,8 +5033,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var result = PromptInput("Symbol Path",
             "Enter symbol path. Use ';' to separate paths.\n" +
             "Local PDB folders: C:\\MyPDBs;D:\\Build\\Output\n" +
-            "Symbol server: srv*C:\\Symbols*https://msdl.microsoft.com/download/symbols\n\n" +
-            "Current: " + current);
+            "Symbol server: srv*C:\\Symbols*https://msdl.microsoft.com/download/symbols",
+            current);
         if (!string.IsNullOrEmpty(result) && result != current)
         {
             _symbols.SymbolPath = result;

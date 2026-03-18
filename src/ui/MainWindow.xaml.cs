@@ -388,9 +388,9 @@ public partial class MainWindow : Window
 
     private void OnStackFollowInDump(object sender, RoutedEventArgs e)
     {
-        if (StackList.SelectedItem is string entry)
+        if (StackList.SelectedItem is Models.StackEntry entry)
         {
-            ulong addr = ParseStackValue(entry);
+            ulong addr = ParseStackAddress(entry.Address);
             if (addr != 0)
             {
                 VM.FollowInDumpCommand.Execute(addr);
@@ -401,9 +401,9 @@ public partial class MainWindow : Window
 
     private void OnStackFollowInDisasm(object sender, RoutedEventArgs e)
     {
-        if (StackList.SelectedItem is string entry)
+        if (StackList.SelectedItem is Models.StackEntry entry)
         {
-            ulong addr = ParseStackValue(entry);
+            ulong addr = ParseStackAddress(entry.Address);
             if (addr != 0)
                 VM.FollowInDisasmCommand.Execute(addr);
         }
@@ -411,15 +411,13 @@ public partial class MainWindow : Window
 
     private void OnStackCopy(object sender, RoutedEventArgs e)
     {
-        if (StackList.SelectedItem is string entry)
-            Clipboard.SetText(entry);
+        if (StackList.SelectedItem is Models.StackEntry entry)
+            Clipboard.SetText(entry.ToString());
     }
 
-    private static ulong ParseStackValue(string entry)
+    private static ulong ParseStackAddress(string hexAddr)
     {
-        var parts = entry.Split("  ", StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length >= 2 &&
-            ulong.TryParse(parts[1].Trim(), System.Globalization.NumberStyles.HexNumber, null, out var val))
+        if (ulong.TryParse(hexAddr.Trim(), System.Globalization.NumberStyles.HexNumber, null, out var val))
             return val;
         return 0;
     }
@@ -1067,6 +1065,10 @@ public partial class MainWindow : Window
             ["DsmBpRow"]        = "BpRowBrush",
             ["DsmCurrentLine"]  = "DsmCurrentLineBrush",
             ["DsmFunction"]     = "DsmFunctionBrush",
+            // Stack
+            ["StackOffset"]     = "StackOffsetBrush",
+            ["StackAddress"]    = "StackAddressBrush",
+            ["StackAnnotation"] = "StackAnnotationBrush",
         };
 
         int applied = 0;
