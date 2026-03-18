@@ -5,6 +5,7 @@
         xmlns:conv="clr-namespace:KernelFlirt.UI.Converters"
         xmlns:ctrl="clr-namespace:KernelFlirt.UI.Controls"
         xmlns:ae="http://icsharpcode.net/sharpdevelop/avalonedit"
+        xmlns:models="clr-namespace:KernelFlirt.UI.Models"
         Title="KernelFlirt - Kernel Debugger"
         Width="1400" Height="900"
         WindowStartupLocation="CenterScreen"
@@ -886,6 +887,15 @@
                     </Border>
                     <ListBox x:Name="StackList" ItemsSource="{Binding StackEntries}"
                              BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate DataType="{x:Type models:StackEntry}">
+                                <TextBlock FontFamily="Consolas" FontSize="12">
+                                    <Run Text="{Binding Offset, Mode=OneWay}" Foreground="{DynamicResource StackOffsetBrush}" />
+                                    <Run Text="  " /><Run Text="{Binding Address, Mode=OneWay}" Foreground="{DynamicResource StackAddressBrush}" />
+                                    <Run Text="{Binding Annotation, Mode=OneWay, TargetNullValue=''}" Foreground="{DynamicResource StackAnnotationBrush}" />
+                                </TextBlock>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
                         <ListBox.ContextMenu>
                             <ContextMenu>
                                 <MenuItem Header="Follow in Dump" Click="OnStackFollowInDump" />

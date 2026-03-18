@@ -48,6 +48,11 @@
     <SolidColorBrush x:Key="DsmCurrentLineBrush" Color="#264F78" />
     <SolidColorBrush x:Key="DsmFunctionBrush" Color="#DCDCAA" />
 
+    <!-- Stack view -->
+    <SolidColorBrush x:Key="StackOffsetBrush" Color="#569CD6" />
+    <SolidColorBrush x:Key="StackAddressBrush" Color="#D4D4D4" />
+    <SolidColorBrush x:Key="StackAnnotationBrush" Color="#4EC9B0" />
+
     <!-- Global Window style -->
     <Style TargetType="Window">
         <Setter Property="Background" Value="{DynamicResource BgBrush}" />
