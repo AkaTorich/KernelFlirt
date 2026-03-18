@@ -37,6 +37,16 @@
     <SolidColorBrush x:Key="ToolbarBgBrush" Color="{StaticResource ToolbarBgColor}" />
     <SolidColorBrush x:Key="BpRowBrush" Color="#8B2020" />
 
+    <!-- Disassembly-specific brushes -->
+    <SolidColorBrush x:Key="DsmNumberBrush" Color="#B5CEA8" />
+    <SolidColorBrush x:Key="DsmJumpBrush" Color="#FF8080" />
+    <SolidColorBrush x:Key="DsmPunctuationBrush" Color="#808080" />
+    <SolidColorBrush x:Key="DsmStringBrush" Color="#CE9178" />
+    <SolidColorBrush x:Key="DsmCommentBrush" Color="#608B4E" />
+    <SolidColorBrush x:Key="DsmSymbolBrush" Color="#4EC9B0" />
+    <SolidColorBrush x:Key="DsmCurrentLineBrush" Color="#264F78" />
+    <SolidColorBrush x:Key="DsmFunctionBrush" Color="#DCDCAA" />
+
     <!-- Global Window style -->
     <Style TargetType="Window">
         <Setter Property="Background" Value="{StaticResource BgBrush}" />

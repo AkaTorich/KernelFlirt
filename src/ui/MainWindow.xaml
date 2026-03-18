@@ -117,6 +117,8 @@
                 <Separator />
                 <MenuItem Header="Refresh _SEH Chain" Click="OnRefreshSehClick" />
                 <MenuItem Header="Restore All _Patches" Command="{Binding RestoreAllPatchesCommand}" />
+                <Separator />
+                <MenuItem Header="_Settings..." Click="OnSettingsClick" />
             </MenuItem>
             <MenuItem Header="_Symbols">
                 <MenuItem Header="_Load All Symbols" Command="{Binding LoadAllSymbolsCommand}" />

@@ -19,6 +19,8 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         LoadDecompilerHighlighting();
+        if (VM.ThemeColors.Count > 0)
+            ApplyThemeColors(VM.ThemeColors);
         VM.Instructions.CollectionChanged += (_, _) => RefreshDisasmView();
         VM.BreakpointMarkersChanged += () =>
         {
@@ -977,6 +979,138 @@ public partial class MainWindow : Window
                          or Models.BreakpointType.HwReadWrite)
                 .Select(b => b.Address));
         HexDumpControl.SetData(data, VM.HexAddress, bpAddrs);
+    }
+
+    private void OnSettingsClick(object sender, RoutedEventArgs e)
+    {
+        var dlg = new SettingsWindow(VM.ThemeColors) { Owner = this };
+        if (dlg.ShowDialog() == true)
+        {
+            VM.ThemeColors = dlg.ResultColors;
+            VM.SaveThemeColors();
+            ApplyThemeColors(dlg.ResultColors);
+        }
+    }
+
+    internal void ApplyThemeColors(Dictionary<string, string> colors)
+    {
+        var dict = Application.Current.Resources.MergedDictionaries[0];
+
+        void SetBrush(string brushKey, string colorHex)
+        {
+            if (string.IsNullOrWhiteSpace(colorHex)) return;
+            try
+            {
+                var color = (Color)ColorConverter.ConvertFromString(colorHex);
+                if (dict.Contains(brushKey) && dict[brushKey] is SolidColorBrush b)
+                    b.Color = color;
+            }
+            catch { /* ignore invalid */ }
+        }
+
+        // Settings key → Dark.xaml brush key
+        var map = new Dictionary<string, string>
+        {
+            // General
+            ["Bg"]              = "BgBrush",
+            ["BgLight"]         = "BgLightBrush",
+            ["BgPanel"]         = "BgPanelBrush",
+            ["Border"]          = "BorderBrush",
+            ["Fg"]              = "FgBrush",
+            ["FgDim"]           = "FgDimBrush",
+            ["Accent"]          = "AccentBrush",
+            ["Selection"]       = "SelectionBrush",
+            ["Toolbar"]         = "ToolbarBgBrush",
+            ["ValueChanged"]    = "ValueChangedBrush",
+            // Disassembly
+            ["DsmAddress"]      = "AddressBrush",
+            ["DsmMnemonic"]     = "MnemonicBrush",
+            ["DsmRegister"]     = "RegisterBrush",
+            ["DsmBytes"]        = "HexBrush",
+            ["DsmNumber"]       = "DsmNumberBrush",
+            ["DsmJump"]         = "DsmJumpBrush",
+            ["DsmPunctuation"]  = "DsmPunctuationBrush",
+            ["DsmString"]       = "DsmStringBrush",
+            ["DsmComment"]      = "DsmCommentBrush",
+            ["DsmSymbol"]       = "DsmSymbolBrush",
+            ["DsmBpMarker"]     = "BreakpointBrush",
+            ["DsmBpRow"]        = "BpRowBrush",
+            ["DsmCurrentLine"]  = "DsmCurrentLineBrush",
+            ["DsmFunction"]     = "DsmFunctionBrush",
+        };
+
+        foreach (var (settingKey, brushKey) in map)
+        {
+            if (colors.TryGetValue(settingKey, out var hex))
+                SetBrush(brushKey, hex);
+        }
+
+        // Per-tab header colors
+        ApplyPerTabColors(colors);
+    }
+
+    private void ApplyPerTabColors(Dictionary<string, string> colors)
+    {
+        foreach (TabItem tab in MainTabControl.Items)
+        {
+            var name = tab.Header?.ToString() ?? "";
+            var fgKey = $"Tab.{name}.Fg";
+            var bgKey = $"Tab.{name}.Bg";
+
+            SolidColorBrush? fgBrush = null, bgBrush = null;
+
+            if (colors.TryGetValue(fgKey, out var fg) && !string.IsNullOrWhiteSpace(fg))
+            {
+                try { fgBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(fg)); }
+                catch { /* ignore */ }
+            }
+            if (colors.TryGetValue(bgKey, out var bg) && !string.IsNullOrWhiteSpace(bg))
+            {
+                try { bgBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(bg)); }
+                catch { /* ignore */ }
+            }
+
+            if (fgBrush == null && bgBrush == null) continue;
+
+            // Build a custom template that keeps the assigned color constant
+            // regardless of IsSelected / IsMouseOver state
+            var borderFactory = new FrameworkElementFactory(typeof(System.Windows.Controls.Border), "TabBorder");
+            borderFactory.SetValue(System.Windows.Controls.Border.BorderBrushProperty,
+                FindResource("BorderBrush") as Brush ?? Brushes.Gray);
+            borderFactory.SetValue(System.Windows.Controls.Border.BorderThicknessProperty, new Thickness(1, 1, 1, 0));
+            borderFactory.SetValue(System.Windows.Controls.Border.PaddingProperty, new Thickness(12, 5, 12, 5));
+            borderFactory.SetValue(System.Windows.Controls.Border.MarginProperty, new Thickness(0, 0, -1, 0));
+            borderFactory.SetValue(System.Windows.Controls.Border.SnapsToDevicePixelsProperty, true);
+
+            if (bgBrush != null)
+                borderFactory.SetValue(System.Windows.Controls.Border.BackgroundProperty, bgBrush);
+            else
+                borderFactory.SetBinding(System.Windows.Controls.Border.BackgroundProperty,
+                    new System.Windows.Data.Binding("Background") { RelativeSource = new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.TemplatedParent) });
+
+            var contentFactory = new FrameworkElementFactory(typeof(ContentPresenter));
+            contentFactory.SetValue(ContentPresenter.ContentSourceProperty, "Header");
+            contentFactory.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+            contentFactory.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
+            borderFactory.AppendChild(contentFactory);
+
+            var template = new ControlTemplate(typeof(TabItem)) { VisualTree = borderFactory };
+
+            // Selected state: thicker top border with accent color, but keep our fg/bg
+            var selectedTrigger = new Trigger { Property = TabItem.IsSelectedProperty, Value = true };
+            selectedTrigger.Setters.Add(new Setter(System.Windows.Controls.Border.BorderBrushProperty,
+                FindResource("AccentBrush") as Brush ?? Brushes.Blue) { TargetName = "TabBorder" });
+            selectedTrigger.Setters.Add(new Setter(System.Windows.Controls.Border.BorderThicknessProperty,
+                new Thickness(1, 2, 1, 0)) { TargetName = "TabBorder" });
+            template.Triggers.Add(selectedTrigger);
+
+            var style = new Style(typeof(TabItem));
+            if (fgBrush != null)
+                style.Setters.Add(new Setter(TabItem.ForegroundProperty, fgBrush));
+            style.Setters.Add(new Setter(TabItem.TemplateProperty, template));
+
+            tab.Style = style;
+        }
     }
 
     protected override void OnClosed(EventArgs e)
