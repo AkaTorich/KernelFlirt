@@ -1,1 +1,2 @@
 SymbolPath=C:\Users\psysh\OneDrive\Desktop\KernelFlirt\TestPrograms;srv*C:\Symbols*https://msdl.microsoft.com/download/symbols
+LastConnect=10.100.102.4
