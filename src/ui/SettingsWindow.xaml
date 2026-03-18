@@ -4,7 +4,7 @@
         Title="Settings" Width="560" Height="640"
         WindowStartupLocation="CenterOwner"
         ResizeMode="CanResizeWithGrip"
-        Background="#1E1E1E" Foreground="#D4D4D4"
+        Background="{DynamicResource BgBrush}" Foreground="{DynamicResource FgBrush}"
         FontFamily="Consolas" FontSize="13">
 
     <DockPanel Margin="12">
