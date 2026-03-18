@@ -14,6 +14,7 @@ namespace KernelFlirt.UI;
 public partial class MainWindow : Window
 {
     private MainViewModel VM => (MainViewModel)DataContext;
+    private readonly List<ContentControl> _pluginWrappers = [];
 
     public MainWindow()
     {
@@ -49,7 +50,10 @@ public partial class MainWindow : Window
         };
         VM.AddPluginToolPanel = (title, content) =>
         {
-            var tab = new TabItem { Header = title, Content = content };
+            var wrapper = new ContentControl { Content = content };
+            ApplyPluginResources(wrapper);
+            _pluginWrappers.Add(wrapper);
+            var tab = new TabItem { Header = title, Content = wrapper };
             MainTabControl.Items.Insert(MainTabControl.Items.Count - 1, tab); // Before Log tab
         };
         VM.LoadPlugins();
@@ -1010,7 +1014,11 @@ public partial class MainWindow : Window
 
     private void OnSettingsClick(object sender, RoutedEventArgs e)
     {
-        var dlg = new SettingsWindow(VM.ThemeColors) { Owner = this };
+        var builtIn = new HashSet<string>(SettingsWindow.TabNames);
+        var pluginTabs = MainTabControl.Items.OfType<TabItem>()
+            .Select(t => t.Header?.ToString() ?? "")
+            .Where(h => !string.IsNullOrEmpty(h) && !builtIn.Contains(h));
+        var dlg = new SettingsWindow(VM.ThemeColors, pluginTabs) { Owner = this };
         if (dlg.ShowDialog() == true)
         {
             VM.ThemeColors = dlg.ResultColors;
@@ -1069,6 +1077,19 @@ public partial class MainWindow : Window
             ["StackOffset"]     = "StackOffsetBrush",
             ["StackAddress"]    = "StackAddressBrush",
             ["StackAnnotation"] = "StackAnnotationBrush",
+            // Plugin controls
+            ["PluginBg"]          = "PluginBgBrush",
+            ["PluginFg"]          = "PluginFgBrush",
+            ["PluginFgDim"]       = "PluginFgDimBrush",
+            ["PluginBorder"]      = "PluginBorderBrush",
+            ["PluginAccent"]      = "PluginAccentBrush",
+            ["PluginControlBg"]   = "PluginControlBgBrush",
+            ["PluginButtonBg"]    = "PluginButtonBgBrush",
+            ["PluginButtonHover"] = "PluginButtonHoverBrush",
+            ["PluginSelection"]   = "PluginSelectionBrush",
+            ["PluginGridAltRow"]  = "PluginGridAltRowBrush",
+            ["PluginGroupHeader"] = "PluginGroupHeaderBrush",
+            ["PluginGroupBg"]     = "PluginGroupBgBrush",
         };
 
         int applied = 0;
@@ -1092,6 +1113,35 @@ public partial class MainWindow : Window
 
         // Tab header colors (global TabStyle + per-tab overrides)
         ApplyTabColors(colors);
+
+        // Update plugin wrapper scopes with new plugin brush values
+        foreach (var wrapper in _pluginWrappers)
+            ApplyPluginResources(wrapper);
+    }
+
+    /// <summary>
+    /// Overrides standard brush keys (BgBrush, FgBrush, etc.) inside the plugin wrapper scope
+    /// so that implicit styles resolve to PluginXxx brushes instead of the main app brushes.
+    /// </summary>
+    private static void ApplyPluginResources(ContentControl wrapper)
+    {
+        var app = Application.Current.Resources.MergedDictionaries[0];
+        var rd = wrapper.Resources;
+
+        void Map(string standardKey, string pluginKey)
+        {
+            if (app.Contains(pluginKey))
+                rd[standardKey] = app[pluginKey];
+        }
+
+        Map("BgBrush",        "PluginBgBrush");
+        Map("BgLightBrush",   "PluginButtonBgBrush");
+        Map("BgPanelBrush",   "PluginControlBgBrush");
+        Map("FgBrush",        "PluginFgBrush");
+        Map("FgDimBrush",     "PluginFgDimBrush");
+        Map("BorderBrush",    "PluginBorderBrush");
+        Map("AccentBrush",    "PluginAccentBrush");
+        Map("SelectionBrush", "PluginSelectionBrush");
     }
 
     private static SolidColorBrush? TryParseBrush(Dictionary<string, string> colors, string key)

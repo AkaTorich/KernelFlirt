@@ -43,6 +43,11 @@
                     <StackPanel x:Name="PanelPerTab" />
                 </ScrollViewer>
             </TabItem>
+            <TabItem Header="Plugins" x:Name="TabPlugins">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="8">
+                    <StackPanel x:Name="PanelPlugins" />
+                </ScrollViewer>
+            </TabItem>
         </TabControl>
     </DockPanel>
 </Window>

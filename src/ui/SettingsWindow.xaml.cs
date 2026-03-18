@@ -62,6 +62,19 @@ public partial class SettingsWindow : Window
         ["TabSelFg"]        = "#D4D4D4",
         ["TabSelBorder"]    = "#007ACC",
         ["TabHoverBg"]      = "#3E3E42",
+        // Plugin controls
+        ["PluginBg"]          = "#1E1E1E",
+        ["PluginFg"]          = "#D4D4D4",
+        ["PluginFgDim"]       = "#808080",
+        ["PluginBorder"]      = "#3F3F46",
+        ["PluginAccent"]      = "#007ACC",
+        ["PluginControlBg"]   = "#252526",
+        ["PluginButtonBg"]    = "#2D2D30",
+        ["PluginButtonHover"] = "#007ACC",
+        ["PluginSelection"]   = "#264F78",
+        ["PluginGridAltRow"]  = "#252526",
+        ["PluginGroupHeader"] = "#2D2D30",
+        ["PluginGroupBg"]     = "#252526",
     };
 
     // Which color keys belong to which settings tab
@@ -75,12 +88,19 @@ public partial class SettingsWindow : Window
         ["StackOffset", "StackAddress", "StackAnnotation"];
     private static readonly string[] TabStyleKeys =
         ["TabBg", "TabFg", "TabSelBg", "TabSelFg", "TabSelBorder", "TabHoverBg"];
+    private static readonly string[] PluginKeys =
+        ["PluginBg", "PluginFg", "PluginFgDim", "PluginBorder", "PluginAccent",
+         "PluginControlBg", "PluginButtonBg", "PluginButtonHover", "PluginSelection",
+         "PluginGridAltRow", "PluginGroupHeader", "PluginGroupBg"];
+
+    private readonly string[] _pluginTabNames;
 
     public Dictionary<string, string> ResultColors => _colors;
 
-    public SettingsWindow(Dictionary<string, string>? existing = null)
+    public SettingsWindow(Dictionary<string, string>? existing = null, IEnumerable<string>? pluginTabNames = null)
     {
         InitializeComponent();
+        _pluginTabNames = pluginTabNames?.ToArray() ?? [];
 
         // Init colors from existing or defaults
         foreach (var (key, def) in Defaults)
@@ -96,11 +116,22 @@ public partial class SettingsWindow : Window
             }
         }
 
+        // Plugin tab colors
+        foreach (var tab in _pluginTabNames)
+        {
+            foreach (var suffix in new[] { "Fg", "Bg" })
+            {
+                var key = $"Tab.{tab}.{suffix}";
+                _colors[key] = (existing != null && existing.TryGetValue(key, out var val)) ? val : "";
+            }
+        }
+
         BuildGeneralPanel();
         BuildDisasmPanel();
         BuildStackPanel();
         BuildTabStylePanel();
         BuildPerTabPanel();
+        BuildPluginsPanel();
     }
 
     // ---- Theme selector bar ----
@@ -321,6 +352,83 @@ public partial class SettingsWindow : Window
 
             AddColorRow(PanelPerTab, $"Tab.{tab}.Fg", "  Text Color", allowEmpty: true);
             AddColorRow(PanelPerTab, $"Tab.{tab}.Bg", "  Background", allowEmpty: true);
+        }
+    }
+
+    private void BuildPluginsPanel()
+    {
+        PanelPlugins.Children.Add(CreateThemeBar(PluginKeys));
+
+        // ---- Plugin Control Colors ----
+        var controlHeader = new TextBlock
+        {
+            Text = "Plugin Control Colors",
+            FontSize = 14, FontWeight = FontWeights.Bold,
+            Margin = new Thickness(0, 0, 0, 4)
+        };
+        PanelPlugins.Children.Add(controlHeader);
+
+        var controlDesc = new TextBlock
+        {
+            Text = "These colors apply to all controls inside plugin panels.\nPlugins inherit these automatically — no code changes needed.",
+            Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#808080")),
+            Margin = new Thickness(0, 0, 0, 8),
+            TextWrapping = TextWrapping.Wrap
+        };
+        PanelPlugins.Children.Add(controlDesc);
+
+        var pluginItems = new (string Key, string Label)[]
+        {
+            ("PluginBg",          "Background"),
+            ("PluginFg",          "Foreground"),
+            ("PluginFgDim",       "Dim Text"),
+            ("PluginBorder",      "Borders"),
+            ("PluginAccent",      "Accent / Highlights"),
+            ("PluginControlBg",   "Input Controls (TextBox, ComboBox)"),
+            ("PluginButtonBg",    "Button Background"),
+            ("PluginButtonHover", "Button Hover"),
+            ("PluginSelection",   "Selection / Active Row"),
+            ("PluginGridAltRow",  "DataGrid Alternating Row"),
+            ("PluginGroupHeader", "GroupBox Header"),
+            ("PluginGroupBg",     "GroupBox Content"),
+        };
+
+        foreach (var (key, label) in pluginItems)
+            AddColorRow(PanelPlugins, key, label);
+
+        // ---- Per-Plugin Tab Header Colors ----
+        if (_pluginTabNames.Length > 0)
+        {
+            var tabHeader = new TextBlock
+            {
+                Text = "Plugin Tab Headers",
+                FontSize = 14, FontWeight = FontWeights.Bold,
+                Margin = new Thickness(0, 16, 0, 4)
+            };
+            PanelPlugins.Children.Add(tabHeader);
+
+            var tabDesc = new TextBlock
+            {
+                Text = "Override foreground/background for individual plugin tab headers.\nLeave empty to use global tab colors.",
+                Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#808080")),
+                Margin = new Thickness(0, 0, 0, 8),
+                TextWrapping = TextWrapping.Wrap
+            };
+            PanelPlugins.Children.Add(tabDesc);
+        }
+
+        foreach (var tab in _pluginTabNames)
+        {
+            var title = new TextBlock
+            {
+                Text = tab,
+                FontWeight = FontWeights.Bold,
+                Margin = new Thickness(0, 8, 0, 4)
+            };
+            PanelPlugins.Children.Add(title);
+
+            AddColorRow(PanelPlugins, $"Tab.{tab}.Fg", "  Text Color", allowEmpty: true);
+            AddColorRow(PanelPlugins, $"Tab.{tab}.Bg", "  Background", allowEmpty: true);
         }
     }
 
