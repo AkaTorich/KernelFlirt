@@ -44,6 +44,8 @@ Windows SDK / Debugging Tools for Windows:
 
 License: Proprietary (Microsoft)
 Subject to the Microsoft Software License Terms for Windows SDK.
+These files are NOT covered by the MIT license of this project.
+They are redistributable components per the Windows SDK license terms.
 https://developer.microsoft.com/en-us/windows/downloads/windows-sdk/
 
 
