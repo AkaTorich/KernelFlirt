@@ -33,6 +33,7 @@ bld/
 [Ll]og/
 [Ll]ogs/
 retdec/
+IdaPRO-MCP/
 
 # Keep these project directories (override [Bb]in/ rule for retdec-bin/bin/)
 !retdec-bin/
