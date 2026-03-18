@@ -120,6 +120,12 @@ KfReadMemory(
         return (bytesRead > 0) ? STATUS_SUCCESS : STATUS_PARTIAL_COPY;
     }
 
+    /* Reject obviously invalid usermode addresses */
+    if (input->Address == 0 || input->Address >= KERNEL_SPACE_START) {
+        Irp->IoStatus.Information = 0;
+        return STATUS_INVALID_PARAMETER;
+    }
+
     /* User-space: use MmCopyVirtualMemory as before */
     status = PsLookupProcessByProcessId((HANDLE)(ULONG_PTR)input->ProcessId, &process);
     if (!NT_SUCCESS(status)) {
@@ -127,6 +133,13 @@ KfReadMemory(
                  input->ProcessId, status);
         Irp->IoStatus.Information = 0;
         return status;
+    }
+
+    /* Check if process is still alive (not terminated/zombie) */
+    if (PsGetProcessExitStatus(process) != STATUS_PENDING) {
+        ObDereferenceObject(process);
+        Irp->IoStatus.Information = 0;
+        return STATUS_PROCESS_IS_TERMINATING;
     }
 
     __try {

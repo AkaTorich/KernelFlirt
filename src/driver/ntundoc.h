@@ -60,6 +60,11 @@ NTKERNELAPI PVOID PsGetProcessWow64Process(
     _In_ PEPROCESS Process
 );
 
+/* Process exit status (returns STATUS_PENDING if still alive) */
+NTKERNELAPI NTSTATUS PsGetProcessExitStatus(
+    _In_ PEPROCESS Process
+);
+
 /* Memory copy between processes */
 NTKERNELAPI NTSTATUS NTAPI MmCopyVirtualMemory(
     _In_ PEPROCESS SourceProcess,

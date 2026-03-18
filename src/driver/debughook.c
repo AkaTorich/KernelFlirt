@@ -129,10 +129,15 @@ static ULONG            g_ContinueFlags = 0;
 static ULONG64          g_ContinueNewRip = 0;
 static ULONG64          g_ContinueNewRsp = 0;
 
-/* Step-past state for target process */
-static BOOLEAN          g_StepPastPending = FALSE;
-static ULONG64          g_StepPastAddr    = 0;
-static BOOLEAN          g_StepPastAutoRun = TRUE;
+/* Step-past state for target process — per-thread to avoid races
+ * when multiple threads hit breakpoints concurrently. */
+#define MAX_STEP_PAST  32
+static struct {
+    ULONG   Tid;
+    ULONG64 Addr;
+    BOOLEAN AutoRun;
+    BOOLEAN Active;
+} g_StepPast[MAX_STEP_PAST];
 
 /* Fast trace mode: step internally without reporting until RIP exits range */
 static volatile BOOLEAN g_TraceActive     = FALSE;
@@ -155,7 +160,7 @@ static volatile ULONG   g_DiagWaitCount   = 0;  /* How many times timeout loop i
 static volatile ULONG   g_DiagReportCount = 0;  /* How many times KfReportAndBlock called */
 
 /* Transparent step-past for non-target processes */
-#define MAX_TRANSPARENT  16
+#define MAX_TRANSPARENT  64
 static struct {
     ULONG   Tid;
     ULONG64 Addr;
@@ -173,45 +178,43 @@ static void KfCancelWaitIrp(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 /* MDL-based byte write (works in current process context)             */
 /* ------------------------------------------------------------------ */
 
+/*
+ * Write a single byte in the current process/thread context.
+ *
+ * For usermode addresses: disable CR0.WP + cli to safely write to
+ * read-only code pages without heavy MDL calls that can BSOD
+ * during exception dispatch (PAGE_FAULT_IN_NONPAGED_AREA).
+ *
+ * For kernel addresses: delegate to KfPatchBytes (MDL-remap).
+ */
 static NTSTATUS KfWriteByteInContext(ULONG64 address, UCHAR byte)
 {
-    PMDL    mdl = NULL;
-    PVOID   mapped = NULL;
-    NTSTATUS status = STATUS_SUCCESS;
-    KPROCESSOR_MODE lockMode = (address >= 0xFFFF800000000000ULL) ? KernelMode : UserMode;
-
-    mdl = IoAllocateMdl((PVOID)(ULONG_PTR)address, 1, FALSE, FALSE, NULL);
-    if (!mdl) return STATUS_INSUFFICIENT_RESOURCES;
-
-    __try {
-        MmProbeAndLockPages(mdl, lockMode, IoReadAccess);
-
-        mapped = MmMapLockedPagesSpecifyCache(
-            mdl, KernelMode, MmNonCached, NULL, FALSE, NormalPagePriority);
-        if (!mapped) {
-            MmUnlockPages(mdl);
-            IoFreeMdl(mdl);
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        status = MmProtectMdlSystemAddress(mdl, PAGE_READWRITE);
-        if (NT_SUCCESS(status)) {
-            *(UCHAR *)mapped = byte;
-        }
-
-        MmUnmapLockedPages(mapped, mdl);
-        MmUnlockPages(mdl);
+    /* Kernel address — use MDL-remap path */
+    if (address >= 0xFFFF800000000000ULL) {
+        return KfPatchBytes((PVOID)(ULONG_PTR)address, &byte, 1);
     }
-    __except (EXCEPTION_EXECUTE_HANDLER) {
-        status = GetExceptionCode();
+
+    /* Usermode address — CR0.WP trick (safe at any IRQL) */
+    {
+        ULONG64 cr0;
+
+        _disable();                         /* cli — no preemption */
+        cr0 = __readcr0();
+        __writecr0(cr0 & ~0x10000ULL);      /* clear WP bit */
+
         __try {
-            if (mapped) MmUnmapLockedPages(mapped, mdl);
-            MmUnlockPages(mdl);
-        } __except (EXCEPTION_EXECUTE_HANDLER) { /* ignore */ }
-    }
+            *(volatile UCHAR *)(ULONG_PTR)address = byte;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {
+            __writecr0(cr0);                /* restore WP */
+            _enable();                      /* sti */
+            return GetExceptionCode();
+        }
 
-    IoFreeMdl(mdl);
-    return status;
+        __writecr0(cr0);                    /* restore WP */
+        _enable();                          /* sti */
+    }
+    return STATUS_SUCCESS;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1035,56 +1038,65 @@ static BOOLEAN KfDebugHandler(
     /* ============================================================== */
     if (ExceptionRecord->ExceptionCode == STATUS_SINGLE_STEP) {
 
-        /* --- Target process: re-arm after step-past --- */
-        if (isTarget && g_StepPastPending && currentTid != 0) {
-            UCHAR dummyOrig;
-            g_StepPastPending = FALSE;
-
-            /* Only re-arm if BP still exists in table (user may have removed it) */
-            if (KfFindSwBpOrigByte(g_StepPastAddr, currentPid, &dummyOrig)) {
-                KfWriteByteInContext(g_StepPastAddr, 0xCC);
+        /* --- Target process: re-arm after step-past (per-thread) --- */
+        if (isTarget && currentTid != 0) {
+            int spIdx;
+            for (spIdx = 0; spIdx < MAX_STEP_PAST; spIdx++) {
+                if (g_StepPast[spIdx].Active && g_StepPast[spIdx].Tid == currentTid)
+                    break;
             }
+            if (spIdx < MAX_STEP_PAST) {
+                UCHAR dummyOrig;
+                ULONG64 spAddr = g_StepPast[spIdx].Addr;
+                BOOLEAN spAutoRun = g_StepPast[spIdx].AutoRun;
+                g_StepPast[spIdx].Active = FALSE;
 
-            /* Clear TF so thread doesn't keep stepping */
-            ContextRecord->EFlags &= ~0x100UL;
+                /* Only re-arm if BP still exists in table (user may have removed it) */
+                if (KfFindSwBpOrigByte(spAddr, currentPid, &dummyOrig)) {
+                    KfWriteByteInContext(spAddr, 0xCC);
+                }
 
-            if (g_StepPastAutoRun) {
-                /* Run mode: silently continue, don't report */
-                return TRUE;
-            }
+                /* Clear TF so thread doesn't keep stepping */
+                ContextRecord->EFlags &= ~0x100UL;
 
-            /* If fast trace mode is active, don't report to UI —
-             * just set TF and let the trace loop handle the next step.
-             * This avoids a race where reporting to UI during trace
-             * overwrites g_TraceActive/g_ContinueMode. */
-            if (g_TraceActive) {
-                ContextRecord->EFlags |= 0x100UL; /* Set TF — continue stepping */
+                if (spAutoRun) {
+                    /* Run mode: silently continue, don't report */
+                    return TRUE;
+                }
+
+                /* If fast trace mode is active, don't report to UI —
+                 * just set TF and let the trace loop handle the next step.
+                 * This avoids a race where reporting to UI during trace
+                 * overwrites g_TraceActive/g_ContinueMode. */
+                if (g_TraceActive) {
+                    ContextRecord->EFlags |= 0x100UL; /* Set TF — continue stepping */
+                    if (TrapFrame != NULL) {
+                        *(ULONG64 *)((UCHAR *)TrapFrame + 0x178) = ContextRecord->EFlags;
+                    }
+                    return TRUE;
+                }
+
+                /* StepIn mode: report SingleStep event to UI */
+                InterlockedIncrement(&g_HookStepCount);
+                KfReportAndBlock(TrapFrame, ExceptionRecord, ContextRecord, PreviousMode);
+
+                /* Apply pending RIP/RSP override (for IAT tracing) */
+                if (g_ContinueFlags & KF_CONT_SET_RIP) ContextRecord->Rip = g_ContinueNewRip;
+                if (g_ContinueFlags & KF_CONT_SET_RSP) ContextRecord->Rsp = g_ContinueNewRsp;
+                g_ContinueFlags = 0;
+
+                /* After UI continues: check if another step was requested */
+                if (g_ContinueMode == KF_CONTINUE_STEP_INTO) {
+                    ContextRecord->EFlags |= 0x100UL; /* Set TF */
+                }
+                /* Sync to TrapFrame (belt-and-suspenders) */
                 if (TrapFrame != NULL) {
+                    *(ULONG64 *)((UCHAR *)TrapFrame + 0x168) = ContextRecord->Rip;
                     *(ULONG64 *)((UCHAR *)TrapFrame + 0x178) = ContextRecord->EFlags;
+                    *(ULONG64 *)((UCHAR *)TrapFrame + 0x180) = ContextRecord->Rsp;
                 }
                 return TRUE;
             }
-
-            /* StepIn mode: report SingleStep event to UI */
-            InterlockedIncrement(&g_HookStepCount);
-            KfReportAndBlock(TrapFrame, ExceptionRecord, ContextRecord, PreviousMode);
-
-            /* Apply pending RIP/RSP override (for IAT tracing) */
-            if (g_ContinueFlags & KF_CONT_SET_RIP) ContextRecord->Rip = g_ContinueNewRip;
-            if (g_ContinueFlags & KF_CONT_SET_RSP) ContextRecord->Rsp = g_ContinueNewRsp;
-            g_ContinueFlags = 0;
-
-            /* After UI continues: check if another step was requested */
-            if (g_ContinueMode == KF_CONTINUE_STEP_INTO) {
-                ContextRecord->EFlags |= 0x100UL; /* Set TF */
-            }
-            /* Sync to TrapFrame (belt-and-suspenders) */
-            if (TrapFrame != NULL) {
-                *(ULONG64 *)((UCHAR *)TrapFrame + 0x168) = ContextRecord->Rip;
-                *(ULONG64 *)((UCHAR *)TrapFrame + 0x178) = ContextRecord->EFlags;
-                *(ULONG64 *)((UCHAR *)TrapFrame + 0x180) = ContextRecord->Rsp;
-            }
-            return TRUE;
         }
 
         /* --- Non-target process: re-arm after transparent step --- */
@@ -1197,14 +1209,30 @@ static BOOLEAN KfDebugHandler(
 
                 if (bpStillExists) {
                     NTSTATUS st;
+                    int spSlot = -1, spI;
 
                     /* Restore original byte so CPU can execute it */
                     st = KfWriteByteInContext(bpAddr, currentOrig);
 
-                    /* Prepare for re-arm on next SingleStep */
-                    g_StepPastPending = TRUE;
-                    g_StepPastAddr    = bpAddr;
-                    g_StepPastAutoRun = (g_ContinueMode == KF_CONTINUE_STEP_PAST);
+                    /* Prepare for re-arm on next SingleStep (per-thread) */
+                    for (spI = 0; spI < MAX_STEP_PAST; spI++) {
+                        if (g_StepPast[spI].Active && g_StepPast[spI].Tid == currentTid) {
+                            spSlot = spI; break; /* reuse existing slot for this thread */
+                        }
+                    }
+                    if (spSlot < 0) {
+                        for (spI = 0; spI < MAX_STEP_PAST; spI++) {
+                            if (!g_StepPast[spI].Active) { spSlot = spI; break; }
+                        }
+                    }
+                    if (spSlot >= 0) {
+                        g_StepPast[spSlot].Active  = TRUE;
+                        g_StepPast[spSlot].Tid     = currentTid;
+                        g_StepPast[spSlot].Addr    = bpAddr;
+                        g_StepPast[spSlot].AutoRun = (g_ContinueMode == KF_CONTINUE_STEP_PAST);
+                    }
+                    /* If no slot available, BP won't be re-armed — better than
+                     * writing 0xCC to wrong address and causing BSOD */
                 }
 
                 /* Always set TF for single step (even if BP was removed) */
@@ -1219,21 +1247,24 @@ static BOOLEAN KfDebugHandler(
             NTSTATUS st;
             int slot = -1, i;
 
-            /* Restore original byte so thread can execute */
-            st = KfWriteByteInContext(bpAddr, origByte);
-
-            /* Set TF for single step */
-            ContextRecord->EFlags |= 0x100UL;
-
-            /* Find a free transparent step slot */
+            /* Find a free transparent step slot FIRST — if none available,
+             * we can't safely do step-past (TF would stay set forever). */
             for (i = 0; i < MAX_TRANSPARENT; i++) {
                 if (!g_Transparent[i].Active) { slot = i; break; }
             }
+
+            /* Restore original byte so thread can execute */
+            st = KfWriteByteInContext(bpAddr, origByte);
+
             if (slot >= 0) {
+                /* Set TF for single step — will re-arm 0xCC on next step */
+                ContextRecord->EFlags |= 0x100UL;
                 g_Transparent[slot].Active = TRUE;
                 g_Transparent[slot].Tid    = currentTid;
                 g_Transparent[slot].Addr   = bpAddr;
             }
+            /* else: no slot — BP won't be re-armed for this hit, but no crash.
+             * The BP is still in the table; next time it will try again. */
 
             return TRUE;
         }
@@ -1314,10 +1345,10 @@ NTSTATUS KfDebugHookInit(void)
     g_EventPending    = FALSE;
     g_WaitIrp         = NULL;
     g_ThreadBlocked   = FALSE;
-    g_StepPastPending = FALSE;
     g_ContinueMode    = KF_CONTINUE_RUN;
     g_TraceActive     = FALSE;
 
+    RtlZeroMemory(g_StepPast, sizeof(g_StepPast));
     RtlZeroMemory(&g_DebugEvent, sizeof(g_DebugEvent));
     RtlZeroMemory(g_Transparent, sizeof(g_Transparent));
 
@@ -1602,8 +1633,6 @@ NTSTATUS KfInstallDebugHook(void)
 
 void KfRemoveDebugHook(void)
 {
-    KIRQL oldIrql;
-
     if (!g_HookInstalled)
         return;
 
