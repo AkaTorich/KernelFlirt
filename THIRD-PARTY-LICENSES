@@ -1,0 +1,121 @@
+Third-Party Licenses
+====================
+
+KernelFlirt uses the following third-party libraries and tools.
+
+
+NuGet Packages
+--------------
+
+1. AvalonDock (Dirkster.AvalonDock v4.72.1)
+   License: BSD-3-Clause
+   URL: https://github.com/Dirkster99/AvalonDock
+
+2. AvalonEdit (ICSharpCode.AvalonEdit v6.3.0.90)
+   License: MIT
+   URL: https://github.com/icsharpcode/AvalonEdit
+
+3. CommunityToolkit.Mvvm (v8.4.0)
+   License: MIT
+   URL: https://github.com/CommunityToolkit/dotnet
+
+4. Gee.External.Capstone (v2.3.0)
+   License: MIT
+   URL: https://github.com/9ee1/Capstone.NET
+
+5. Iced (v1.21.0)
+   License: MIT
+   URL: https://github.com/icedland/iced
+
+
+MagicmidaCSharp (samples/MagicmidaCSharp/)
+----------------------------------------------
+
+Reference implementation of a Themida unpacker/dumper in C#.
+Not included in the repository — provided separately.
+
+License: Proprietary
+Copyright (c) Magicmida Authors
+
+
+Windows Debugging Tools (KD/)
+-----------------------------
+
+The following files are redistributable components from the
+Windows SDK / Debugging Tools for Windows:
+
+  - kd.exe
+  - dbgeng.dll
+  - dbghelp.dll
+  - dbgcore.dll
+  - DbgModel.dll
+  - srcsrv.dll
+  - symsrv.dll
+
+License: Proprietary (Microsoft)
+Subject to the Microsoft Software License Terms for Windows SDK.
+https://developer.microsoft.com/en-us/windows/downloads/windows-sdk/
+
+
+RetDec Decompiler (retdec/)
+---------------------------
+
+RetDec is a retargetable machine-code decompiler based on LLVM.
+
+License: MIT
+URL: https://github.com/avast/retdec
+Copyright (c) 2017 Avast Software
+
+RetDec bundles the following third-party components:
+
+  a) Capstone Engine
+     License: BSD-3-Clause
+     URL: https://www.capstone-engine.org/
+
+  b) Keystone Engine
+     License: GPLv2 (with FOSS License Exception)
+     URL: https://www.keystone-engine.org/
+
+  c) LLVM
+     License: Apache-2.0 WITH LLVM-exception
+     URL: https://llvm.org/
+
+  d) RapidJSON
+     License: MIT
+     URL: https://github.com/Tencent/rapidjson
+
+  e) TinyXML-2
+     License: Zlib
+     URL: https://github.com/leethomason/tinyxml2
+
+  f) ELFIO
+     License: MIT
+     URL: https://github.com/serge1/ELFIO
+
+  g) YARA
+     License: BSD-3-Clause
+     URL: https://github.com/VirusTotal/yara
+
+  h) yaramod
+     License: MIT
+     URL: https://github.com/avast/yaramod
+
+  i) Eigen
+     License: MPL-2.0
+     URL: https://eigen.tuxfamily.org/
+
+  j) TLSH
+     License: Apache-2.0
+     URL: https://github.com/trendmicro/tlsh
+
+  k) stb
+     License: MIT / Public Domain
+     URL: https://github.com/nothings/stb
+
+  l) Google Test
+     License: BSD-3-Clause
+     URL: https://github.com/google/googletest
+
+  m) whereami
+     License: MIT
+     URL: https://github.com/gpakosz/whereami
