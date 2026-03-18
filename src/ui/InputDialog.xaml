@@ -4,13 +4,13 @@
         Title="Input" Width="350" Height="150"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
-        Background="#1E1E1E" Foreground="#D4D4D4"
+        Background="{DynamicResource BgBrush}" Foreground="{DynamicResource FgBrush}"
         FontFamily="Consolas" FontSize="13">
     <StackPanel Margin="16">
         <TextBlock x:Name="TxtPrompt" Margin="0,0,0,8" />
         <TextBox x:Name="TxtInput" Padding="4"
-                 Background="#252526" Foreground="#D4D4D4"
-                 BorderBrush="#3F3F46" CaretBrush="#D4D4D4" />
+                 Background="{DynamicResource BgPanelBrush}" Foreground="{DynamicResource FgBrush}"
+                 BorderBrush="{DynamicResource BorderBrush}" CaretBrush="{DynamicResource FgBrush}" />
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
             <Button Content="OK" Click="OnOk" IsDefault="True" Padding="12,6" Margin="0,0,8,0" />
             <Button Content="Cancel" Click="OnCancel" IsCancel="True" Padding="12,6" />

@@ -4,7 +4,7 @@
         Title="Pick Color" Width="400" Height="360"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
-        Background="#1E1E1E" Foreground="#D4D4D4"
+        Background="{DynamicResource BgBrush}" Foreground="{DynamicResource FgBrush}"
         FontFamily="Consolas" FontSize="13">
 
     <StackPanel Margin="16">
@@ -12,15 +12,16 @@
 
         <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
             <TextBox x:Name="TxtHex" Width="120" Padding="4"
-                     Background="#252526" Foreground="#D4D4D4" BorderBrush="#3F3F46"
-                     CaretBrush="#D4D4D4" TextChanged="OnHexChanged" />
+                     Background="{DynamicResource BgPanelBrush}" Foreground="{DynamicResource FgBrush}"
+                     BorderBrush="{DynamicResource BorderBrush}" CaretBrush="{DynamicResource FgBrush}"
+                     TextChanged="OnHexChanged" />
             <Border x:Name="Preview" Width="100" Height="28" Margin="12,0,0,0"
-                    BorderBrush="#3F3F46" BorderThickness="1" CornerRadius="2"
+                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="2"
                     Cursor="Hand" MouseLeftButtonDown="OnPreviewClick"
                     ToolTip="Click to open system color picker" />
         </StackPanel>
 
-        <TextBlock Text="Presets:" Foreground="#808080" Margin="0,0,0,4" />
+        <TextBlock Text="Presets:" Foreground="{DynamicResource FgDimBrush}" Margin="0,0,0,4" />
 
         <!-- Row 1: Dark backgrounds -->
         <WrapPanel Margin="0,0,0,4">

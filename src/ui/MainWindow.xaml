@@ -118,6 +118,7 @@
                 <MenuItem Header="Refresh _SEH Chain" Click="OnRefreshSehClick" />
                 <MenuItem Header="Restore All _Patches" Command="{Binding RestoreAllPatchesCommand}" />
                 <Separator />
+                <MenuItem Header="_Fullscreen" Click="OnToggleFullscreen" InputGestureText="F11" />
                 <MenuItem Header="_Settings..." Click="OnSettingsClick" />
             </MenuItem>
             <MenuItem Header="_Symbols">

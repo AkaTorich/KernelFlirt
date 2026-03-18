@@ -116,7 +116,36 @@ public partial class MainWindow : Window
             VM.ToggleBreakpointCommand.Execute(null);
             e.Handled = true;
         }
+        else if (e.Key == Key.F11)
+        {
+            ToggleFullscreen();
+            e.Handled = true;
+        }
     }
+
+    private WindowState _preFullscreenState;
+    private WindowStyle _preFullscreenStyle;
+    private bool _isFullscreen;
+
+    private void ToggleFullscreen()
+    {
+        if (_isFullscreen)
+        {
+            WindowStyle = _preFullscreenStyle;
+            WindowState = _preFullscreenState;
+            _isFullscreen = false;
+        }
+        else
+        {
+            _preFullscreenState = WindowState;
+            _preFullscreenStyle = WindowStyle;
+            WindowStyle = WindowStyle.None;
+            WindowState = WindowState.Maximized;
+            _isFullscreen = true;
+        }
+    }
+
+    private void OnToggleFullscreen(object sender, RoutedEventArgs e) => ToggleFullscreen();
 
     private void RefreshDisasmView()
     {
