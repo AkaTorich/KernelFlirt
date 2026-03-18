@@ -35,6 +35,8 @@ bld/
 [Ll]ogs/
 retdec/
 IdaPRO-MCP/
+samples/MagicmidaCSharp/
+samples/MagicmidaCSharp.zip
 
 # Keep these project directories (override [Bb]in/ rule for retdec-bin/bin/)
 !retdec-bin/
