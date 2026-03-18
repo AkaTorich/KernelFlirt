@@ -24,6 +24,7 @@
 | **KernelFlirt.sys** | C / WDM | Драйвер ядра — память, точки останова, inline hook на KdTrap |
 | **KfRelay.exe** | C | TCP relay-агент на VM, проксирует IOCTL по сети |
 | **KfLoader.exe** | C | CLI для загрузки/выгрузки драйвера через SCM |
+| **KernelFlirt.SDK** | C# / .NET 9 | SDK плагинов — интерфейсы для отладчика, памяти, точек останова, символов, UI |
 
 ## Как это работает
 
@@ -165,14 +166,18 @@ srv*C:\Symbols*https://msdl.microsoft.com/download/symbols
 - **Блокировка потока** — Через KeWaitForSingleObject до ответа UI
 
 ### Интерфейс (стиль OllyDbg)
-- **Темная тема** — (#1E1E1E), синие адреса, желтые мнемоники, зеленые регистры
+- **9 встроенных тем** — default-dark, x64dbg, monokai, ollydbg, ollydbg-light, ida-pro, dracula, long_night, sakura
+- **Смена темы в реальном времени** — Все цвета меняются через Settings, применяются мгновенно (DynamicResource)
+- **Настраиваемые цвета** — Общие, Дизассемблер (14 цветов), Стек (3 цвета), Стиль вкладок, индивидуальные цвета заголовков вкладок
 - **Дизассемблер** — Подсветка синтаксиса, маркеры BP, текущая инструкция
 - **Панель регистров** — Изменения красным, правый клик Follow
-- **Панель стека** — RSP-относительный вывод
+- **Панель стека** — Цветной RSP-относительный вывод (смещение, адрес, аннотация/подсказка)
 - **Hex dump** — 16 байт/строка с ASCII
-- **10 вкладок**: Breakpoints, Modules, Kernel Modules, Threads, Call Stack, Bookmarks, Patches, SEH Chain, Search, Log
+- **14 вкладок**: Disassembly, Breakpoints, Modules, Kernel Modules, Threads, Call Stack, Bookmarks, Patches, Exceptions, Sections, Strings, Search, Imports, Functions, Decompiler, Log — каждая с индивидуальным цветом заголовка
 - **Удаленный файловый менеджер** — Обзор ФС виртуальной машины, запуск EXE
 - **Выбор процесса** — Фильтр по имени или PID
+- **Полноэкранный режим** — F11
+- **Система плагинов** — SDK с API для отладчика, памяти, точек останова, символов, UI
 
 ## Горячие клавиши
 
@@ -188,6 +193,7 @@ srv*C:\Symbols*https://msdl.microsoft.com/download/symbols
 | Ctrl+G | Перейти к адресу |
 | Ctrl+F9 | Выполнить до возврата |
 | Ctrl+F | Поиск по паттерну |
+| F11 | Полноэкранный режим |
 
 ## Сборка
 
@@ -217,6 +223,7 @@ bin/UI/      KernelFlirt.exe
 ```
 KernelFlirt/
 ├── build.ps1                          # Скрипт сборки
+├── sign-driver.ps1                    # Подпись драйвера
 ├── include/
 │   └── kf_shared.h                    # Общие IOCTL-коды и структуры
 ├── src/
@@ -231,27 +238,103 @@ KernelFlirt/
 │   │   ├── modules.c                  # Модули процесса
 │   │   ├── kmodules.c                 # Модули ядра
 │   │   ├── process.c                  # Attach/detach процесса
-│   │   └── singlestep.c              # Пошаговое исполнение
+│   │   ├── singlestep.c              # Пошаговое исполнение
+│   │   ├── compat.c                   # Совместимость с версиями ОС
+│   │   └── ntqsi_hook.c              # Хук NtQuerySystemInformation
 │   ├── relay/                         # TCP relay (C)
 │   │   └── main.c                     # CMD+DBG каналы, псевдо-IOCTL
 │   ├── loader/                        # Загрузчик драйвера (C)
 │   │   ├── main.c                     # CLI
 │   │   ├── service.c                  # Windows SCM API
 │   │   └── vmdetect.c                 # Детекция гипервизора
+│   ├── testdriver/                    # Тестовый драйвер (C)
+│   │   └── main.c                     # Простой драйвер для тестирования
+│   ├── sdk/                           # SDK плагинов (.NET)
+│   │   ├── KernelFlirt.SDK.csproj
+│   │   ├── IKernelFlirtPlugin.cs      # Интерфейс плагина
+│   │   ├── IDebuggerApi.cs            # API отладчика
+│   │   ├── IMemoryApi.cs              # API чтения/записи памяти
+│   │   ├── IBreakpointApi.cs          # API точек останова
+│   │   ├── IProcessApi.cs             # API процессов/модулей
+│   │   ├── ISymbolApi.cs              # API символов
+│   │   ├── ILogApi.cs                 # API логирования
+│   │   ├── IUiApi.cs                  # API интерфейса
+│   │   └── Models.cs                  # Общие модели данных
 │   └── ui/                            # WPF UI отладчика (C#)
-│       ├── MainWindow.xaml
+│       ├── MainWindow.xaml/cs         # Главное окно + обработчики
+│       ├── SettingsWindow.xaml/cs     # Настройки тем и цветов
+│       ├── ColorPickerDialog.xaml/cs  # Выбор цвета с пресетами
+│       ├── InputDialog.xaml/cs        # Диалог ввода
+│       ├── PluginSettingsWindow.xaml/cs # Настройки плагинов
+│       ├── App.xaml/cs                # Точка входа
 │       ├── ViewModels/
-│       │   └── MainViewModel.cs       # Все команды отладки
+│       │   └── MainViewModel.cs       # Все команды и состояние отладки
+│       ├── Models/                    # Модели данных
+│       │   ├── Instruction.cs         # Дизассемблированная инструкция
+│       │   ├── Breakpoint.cs          # Точка останова
+│       │   ├── StackEntry.cs          # Запись стека (смещение/адрес/подсказка)
+│       │   ├── CallStackFrame.cs      # Фрейм стека вызовов
+│       │   ├── ModuleInfo.cs          # Модуль процесса
+│       │   ├── KernelModuleInfo.cs    # Модуль ядра
+│       │   ├── Register.cs            # Регистр CPU
+│       │   ├── ThreadInfo.cs          # Информация о потоке
+│       │   ├── Bookmark.cs            # Закладка
+│       │   ├── Patch.cs               # Патч памяти
+│       │   ├── ImportEntry.cs         # IAT-импорт
+│       │   ├── FunctionEntry.cs       # Функция
+│       │   ├── SectionEntry.cs        # PE-секция
+│       │   ├── StringEntry.cs         # Найденная строка
+│       │   ├── SearchResult.cs        # Результат поиска
+│       │   ├── ExceptionEntry.cs      # Запись цепочки SEH
+│       │   └── ProcessInfo.cs         # Процесс
+│       ├── Controls/
+│       │   ├── DisasmView.xaml/cs     # Вид дизассемблера (AvalonEdit)
+│       │   └── HexDumpView.xaml/cs    # Вид hex-дампа
+│       ├── Views/
+│       │   ├── RemoteFileBrowserDialog.xaml/cs  # Файловый менеджер VM
+│       │   └── ProcessPickerDialog.xaml/cs      # Выбор процесса
 │       ├── Services/
 │       │   ├── DriverComm.cs          # IOCTL обертка (локально + TCP)
 │       │   ├── Disassembler.cs        # Capstone x86-64
-│       │   └── Symbols.cs             # Разрешение символов
-│       └── Themes/Dark.xaml           # Цветовая схема OllyDbg
+│       │   ├── Symbols.cs             # Разрешение символов (dbghelp)
+│       │   ├── DbgEngService.cs       # Интеграция с WinDbg engine
+│       │   ├── PluginManager.cs       # Загрузка и управление плагинами
+│       │   ├── PluginApi.cs           # Реализация API плагинов
+│       │   └── Interop/
+│       │       ├── DbgHelpNative.cs   # P/Invoke dbghelp.dll
+│       │       └── DbgEngNative.cs    # P/Invoke dbgeng.dll
+│       ├── Converters/
+│       │   └── HexValueConverter.cs   # Конвертер hex-значений
+│       └── Themes/
+│           └── Dark.xaml              # Базовая темная тема + все кисти
+├── samples/                           # Примеры плагинов
+│   ├── SamplePlugin/                  # Минимальный пример
+│   ├── AntiDebugPlugin/               # Обход анти-отладки
+│   ├── AntiDebugTest/                 # Тестовая цель для AntiDebugPlugin
+│   ├── ThemidaPlugin/                 # Распаковщик Themida
+│   └── ApiMonitorPlugin/             # Мониторинг API-вызовов
+├── themes/                            # Исходные файлы тем
+│   ├── default-dark.txt               # Material Ocean (по умолчанию)
+│   ├── x64dbg.txt                     # Стиль x64dbg
+│   ├── monokai.txt                    # Monokai
+│   ├── ollydbg.txt                    # OllyDbg тёмная
+│   ├── ollydbg-light.txt             # OllyDbg классическая светлая
+│   ├── ida-pro.txt                    # IDA Pro / IntelliJ
+│   ├── dracula.txt                    # Dracula
+│   ├── long_night.txt                 # Long Night (IDA)
+│   └── sakura.txt                     # Sakura (розово-лавандовая)
+├── docs/
+│   └── SDK.md                         # Документация Plugin SDK
+├── Scripts/
+│   └── disable_kernel_protection.ps1  # Отключение защит ядра VM
+├── KD/                                # KD отладчик (бинарники)
+│   ├── kd.exe, dbgeng.dll, dbghelp.dll, ...
+│   └── symsrv.dll
 └── bin/                               # Результат сборки
     ├── Driver/  KernelFlirt.sys
     ├── Loader/  KfLoader.exe
     ├── Relay/   KfRelay.exe
-    └── UI/      KernelFlirt.exe
+    └── UI/      KernelFlirt.exe + themes/
 ```
 
 ## Безопасность

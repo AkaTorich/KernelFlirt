@@ -25,6 +25,7 @@ Four components:
 | **KernelFlirt.sys** | C / WDM | Kernel driver — memory, breakpoints, KdTrap inline hook |
 | **KfRelay.exe** | C | TCP relay agent on VM, proxies IOCTLs over network |
 | **KfLoader.exe** | C | CLI tool to load/unload the driver via SCM |
+| **KernelFlirt.SDK** | C# / .NET 9 | Plugin SDK — interfaces for debugger, memory, breakpoints, symbols, UI |
 
 ## How It Works
 
@@ -169,14 +170,18 @@ Symbols are loaded automatically for kernel modules on connect and for user-mode
 - **Thread blocking** — Faulting thread blocked via KeWaitForSingleObject until UI continues
 
 ### UI (OllyDbg-style)
-- **Dark theme** — Dark background (#1E1E1E), blue addresses, yellow mnemonics, green registers
+- **9 built-in themes** — default-dark, x64dbg, monokai, ollydbg, ollydbg-light, ida-pro, dracula, long_night, sakura
+- **Runtime theme switching** — Change all colors via Settings, applies instantly (DynamicResource)
+- **Customizable colors** — General, Disassembly (14 colors), Stack (3 colors), Tab style, per-tab header colors
 - **Disassembly view** — Syntax highlighting, breakpoint markers, current instruction highlight
 - **Registers panel** — Changed values in red, right-click Follow
-- **Stack panel** — RSP-relative display
+- **Stack panel** — Color-coded RSP-relative display (offset, address, annotation/hint)
 - **Hex dump** — 16 bytes/line with ASCII sidebar
-- **10 bottom tabs**: Breakpoints, Modules, Kernel Modules, Threads, Call Stack, Bookmarks, Patches, SEH Chain, Search, Log
+- **14 bottom tabs**: Disassembly, Breakpoints, Modules, Kernel Modules, Threads, Call Stack, Bookmarks, Patches, Exceptions, Sections, Strings, Search, Imports, Functions, Decompiler, Log — each with individual header colors
 - **Remote file browser** — Browse VM filesystem, launch EXEs directly
 - **Process picker** — Filter by name or PID
+- **Fullscreen mode** — F11 toggle
+- **Plugin system** — SDK with API for debugger, memory, breakpoints, symbols, UI
 
 ## Keyboard Shortcuts
 
@@ -192,6 +197,7 @@ Symbols are loaded automatically for kernel modules on connect and for user-mode
 | Ctrl+G | Go to address |
 | Ctrl+F9 | Step out |
 | Ctrl+F | Search binary pattern |
+| F11 | Toggle fullscreen |
 
 ## Building
 
@@ -256,6 +262,7 @@ Device: `\\.\KernelFlirt` — Method: `METHOD_BUFFERED` — Device type: `0x8000
 ```
 KernelFlirt/
 ├── build.ps1                          # Build script (all components)
+├── sign-driver.ps1                    # Driver signing script
 ├── include/
 │   └── kf_shared.h                    # Shared IOCTL codes and structures
 ├── src/
@@ -270,27 +277,103 @@ KernelFlirt/
 │   │   ├── modules.c                  # PEB->Ldr module enumeration
 │   │   ├── kmodules.c                 # Kernel module enumeration
 │   │   ├── process.c                  # Process attach/detach
-│   │   └── singlestep.c              # TF flag single step
+│   │   ├── singlestep.c              # TF flag single step
+│   │   ├── compat.c                   # OS compatibility helpers
+│   │   └── ntqsi_hook.c              # NtQuerySystemInformation hook
 │   ├── relay/                         # TCP relay agent (C)
 │   │   └── main.c                     # CMD+DBG channels, pseudo-IOCTLs
 │   ├── loader/                        # Driver loader CLI (C)
 │   │   ├── main.c                     # CLI (load/unload/status)
 │   │   ├── service.c                  # Windows SCM API
 │   │   └── vmdetect.c                 # Hypervisor detection
+│   ├── testdriver/                    # Test kernel driver (C)
+│   │   └── main.c                     # Simple test driver for debugging
+│   ├── sdk/                           # Plugin SDK (.NET)
+│   │   ├── KernelFlirt.SDK.csproj
+│   │   ├── IKernelFlirtPlugin.cs      # Plugin interface
+│   │   ├── IDebuggerApi.cs            # Debugger API for plugins
+│   │   ├── IMemoryApi.cs              # Memory read/write API
+│   │   ├── IBreakpointApi.cs          # Breakpoint management API
+│   │   ├── IProcessApi.cs             # Process/module API
+│   │   ├── ISymbolApi.cs              # Symbol resolution API
+│   │   ├── ILogApi.cs                 # Logging API
+│   │   ├── IUiApi.cs                  # UI interaction API
+│   │   └── Models.cs                  # Shared data models
 │   └── ui/                            # WPF debugger UI (C#)
-│       ├── MainWindow.xaml            # Main layout
+│       ├── MainWindow.xaml/cs         # Main layout + event handlers
+│       ├── SettingsWindow.xaml/cs     # Theme & color settings
+│       ├── ColorPickerDialog.xaml/cs  # Color picker with presets
+│       ├── InputDialog.xaml/cs        # Generic input dialog
+│       ├── PluginSettingsWindow.xaml/cs # Plugin configuration
+│       ├── App.xaml/cs                # Application entry point
 │       ├── ViewModels/
-│       │   └── MainViewModel.cs       # All debug commands
+│       │   └── MainViewModel.cs       # All debug commands & state
+│       ├── Models/                    # Data models
+│       │   ├── Instruction.cs         # Disassembled instruction
+│       │   ├── Breakpoint.cs          # Breakpoint definition
+│       │   ├── StackEntry.cs          # Stack view entry (offset/addr/hint)
+│       │   ├── CallStackFrame.cs      # Call stack frame
+│       │   ├── ModuleInfo.cs          # User-mode module
+│       │   ├── KernelModuleInfo.cs    # Kernel module
+│       │   ├── Register.cs            # CPU register
+│       │   ├── ThreadInfo.cs          # Thread info
+│       │   ├── Bookmark.cs            # Address bookmark
+│       │   ├── Patch.cs               # Memory patch
+│       │   ├── ImportEntry.cs         # IAT import entry
+│       │   ├── FunctionEntry.cs       # Function list entry
+│       │   ├── SectionEntry.cs        # PE section entry
+│       │   ├── StringEntry.cs         # Found string entry
+│       │   ├── SearchResult.cs        # Binary search result
+│       │   ├── ExceptionEntry.cs      # SEH chain entry
+│       │   └── ProcessInfo.cs         # Process list entry
+│       ├── Controls/
+│       │   ├── DisasmView.xaml/cs     # Disassembly view (AvalonEdit)
+│       │   └── HexDumpView.xaml/cs    # Hex dump view
+│       ├── Views/
+│       │   ├── RemoteFileBrowserDialog.xaml/cs  # VM file browser
+│       │   └── ProcessPickerDialog.xaml/cs      # Process selection
 │       ├── Services/
 │       │   ├── DriverComm.cs          # IOCTL wrapper (local + TCP)
 │       │   ├── Disassembler.cs        # Capstone x86-64
-│       │   └── Symbols.cs             # dbghelp symbol resolution
-│       └── Themes/Dark.xaml           # OllyDbg color scheme
+│       │   ├── Symbols.cs             # dbghelp symbol resolution
+│       │   ├── DbgEngService.cs       # WinDbg engine integration
+│       │   ├── PluginManager.cs       # Plugin loading & lifecycle
+│       │   ├── PluginApi.cs           # Plugin API implementation
+│       │   └── Interop/
+│       │       ├── DbgHelpNative.cs   # dbghelp.dll P/Invoke
+│       │       └── DbgEngNative.cs    # dbgeng.dll P/Invoke
+│       ├── Converters/
+│       │   └── HexValueConverter.cs   # Hex display converter
+│       └── Themes/
+│           └── Dark.xaml              # Base dark theme + all brush definitions
+├── samples/                           # Plugin samples
+│   ├── SamplePlugin/                  # Minimal plugin example
+│   ├── AntiDebugPlugin/               # Anti-debug bypass plugin
+│   ├── AntiDebugTest/                 # Test target for AntiDebugPlugin
+│   ├── ThemidaPlugin/                 # Themida unpacker plugin
+│   └── ApiMonitorPlugin/             # API call monitoring plugin
+├── themes/                            # Source theme files
+│   ├── default-dark.txt               # Material Ocean (default)
+│   ├── x64dbg.txt                     # x64dbg style
+│   ├── monokai.txt                    # Monokai
+│   ├── ollydbg.txt                    # OllyDbg dark
+│   ├── ollydbg-light.txt             # OllyDbg classic light
+│   ├── ida-pro.txt                    # IDA Pro / IntelliJ style
+│   ├── dracula.txt                    # Dracula
+│   ├── long_night.txt                 # Long Night (IDA)
+│   └── sakura.txt                     # Sakura (pink/lavender)
+├── docs/
+│   └── SDK.md                         # Plugin SDK documentation
+├── Scripts/
+│   └── disable_kernel_protection.ps1  # VM kernel protection disable
+├── KD/                                # Bundled KD debugger binaries
+│   ├── kd.exe, dbgeng.dll, dbghelp.dll, ...
+│   └── symsrv.dll
 └── bin/                               # Build output
     ├── Driver/  KernelFlirt.sys
     ├── Loader/  KfLoader.exe
     ├── Relay/   KfRelay.exe
-    └── UI/      KernelFlirt.exe
+    └── UI/      KernelFlirt.exe + themes/
 ```
 
 ## Dependencies
