@@ -117,28 +117,26 @@ public class ThemidaPanel : ScrollViewer
         VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
 
         var root = new StackPanel { Margin = new Thickness(8) };
-        var fg = Brushes.White;
 
         root.Children.Add(new TextBlock
         {
             Text = "Themida Unpacker v5 (Magicmida)",
             FontSize = 16, FontWeight = FontWeights.Bold,
-            Foreground = fg, Margin = new Thickness(0, 0, 0, 10)
+            Margin = new Thickness(0, 0, 0, 10)
         });
 
-        _chkAutoIat = MakeCb("Auto-fix IAT after OEP", true, fg);
-        _chkAutoDump = MakeCb("Auto-dump PE after IAT fix", true, fg);
-        root.Children.Add(Grp("Settings", [_chkAutoIat, _chkAutoDump], fg));
+        _chkAutoIat = MakeCb("Auto-fix IAT after OEP", true);
+        _chkAutoDump = MakeCb("Auto-dump PE after IAT fix", true);
+        root.Children.Add(Grp("Settings", [_chkAutoIat, _chkAutoDump]));
 
         _statusText = new TextBlock
         {
             Text = "Idle — Detect first",
-            Foreground = Brushes.LightGreen,
             FontFamily = new FontFamily("Consolas"),
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(4)
         };
-        root.Children.Add(Grp("Status", [_statusText], fg));
+        root.Children.Add(Grp("Status", [_statusText]));
 
         var btns = new WrapPanel { Margin = new Thickness(0, 10, 0, 0) };
         Btn(btns, "Detect", DetectProtector);
@@ -1271,18 +1269,17 @@ public class ThemidaPanel : ScrollViewer
         catch { }
     }
 
-    private static CheckBox MakeCb(string text, bool on, Brush fg) => new()
-    { Content = text, IsChecked = on, Foreground = fg, Margin = new Thickness(0, 2, 0, 2) };
+    private static CheckBox MakeCb(string text, bool on) => new()
+    { Content = text, IsChecked = on, Margin = new Thickness(0, 2, 0, 2) };
 
-    private static GroupBox Grp(string hdr, UIElement[] items, Brush fg)
+    private static GroupBox Grp(string hdr, UIElement[] items)
     {
         var sp = new StackPanel();
         foreach (var item in items) sp.Children.Add(item);
         return new GroupBox
         {
-            Header = new TextBlock { Text = hdr, Foreground = fg, FontWeight = FontWeights.SemiBold },
-            Content = sp, Margin = new Thickness(0, 5, 0, 5),
-            BorderBrush = Brushes.Gray, Foreground = fg
+            Header = hdr,
+            Content = sp, Margin = new Thickness(0, 5, 0, 5)
         };
     }
 

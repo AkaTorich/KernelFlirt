@@ -312,7 +312,6 @@ public class ApiMonitorPanel : DockPanel
     // Category checkboxes
     private readonly Dictionary<ApiCategory, CheckBox> _categoryChecks = new();
 
-    private static readonly Brush White = Brushes.White;
 
     public ApiMonitorPanel(IDebuggerApi api)
     {
@@ -337,12 +336,12 @@ public class ApiMonitorPanel : DockPanel
         btnExport.Click += (_, _) => ExportCsv();
         toolbar.Children.Add(btnExport);
 
-        toolbar.Children.Add(new TextBlock { Text = "Filter:", Foreground = White, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 4, 0) });
+        toolbar.Children.Add(new TextBlock { Text = "Filter:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 4, 0) });
         _filterBox = new TextBox { Width = 150, Margin = new Thickness(0, 0, 8, 0) };
         _filterBox.TextChanged += (_, _) => _view?.Refresh();
         toolbar.Children.Add(_filterBox);
 
-        toolbar.Children.Add(new TextBlock { Text = "Category:", Foreground = White, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 4, 0) });
+        toolbar.Children.Add(new TextBlock { Text = "Category:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 4, 0) });
         _categoryFilter = new ComboBox { Width = 100, Margin = new Thickness(0, 0, 8, 0) };
         _categoryFilter.Items.Add("All");
         foreach (var cat in Enum.GetValues<ApiCategory>())
@@ -351,7 +350,7 @@ public class ApiMonitorPanel : DockPanel
         _categoryFilter.SelectionChanged += (_, _) => _view?.Refresh();
         toolbar.Children.Add(_categoryFilter);
 
-        _statusText = new TextBlock { Text = "Stopped", Foreground = Brushes.Gray, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
+        _statusText = new TextBlock { Text = "Stopped", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
         toolbar.Children.Add(_statusText);
 
         SetDock(toolbar, Dock.Top);
@@ -359,12 +358,12 @@ public class ApiMonitorPanel : DockPanel
 
         // ── Category selection panel ──
         var catPanel = new WrapPanel { Margin = new Thickness(4, 0, 4, 4) };
-        catPanel.Children.Add(new TextBlock { Text = "APIs:", Foreground = White, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
+        catPanel.Children.Add(new TextBlock { Text = "APIs:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
         foreach (var cat in Enum.GetValues<ApiCategory>())
         {
             var chk = new CheckBox
             {
-                Content = new TextBlock { Text = cat.ToString(), Foreground = White },
+                Content = new TextBlock { Text = cat.ToString() },
                 IsChecked = cat is ApiCategory.File or ApiCategory.Registry or ApiCategory.Process
                     or ApiCategory.Memory or ApiCategory.Library or ApiCategory.Network or ApiCategory.Misc,
                 Margin = new Thickness(0, 0, 8, 0)
@@ -383,9 +382,6 @@ public class ApiMonitorPanel : DockPanel
             SelectionMode = DataGridSelectionMode.Single,
             CanUserSortColumns = true,
             GridLinesVisibility = DataGridGridLinesVisibility.None,
-            AlternatingRowBackground = new SolidColorBrush(Color.FromRgb(30, 30, 30)),
-            RowBackground = new SolidColorBrush(Color.FromRgb(20, 20, 20)),
-            Foreground = White,
             FontFamily = new FontFamily("Consolas"),
             FontSize = 12,
             HeadersVisibility = DataGridHeadersVisibility.Column
@@ -466,7 +462,6 @@ public class ApiMonitorPanel : DockPanel
         _btnStart.IsEnabled = false;
         _btnStop.IsEnabled = true;
         _statusText.Text = $"Monitoring ({installed} hooks)";
-        _statusText.Foreground = Brushes.LimeGreen;
         _api.Log.Info($"[ApiMon] Started: {installed} API hooks installed");
     }
 
@@ -487,7 +482,6 @@ public class ApiMonitorPanel : DockPanel
         _btnStart.IsEnabled = true;
         _btnStop.IsEnabled = false;
         _statusText.Text = "Stopped";
-        _statusText.Foreground = Brushes.Gray;
         _api.Log.Info("[ApiMon] Stopped");
     }
 

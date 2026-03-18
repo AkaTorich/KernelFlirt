@@ -94,15 +94,9 @@ public class DecryptorPanel : ScrollViewer
     private bool _cachedUnicode;
     private bool _cachedAutoRun;
 
-    private static readonly Brush DarkBg = new SolidColorBrush(Color.FromRgb(0x1E, 0x1E, 0x2E));
-    private static readonly Brush DarkFg = new SolidColorBrush(Color.FromRgb(0xE0, 0xE0, 0xF0));
-    private static readonly Brush DimFg = new SolidColorBrush(Color.FromRgb(0x78, 0x78, 0xA0));
-    private static readonly Brush AccentBg = new SolidColorBrush(Color.FromRgb(0x4A, 0x9E, 0xFF));
-
     public DecryptorPanel(IDebuggerApi api)
     {
         _api = api;
-        Background = DarkBg;
         HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
         VerticalScrollBarVisibility = ScrollBarVisibility.Disabled;
 
@@ -114,7 +108,7 @@ public class DecryptorPanel : ScrollViewer
         {
             Text = "String Decryptor",
             FontSize = 16, FontWeight = FontWeights.Bold,
-            Foreground = AccentBg, Margin = new Thickness(0, 0, 0, 8)
+            Margin = new Thickness(0, 0, 0, 8)
         };
         DockPanel.SetDock(title, Dock.Top);
         dock.Children.Add(title);
@@ -142,8 +136,8 @@ public class DecryptorPanel : ScrollViewer
 
         // Options
         var row3 = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
-        _chkUnicode = new CheckBox { Content = "Unicode (UTF-16)", Foreground = DarkFg, Margin = new Thickness(0, 0, 12, 0) };
-        _chkAutoRun = new CheckBox { Content = "Auto-continue after capture", Foreground = DarkFg, IsChecked = true };
+        _chkUnicode = new CheckBox { Content = "Unicode (UTF-16)", Margin = new Thickness(0, 0, 12, 0) };
+        _chkAutoRun = new CheckBox { Content = "Auto-continue after capture", IsChecked = true };
         row3.Children.Add(_chkUnicode);
         row3.Children.Add(_chkAutoRun);
         DockPanel.SetDock(row3, Dock.Top);
@@ -164,7 +158,7 @@ public class DecryptorPanel : ScrollViewer
         dock.Children.Add(row4);
 
         // Status
-        _lblStatus = new TextBlock { Text = "Idle", Foreground = DimFg, Margin = new Thickness(0, 0, 0, 4) };
+        _lblStatus = new TextBlock { Text = "Idle", Margin = new Thickness(0, 0, 0, 4) };
         DockPanel.SetDock(_lblStatus, Dock.Top);
         dock.Children.Add(_lblStatus);
 
@@ -174,13 +168,6 @@ public class DecryptorPanel : ScrollViewer
             AutoGenerateColumns = false,
             IsReadOnly = true,
             CanUserReorderColumns = false,
-            Background = new SolidColorBrush(Color.FromRgb(0x1A, 0x1A, 0x2E)),
-            Foreground = DarkFg,
-            RowBackground = new SolidColorBrush(Color.FromRgb(0x1A, 0x1A, 0x2E)),
-            AlternatingRowBackground = new SolidColorBrush(Color.FromRgb(0x22, 0x22, 0x3A)),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(0x2A, 0x2A, 0x4A)),
-            GridLinesVisibility = DataGridGridLinesVisibility.None,
-            HeadersVisibility = DataGridHeadersVisibility.Column,
             FontFamily = new FontFamily("Consolas"),
             FontSize = 12,
             VerticalAlignment = VerticalAlignment.Stretch,
@@ -240,7 +227,7 @@ public class DecryptorPanel : ScrollViewer
         _btnStart.IsEnabled = false;
         _btnStop.IsEnabled = true;
         _lblStatus.Text = $"Tracing decrypt function at 0x{_funcAddress:X}...";
-        _lblStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x50, 0xFA, 0x7B));
+        _lblStatus.ClearValue(TextBlock.ForegroundProperty);
         _api.Log.Info($"[StrDecrypt] Started tracing at 0x{_funcAddress:X}");
 
         if (_chkAutoRun.IsChecked == true)
@@ -341,7 +328,7 @@ public class DecryptorPanel : ScrollViewer
         _btnStart.IsEnabled = true;
         _btnStop.IsEnabled = false;
         _lblStatus.Text = $"Stopped. {_results.Count} strings captured.";
-        _lblStatus.Foreground = DimFg;
+        _lblStatus.ClearValue(TextBlock.ForegroundProperty);
         _api.Log.Info($"[StrDecrypt] Stopped. {_results.Count} strings captured.");
     }
 
@@ -514,7 +501,7 @@ public class DecryptorPanel : ScrollViewer
 
     private static TextBlock MakeLabel(string text, double width) => new()
     {
-        Text = text, Width = width, Foreground = DarkFg,
+        Text = text, Width = width,
         VerticalAlignment = VerticalAlignment.Center,
         FontFamily = new FontFamily("Consolas"), FontSize = 12
     };
@@ -522,10 +509,6 @@ public class DecryptorPanel : ScrollViewer
     private static TextBox MakeTextBox(double width, string hint) => new()
     {
         Width = width,
-        Background = new SolidColorBrush(Color.FromRgb(0x22, 0x22, 0x3A)),
-        Foreground = DarkFg,
-        BorderBrush = new SolidColorBrush(Color.FromRgb(0x2A, 0x2A, 0x4A)),
-        CaretBrush = DarkFg,
         FontFamily = new FontFamily("Consolas"), FontSize = 12,
         ToolTip = hint, Padding = new Thickness(4, 2, 4, 2)
     };
@@ -540,133 +523,6 @@ public class DecryptorPanel : ScrollViewer
             SelectedIndex = 0
         };
         foreach (var item in items) cmb.Items.Add(item);
-
-        var darkBg = new SolidColorBrush(Color.FromRgb(0x22, 0x22, 0x3A));
-        var borderBr = new SolidColorBrush(Color.FromRgb(0x3A, 0x3A, 0x5A));
-        var hoverBg = new SolidColorBrush(Color.FromRgb(0x35, 0x35, 0x55));
-        var selectBg = new SolidColorBrush(Color.FromRgb(0x4A, 0x9E, 0xFF));
-
-        // ItemContainerStyle — dark background for each dropdown item
-        var itemStyle = new Style(typeof(ComboBoxItem));
-        itemStyle.Setters.Add(new Setter(Control.BackgroundProperty, darkBg));
-        itemStyle.Setters.Add(new Setter(Control.ForegroundProperty, DarkFg));
-        itemStyle.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(0)));
-        itemStyle.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(6, 3, 6, 3)));
-        itemStyle.Setters.Add(new Setter(Control.FontFamilyProperty, new FontFamily("Consolas")));
-        itemStyle.Setters.Add(new Setter(Control.FontSizeProperty, 12.0));
-
-        // Hover trigger
-        var hoverTrigger = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
-        hoverTrigger.Setters.Add(new Setter(Control.BackgroundProperty, selectBg));
-        hoverTrigger.Setters.Add(new Setter(Control.ForegroundProperty, Brushes.White));
-        itemStyle.Triggers.Add(hoverTrigger);
-
-        // Selected trigger
-        var selTrigger = new Trigger { Property = ComboBoxItem.IsSelectedProperty, Value = true };
-        selTrigger.Setters.Add(new Setter(Control.BackgroundProperty, hoverBg));
-        selTrigger.Setters.Add(new Setter(Control.ForegroundProperty, DarkFg));
-        itemStyle.Triggers.Add(selTrigger);
-
-        cmb.ItemContainerStyle = itemStyle;
-
-        // Override the ComboBox template for the main button area
-        var template = new ControlTemplate(typeof(ComboBox));
-
-        // Root grid
-        var gridFactory = new FrameworkElementFactory(typeof(Grid));
-        gridFactory.SetValue(FrameworkElement.SnapsToDevicePixelsProperty, true);
-
-        // Two columns: content + toggle button
-        var col0 = new FrameworkElementFactory(typeof(ColumnDefinition));
-        col0.SetValue(ColumnDefinition.WidthProperty, new GridLength(1, GridUnitType.Star));
-        var col1 = new FrameworkElementFactory(typeof(ColumnDefinition));
-        col1.SetValue(ColumnDefinition.WidthProperty, new GridLength(16));
-        gridFactory.AppendChild(col0);
-        gridFactory.AppendChild(col1);
-
-        // Background border spanning both columns
-        var bgBorder = new FrameworkElementFactory(typeof(Border));
-        bgBorder.SetValue(Grid.ColumnSpanProperty, 2);
-        bgBorder.SetValue(Border.BackgroundProperty, darkBg);
-        bgBorder.SetValue(Border.BorderBrushProperty, borderBr);
-        bgBorder.SetValue(Border.BorderThicknessProperty, new Thickness(1));
-        bgBorder.SetValue(Border.CornerRadiusProperty, new CornerRadius(2));
-        gridFactory.AppendChild(bgBorder);
-
-        // ToggleButton (invisible, spans entire grid for click)
-        var toggleFactory = new FrameworkElementFactory(typeof(System.Windows.Controls.Primitives.ToggleButton));
-        toggleFactory.SetValue(Grid.ColumnSpanProperty, 2);
-        toggleFactory.SetValue(FrameworkElement.FocusableProperty, false);
-        toggleFactory.SetValue(UIElement.IsHitTestVisibleProperty, true);
-        toggleFactory.SetValue(UIElement.OpacityProperty, 0.0);
-        toggleFactory.SetBinding(System.Windows.Controls.Primitives.ToggleButton.IsCheckedProperty,
-            new System.Windows.Data.Binding("IsDropDownOpen")
-            {
-                RelativeSource = System.Windows.Data.RelativeSource.TemplatedParent,
-                Mode = System.Windows.Data.BindingMode.TwoWay
-            });
-        gridFactory.AppendChild(toggleFactory);
-
-        // Arrow glyph in column 1
-        var arrowFactory = new FrameworkElementFactory(typeof(TextBlock));
-        arrowFactory.SetValue(Grid.ColumnProperty, 1);
-        arrowFactory.SetValue(TextBlock.TextProperty, "\u25BC");
-        arrowFactory.SetValue(TextBlock.ForegroundProperty, DimFg);
-        arrowFactory.SetValue(TextBlock.FontSizeProperty, 8.0);
-        arrowFactory.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center);
-        arrowFactory.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
-        arrowFactory.SetValue(UIElement.IsHitTestVisibleProperty, false);
-        gridFactory.AppendChild(arrowFactory);
-
-        // ContentPresenter in column 0
-        var contentFactory = new FrameworkElementFactory(typeof(ContentPresenter));
-        contentFactory.SetValue(Grid.ColumnProperty, 0);
-        contentFactory.SetValue(FrameworkElement.MarginProperty, new Thickness(6, 2, 0, 2));
-        contentFactory.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
-        contentFactory.SetValue(UIElement.IsHitTestVisibleProperty, false);
-        contentFactory.SetBinding(ContentPresenter.ContentProperty,
-            new System.Windows.Data.Binding("SelectionBoxItem")
-            { RelativeSource = System.Windows.Data.RelativeSource.TemplatedParent });
-        contentFactory.SetBinding(ContentPresenter.ContentTemplateProperty,
-            new System.Windows.Data.Binding("SelectionBoxItemTemplate")
-            { RelativeSource = System.Windows.Data.RelativeSource.TemplatedParent });
-        gridFactory.AppendChild(contentFactory);
-
-        // Popup for dropdown
-        var popupFactory = new FrameworkElementFactory(typeof(System.Windows.Controls.Primitives.Popup));
-        popupFactory.SetValue(FrameworkElement.NameProperty, "Popup");
-        popupFactory.SetValue(System.Windows.Controls.Primitives.Popup.PlacementProperty,
-            System.Windows.Controls.Primitives.PlacementMode.Bottom);
-        popupFactory.SetValue(System.Windows.Controls.Primitives.Popup.AllowsTransparencyProperty, true);
-        popupFactory.SetBinding(System.Windows.Controls.Primitives.Popup.IsOpenProperty,
-            new System.Windows.Data.Binding("IsDropDownOpen")
-            {
-                RelativeSource = System.Windows.Data.RelativeSource.TemplatedParent,
-                Mode = System.Windows.Data.BindingMode.TwoWay
-            });
-
-        // Popup content: Border + ItemsPresenter
-        var popupBorder = new FrameworkElementFactory(typeof(Border));
-        popupBorder.SetValue(Border.BackgroundProperty, darkBg);
-        popupBorder.SetValue(Border.BorderBrushProperty, borderBr);
-        popupBorder.SetValue(Border.BorderThicknessProperty, new Thickness(1));
-        popupBorder.SetValue(Border.CornerRadiusProperty, new CornerRadius(2));
-        popupBorder.SetValue(Border.PaddingProperty, new Thickness(0, 2, 0, 2));
-
-        var scrollFactory = new FrameworkElementFactory(typeof(ScrollViewer));
-        scrollFactory.SetValue(ScrollViewer.VerticalScrollBarVisibilityProperty, ScrollBarVisibility.Auto);
-        scrollFactory.SetValue(FrameworkElement.MaxHeightProperty, 200.0);
-
-        var itemsPresenter = new FrameworkElementFactory(typeof(ItemsPresenter));
-        scrollFactory.AppendChild(itemsPresenter);
-        popupBorder.AppendChild(scrollFactory);
-        popupFactory.AppendChild(popupBorder);
-        gridFactory.AppendChild(popupFactory);
-
-        template.VisualTree = gridFactory;
-        cmb.Template = template;
-        cmb.Foreground = DarkFg;
-
         return cmb;
     }
 

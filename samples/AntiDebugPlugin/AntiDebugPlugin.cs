@@ -187,7 +187,6 @@ public class AntiDebugPanel : ScrollViewer
         VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
 
         var root = new StackPanel { Margin = new Thickness(8) };
-        var white = Brushes.White;
 
         // ── Title ──
         root.Children.Add(new TextBlock
@@ -195,79 +194,78 @@ public class AntiDebugPanel : ScrollViewer
             Text = "Anti-Anti-Debug Settings",
             FontSize = 16,
             FontWeight = FontWeights.Bold,
-            Foreground = white,
             Margin = new Thickness(0, 0, 0, 10)
         });
 
         // ── PEB ──
-        ChkBeingDebugged = MakeCheckBox("BeingDebugged", true, "PEB.BeingDebugged = 0 (IsDebuggerPresent)", true, white);
-        ChkNtGlobalFlag = MakeCheckBox("NtGlobalFlag", true, "PEB.NtGlobalFlag = 0 (FLG_HEAP_* flags)", true, white);
-        ChkHeapFlags = MakeCheckBox("HeapFlags", true, "ProcessHeap.Flags = HEAP_GROWABLE, ForceFlags = 0", true, white);
-        ChkStartupInfo = MakeCheckBox("StartupInfo", false, "Zero STARTUPINFO fields (dwFlags, wShowWindow) in PEB ProcessParameters", true, white);
-        ChkOsBuildNumber = MakeCheckBox("OsBuildNumber", false, "Patch PEB.OSBuildNumber (VMProtect Win10 2019+ check)", true, white);
-        root.Children.Add(MakeGroup("PEB", [ChkBeingDebugged, ChkNtGlobalFlag, ChkHeapFlags, ChkStartupInfo, ChkOsBuildNumber], white));
+        ChkBeingDebugged = MakeCheckBox("BeingDebugged", true, "PEB.BeingDebugged = 0 (IsDebuggerPresent)", true);
+        ChkNtGlobalFlag = MakeCheckBox("NtGlobalFlag", true, "PEB.NtGlobalFlag = 0 (FLG_HEAP_* flags)", true);
+        ChkHeapFlags = MakeCheckBox("HeapFlags", true, "ProcessHeap.Flags = HEAP_GROWABLE, ForceFlags = 0", true);
+        ChkStartupInfo = MakeCheckBox("StartupInfo", false, "Zero STARTUPINFO fields (dwFlags, wShowWindow) in PEB ProcessParameters", true);
+        ChkOsBuildNumber = MakeCheckBox("OsBuildNumber", false, "Patch PEB.OSBuildNumber (VMProtect Win10 2019+ check)", true);
+        root.Children.Add(MakeGroup("PEB", [ChkBeingDebugged, ChkNtGlobalFlag, ChkHeapFlags, ChkStartupInfo, ChkOsBuildNumber]));
 
         // ── Kernel Debugger ──
-        ChkKdDebuggerEnabled = MakeCheckBox("KdDebuggerEnabled", false, "Patch KdDebuggerEnabled = FALSE", true, white);
-        ChkKdDebuggerNotPresent = MakeCheckBox("KdDebuggerNotPresent", false, "Patch KdDebuggerNotPresent = TRUE", true, white);
-        root.Children.Add(MakeGroup("Kernel Debugger", [ChkKdDebuggerEnabled, ChkKdDebuggerNotPresent], white));
+        ChkKdDebuggerEnabled = MakeCheckBox("KdDebuggerEnabled", false, "Patch KdDebuggerEnabled = FALSE", true);
+        ChkKdDebuggerNotPresent = MakeCheckBox("KdDebuggerNotPresent", false, "Patch KdDebuggerNotPresent = TRUE", true);
+        root.Children.Add(MakeGroup("Kernel Debugger", [ChkKdDebuggerEnabled, ChkKdDebuggerNotPresent]));
 
         // ── NtQueryInformationProcess ──
-        ChkDebugPort = MakeCheckBox("ProcessDebugPort", true, "Clear EPROCESS.DebugPort (defeats DebugPort/DebugObjectHandle/DebugFlags)", true, white);
-        ChkDebugObjectHandle = MakeCheckBox("ProcessDebugObjectHandle", true, "Cleared by DebugPort zeroing", true, white);
-        ChkDebugFlags = MakeCheckBox("ProcessDebugFlags", true, "Cleared by DebugPort zeroing", true, white);
-        root.Children.Add(MakeGroup("NtQueryInformationProcess (via ClearDebugPort)", [ChkDebugPort, ChkDebugObjectHandle, ChkDebugFlags], white));
+        ChkDebugPort = MakeCheckBox("ProcessDebugPort", true, "Clear EPROCESS.DebugPort (defeats DebugPort/DebugObjectHandle/DebugFlags)", true);
+        ChkDebugObjectHandle = MakeCheckBox("ProcessDebugObjectHandle", true, "Cleared by DebugPort zeroing", true);
+        ChkDebugFlags = MakeCheckBox("ProcessDebugFlags", true, "Cleared by DebugPort zeroing", true);
+        root.Children.Add(MakeGroup("NtQueryInformationProcess (via ClearDebugPort)", [ChkDebugPort, ChkDebugObjectHandle, ChkDebugFlags]));
 
         // ── NtQuerySystemInformation ──
-        ChkSystemKernelDebugger = MakeCheckBox("SystemKernelDebuggerInfo", false, "Hook NtQuerySystemInformation to spoof class 0x23 (DANGER: triggers PatchGuard BSOD!)", true, white);
-        root.Children.Add(MakeGroup("NtQuerySystemInformation (via inline hook)", [ChkSystemKernelDebugger], white));
+        ChkSystemKernelDebugger = MakeCheckBox("SystemKernelDebuggerInfo", false, "Hook NtQuerySystemInformation to spoof class 0x23 (DANGER: triggers PatchGuard BSOD!)", true);
+        root.Children.Add(MakeGroup("NtQuerySystemInformation (via inline hook)", [ChkSystemKernelDebugger]));
 
         // ── NtSetInformationThread ──
-        ChkThreadHideFromDebugger = MakeCheckBox("ThreadHideFromDebugger", true, "Clear HideFromDebugger bit in all threads' CrossThreadFlags", true, white);
-        root.Children.Add(MakeGroup("NtSetInformationThread (via ClearThreadHide)", [ChkThreadHideFromDebugger], white));
+        ChkThreadHideFromDebugger = MakeCheckBox("ThreadHideFromDebugger", true, "Clear HideFromDebugger bit in all threads' CrossThreadFlags", true);
+        root.Children.Add(MakeGroup("NtSetInformationThread (via ClearThreadHide)", [ChkThreadHideFromDebugger]));
 
         // ── NtClose ──
-        ChkNtClose = MakeCheckBox("NtClose", true, "Cleared by DebugPort zeroing (no debug object = no invalid handle exception)", true, white);
-        root.Children.Add(MakeGroup("NtClose (via ClearDebugPort)", [ChkNtClose], white));
+        ChkNtClose = MakeCheckBox("NtClose", true, "Cleared by DebugPort zeroing (no debug object = no invalid handle exception)", true);
+        root.Children.Add(MakeGroup("NtClose (via ClearDebugPort)", [ChkNtClose]));
 
         // ── NtQueryObject ──
-        ChkNtQueryObject = MakeCheckBox("NtQueryObject", false, "Hook NtQueryObject to hide DebugObject type from enumeration", true, white);
-        root.Children.Add(MakeGroup("NtQueryObject (via BP hook)", [ChkNtQueryObject], white));
+        ChkNtQueryObject = MakeCheckBox("NtQueryObject", false, "Hook NtQueryObject to hide DebugObject type from enumeration", true);
+        root.Children.Add(MakeGroup("NtQueryObject (via BP hook)", [ChkNtQueryObject]));
 
         // ── NtCreateThreadEx ──
-        ChkNtCreateThreadEx = MakeCheckBox("NtCreateThreadEx", false, "Strip THREAD_CREATE_FLAGS_HIDE_FROM_DEBUGGER (0x4) from CreateFlags", true, white);
-        root.Children.Add(MakeGroup("NtCreateThreadEx (via BP hook)", [ChkNtCreateThreadEx], white));
+        ChkNtCreateThreadEx = MakeCheckBox("NtCreateThreadEx", false, "Strip THREAD_CREATE_FLAGS_HIDE_FROM_DEBUGGER (0x4) from CreateFlags", true);
+        root.Children.Add(MakeGroup("NtCreateThreadEx (via BP hook)", [ChkNtCreateThreadEx]));
 
         // ── Window Detection ──
-        ChkFindWindow = MakeCheckBox("FindWindow / EnumWindows", false, "Hook NtUserFindWindowEx to hide debugger windows (OLLYDBG, x64dbg, IDA, etc.)", true, white);
-        root.Children.Add(MakeGroup("Window Detection (via BP hook)", [ChkFindWindow], white));
+        ChkFindWindow = MakeCheckBox("FindWindow / EnumWindows", false, "Hook NtUserFindWindowEx to hide debugger windows (OLLYDBG, x64dbg, IDA, etc.)", true);
+        root.Children.Add(MakeGroup("Window Detection (via BP hook)", [ChkFindWindow]));
 
         // ── DRx Protection ──
-        ChkHideDRx = MakeCheckBox("Hide DRx registers", false, "Zero DR0-DR3 in target thread context", true, white);
-        ChkNtGetContextThread = MakeCheckBox("NtGetContextThread", false, "Hook NtGetContextThread to zero DR0-DR3/DR6/DR7 in returned CONTEXT", true, white);
-        ChkNtSetContextThread = MakeCheckBox("NtSetContextThread", false, "Hook NtSetContextThread to prevent clearing hardware breakpoints", true, white);
-        root.Children.Add(MakeGroup("Hardware Breakpoints / DRx Protection", [ChkHideDRx, ChkNtGetContextThread, ChkNtSetContextThread], white));
+        ChkHideDRx = MakeCheckBox("Hide DRx registers", false, "Zero DR0-DR3 in target thread context", true);
+        ChkNtGetContextThread = MakeCheckBox("NtGetContextThread", false, "Hook NtGetContextThread to zero DR0-DR3/DR6/DR7 in returned CONTEXT", true);
+        ChkNtSetContextThread = MakeCheckBox("NtSetContextThread", false, "Hook NtSetContextThread to prevent clearing hardware breakpoints", true);
+        root.Children.Add(MakeGroup("Hardware Breakpoints / DRx Protection", [ChkHideDRx, ChkNtGetContextThread, ChkNtSetContextThread]));
 
         // ── Timing ──
-        ChkPatchRdtsc = MakeCheckBox("Patch RDTSC/CPUID", false, "NOP out RDTSC and CPUID in code sections. WARNING: breaks Themida/VMProtect (CRC checks detect patches)", true, white);
-        ChkGetTickCount = MakeCheckBox("GetTickCount / GetTickCount64", false, "Hook GetTickCount/GetTickCount64 to return consistent incremental values", true, white);
-        ChkQueryPerformanceCounter = MakeCheckBox("QueryPerformanceCounter", false, "Hook QueryPerformanceCounter/NtQuerySystemTime to normalize timing", true, white);
-        root.Children.Add(MakeGroup("Timing Checks", [ChkPatchRdtsc, ChkGetTickCount, ChkQueryPerformanceCounter], white));
+        ChkPatchRdtsc = MakeCheckBox("Patch RDTSC/CPUID", false, "NOP out RDTSC and CPUID in code sections. WARNING: breaks Themida/VMProtect (CRC checks detect patches)", true);
+        ChkGetTickCount = MakeCheckBox("GetTickCount / GetTickCount64", false, "Hook GetTickCount/GetTickCount64 to return consistent incremental values", true);
+        ChkQueryPerformanceCounter = MakeCheckBox("QueryPerformanceCounter", false, "Hook QueryPerformanceCounter/NtQuerySystemTime to normalize timing", true);
+        root.Children.Add(MakeGroup("Timing Checks", [ChkPatchRdtsc, ChkGetTickCount, ChkQueryPerformanceCounter]));
 
         // ── Misc ──
-        ChkOutputDebugString = MakeCheckBox("OutputDebugStringA", false, "Hook OutputDebugStringA to set LastError correctly (anti-debug via return value)", true, white);
-        ChkBlockInput = MakeCheckBox("BlockInput", false, "Hook BlockInput to prevent locking user input", true, white);
-        ChkNtYieldExecution = MakeCheckBox("NtYieldExecution", false, "Hook NtYieldExecution to return STATUS_NO_YIELD_PERFORMED", true, white);
-        ChkRemoveDebugPrivileges = MakeCheckBox("Remove Debug Privileges", false, "Remove SeDebugPrivilege from process token (some protectors check this)", true, white);
-        root.Children.Add(MakeGroup("Miscellaneous", [ChkOutputDebugString, ChkBlockInput, ChkNtYieldExecution, ChkRemoveDebugPrivileges], white));
+        ChkOutputDebugString = MakeCheckBox("OutputDebugStringA", false, "Hook OutputDebugStringA to set LastError correctly (anti-debug via return value)", true);
+        ChkBlockInput = MakeCheckBox("BlockInput", false, "Hook BlockInput to prevent locking user input", true);
+        ChkNtYieldExecution = MakeCheckBox("NtYieldExecution", false, "Hook NtYieldExecution to return STATUS_NO_YIELD_PERFORMED", true);
+        ChkRemoveDebugPrivileges = MakeCheckBox("Remove Debug Privileges", false, "Remove SeDebugPrivilege from process token (some protectors check this)", true);
+        root.Children.Add(MakeGroup("Miscellaneous", [ChkOutputDebugString, ChkBlockInput, ChkNtYieldExecution, ChkRemoveDebugPrivileges]));
 
         // ── Auto-apply ──
-        ChkAutoApply = MakeCheckBox("Auto-apply on every break", true, "Automatically apply patches when debugger breaks (recommended for packed files)", true, white);
-        root.Children.Add(MakeGroup("Automation", [ChkAutoApply], white));
+        ChkAutoApply = MakeCheckBox("Auto-apply on every break", true, "Automatically apply patches when debugger breaks (recommended for packed files)", true);
+        root.Children.Add(MakeGroup("Automation", [ChkAutoApply]));
 
         // ── Unpacker ──
-        ChkAutoOep = MakeCheckBox("Auto-break at OEP", false, "Automatically detect unpacked PE and break at its entry point after Run (F9).\nWARNING: Slows Themida-protected apps (intercepts every VirtualProtect call).", true, white);
-        root.Children.Add(MakeGroup("Unpacker", [ChkAutoOep], white));
+        ChkAutoOep = MakeCheckBox("Auto-break at OEP", false, "Automatically detect unpacked PE and break at its entry point after Run (F9).\nWARNING: Slows Themida-protected apps (intercepts every VirtualProtect call).", true);
+        root.Children.Add(MakeGroup("Unpacker", [ChkAutoOep]));
 
         // ── Buttons ──
         var btnPanel = new WrapPanel { Margin = new Thickness(0, 10, 0, 0) };
@@ -342,7 +340,6 @@ public class AntiDebugPanel : ScrollViewer
         {
             Text = "All patches use kernel driver. ClearDebugPort defeats multiple checks at once.",
             FontStyle = FontStyles.Italic,
-            Foreground = white,
             Margin = new Thickness(0, 10, 0, 0)
         });
 
@@ -728,26 +725,25 @@ public class AntiDebugPanel : ScrollViewer
         }
     }
 
-    private static GroupBox MakeGroup(string header, CheckBox[] items, Brush foreground)
+    private static GroupBox MakeGroup(string header, CheckBox[] items)
     {
         var sp = new StackPanel { Margin = new Thickness(4) };
         foreach (var item in items) sp.Children.Add(item);
 
         return new GroupBox
         {
-            Header = new TextBlock { Text = header, FontWeight = FontWeights.SemiBold, Foreground = foreground },
+            Header = header,
             Content = sp,
             Margin = new Thickness(0, 0, 0, 6),
-            Padding = new Thickness(6),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(80, 80, 80))
+            Padding = new Thickness(6)
         };
     }
 
-    private static CheckBox MakeCheckBox(string text, bool isChecked, string tooltip, bool isEnabled, Brush foreground)
+    private static CheckBox MakeCheckBox(string text, bool isChecked, string tooltip, bool isEnabled)
     {
         return new CheckBox
         {
-            Content = new TextBlock { Text = text, Foreground = foreground },
+            Content = text,
             IsChecked = isChecked,
             IsEnabled = isEnabled,
             ToolTip = tooltip,
