@@ -2,19 +2,19 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              FontFamily="Consolas" FontSize="13"
-             Background="{StaticResource BgBrush}"
-             Foreground="{StaticResource FgBrush}">
+             Background="{DynamicResource BgBrush}"
+             Foreground="{DynamicResource FgBrush}">
 
     <DockPanel>
-        <Border DockPanel.Dock="Top" Background="{StaticResource ToolbarBgBrush}" Padding="4,2">
+        <Border DockPanel.Dock="Top" Background="{DynamicResource ToolbarBgBrush}" Padding="4,2">
             <TextBlock Text="Disassembly" FontWeight="SemiBold" />
         </Border>
 
-        <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+        <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
             <ScrollViewer x:Name="ScrollArea"
                           HorizontalScrollBarVisibility="Auto"
                           VerticalScrollBarVisibility="Auto"
-                          Background="{StaticResource BgBrush}">
+                          Background="{DynamicResource BgBrush}">
                 <ItemsControl x:Name="InstructionList">
                     <ItemsControl.ContextMenu>
                         <ContextMenu>

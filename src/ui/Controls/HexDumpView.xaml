@@ -2,14 +2,14 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              FontFamily="Consolas" FontSize="13"
-             Background="{StaticResource BgBrush}"
-             Foreground="{StaticResource FgBrush}">
+             Background="{DynamicResource BgBrush}"
+             Foreground="{DynamicResource FgBrush}">
 
-    <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+    <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
         <ScrollViewer x:Name="ScrollArea"
                       HorizontalScrollBarVisibility="Auto"
                       VerticalScrollBarVisibility="Auto"
-                      Background="{StaticResource BgBrush}">
+                      Background="{DynamicResource BgBrush}">
             <ItemsControl x:Name="LineList" />
         </ScrollViewer>
     </Border>

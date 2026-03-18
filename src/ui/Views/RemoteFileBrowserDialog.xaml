@@ -4,8 +4,8 @@
         Title="Open Remote File (.exe / .sys)"
         Width="700" Height="550"
         WindowStartupLocation="CenterOwner"
-        Background="{StaticResource BgBrush}"
-        Foreground="{StaticResource FgBrush}"
+        Background="{DynamicResource BgBrush}"
+        Foreground="{DynamicResource FgBrush}"
         FontFamily="Consolas" FontSize="13"
         ShowInTaskbar="False"
         ResizeMode="CanResizeWithGrip">
@@ -35,14 +35,14 @@
         <DataGrid x:Name="FileGrid" AutoGenerateColumns="False" IsReadOnly="True"
                   SelectionMode="Single" MouseDoubleClick="OnFileDoubleClick"
                   SelectionChanged="OnFileSelectionChanged"
-                  BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                  BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
             <DataGrid.Columns>
                 <DataGridTextColumn Header="Name" Width="3*" Binding="{Binding Display}">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding IsDirectory}" Value="True">
-                                    <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
                                     <Setter Property="FontWeight" Value="Bold" />
                                 </DataTrigger>
                             </Style.Triggers>
