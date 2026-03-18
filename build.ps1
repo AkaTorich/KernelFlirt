@@ -185,7 +185,8 @@ if (!(Test-Path $pluginsDir)) { New-Item -ItemType Directory -Path $pluginsDir -
 $pluginProjects = @(
     "samples\SamplePlugin\SamplePlugin.csproj",
     "samples\AntiDebugPlugin\AntiDebugPlugin.csproj",
-    "samples\ThemidaPlugin\ThemidaPlugin.csproj"
+    "samples\ThemidaPlugin\ThemidaPlugin.csproj",
+    "samples\ApiMonitorPlugin\ApiMonitorPlugin.csproj"
 )
 foreach ($pluginRelPath in $pluginProjects) {
     $pluginProj = Join-Path $Root $pluginRelPath
