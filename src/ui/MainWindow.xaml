@@ -62,6 +62,7 @@
         <KeyBinding Key="F5" Command="{Binding ContinueExecutionCommand}" />
         <KeyBinding Key="F7" Command="{Binding StepInCommand}" />
         <KeyBinding Key="F8" Command="{Binding StepOverCommand}" />
+        <KeyBinding Key="F8" Modifiers="Ctrl" Command="{Binding SkipInstructionCommand}" />
         <KeyBinding Key="F9" Command="{Binding RunCommand}" />
         <KeyBinding Key="F12" Command="{Binding PauseCommand}" />
         <KeyBinding Modifiers="Ctrl" Key="G" Command="{Binding GoToRipCommand}" />
@@ -91,6 +92,7 @@
                 <MenuItem Header="Step _Into" Command="{Binding StepInCommand}" InputGestureText="F7" />
                 <MenuItem Header="Step _Over" Command="{Binding StepOverCommand}" InputGestureText="F8" />
                 <MenuItem Header="Step O_ut" Command="{Binding StepOutCommand}" InputGestureText="Ctrl+F9" />
+                <MenuItem Header="S_kip Instruction" Command="{Binding SkipInstructionCommand}" InputGestureText="Ctrl+F8" />
                 <MenuItem Header="Run to _Cursor" Command="{Binding RunToCursorCommand}" InputGestureText="F4" />
                 <Separator />
                 <MenuItem Header="Toggle _Breakpoint" Command="{Binding ToggleBreakpointCommand}" InputGestureText="F2" />

@@ -1586,6 +1586,37 @@ public partial class MainViewModel : ObservableObject, IDisposable
     }
 
     /* ================================================================== */
+    /*  Debugging: Skip Instruction (Ctrl+F8) — move RIP past current     */
+    /* ================================================================== */
+
+    [RelayCommand]
+    private void SkipInstruction()
+    {
+        if (!IsConnected || TargetPid == 0 || SelectedThreadId == 0) return;
+        if (!IsBreakState) return;
+
+        var instr = GetInstructionAtRip();
+        if (instr == null)
+        {
+            Log("Skip: no instruction at RIP");
+            return;
+        }
+
+        ulong nextAddr = instr.Address + (ulong)instr.Size;
+        bool ok = _driver.WriteRip(TargetPid, SelectedThreadId, nextAddr);
+        if (ok)
+        {
+            Log($"Skip: {FormatAddr(instr.Address)} {instr.Mnemonic} {instr.Operands} → RIP = {FormatAddr(nextAddr)}");
+            RefreshRegisters();
+            RefreshDisassembly();
+        }
+        else
+        {
+            Log($"Skip: failed to set RIP to {FormatAddr(nextAddr)}");
+        }
+    }
+
+    /* ================================================================== */
     /*  Debugging: Run to Cursor (F4)                                      */
     /* ================================================================== */
 
