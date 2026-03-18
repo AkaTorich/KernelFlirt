@@ -68,6 +68,18 @@ static void Print(const char* msg)
     WriteConsoleA(h, msg, (DWORD)mystrlen(msg), &written, NULL);
 }
 
+static void PrintLine(const char* prefix, const char* str)
+{
+    char buf[512];
+    int i = 0;
+    const char* p = prefix;
+    while (*p && i < 500) buf[i++] = *p++;
+    p = str;
+    while (*p && i < 500) buf[i++] = *p++;
+    buf[i++] = '\r'; buf[i++] = '\n'; buf[i] = '\0';
+    Print(buf);
+}
+
 /* ---- Decrypt function ---- */
 
 __declspec(noinline) char* DecryptStringXor(volatile char* encrypted, unsigned char key)
@@ -86,23 +98,12 @@ void __stdcall Entry(void)
 {
     Print("[*] XOR String Decryptor Test (key=0x5A)\r\n\r\n");
 
-    char* s1 = DecryptStringXor(enc_hello, XOR_KEY);
-    Print("[1] "); Print(s1); Print("\r\n");
-
-    char* s2 = DecryptStringXor(enc_cmd, XOR_KEY);
-    Print("[2] "); Print(s2); Print("\r\n");
-
-    char* s3 = DecryptStringXor(enc_api1, XOR_KEY);
-    Print("[3] "); Print(s3); Print("\r\n");
-
-    char* s4 = DecryptStringXor(enc_api2, XOR_KEY);
-    Print("[4] "); Print(s4); Print("\r\n");
-
-    char* s5 = DecryptStringXor(enc_reg, XOR_KEY);
-    Print("[5] "); Print(s5); Print("\r\n");
-
-    char* s6 = DecryptStringXor(enc_url, XOR_KEY);
-    Print("[6] "); Print(s6); Print("\r\n");
+    PrintLine("[1] ", DecryptStringXor(enc_hello, XOR_KEY));
+    PrintLine("[2] ", DecryptStringXor(enc_cmd, XOR_KEY));
+    PrintLine("[3] ", DecryptStringXor(enc_api1, XOR_KEY));
+    PrintLine("[4] ", DecryptStringXor(enc_api2, XOR_KEY));
+    PrintLine("[5] ", DecryptStringXor(enc_reg, XOR_KEY));
+    PrintLine("[6] ", DecryptStringXor(enc_url, XOR_KEY));
 
     Print("\r\n[*] Done. 6 strings decrypted.\r\n");
     ExitProcess(0);
