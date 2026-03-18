@@ -28,16 +28,6 @@ NuGet Packages
    URL: https://github.com/icedland/iced
 
 
-MagicmidaCSharp (samples/MagicmidaCSharp/)
-----------------------------------------------
-
-Reference implementation of a Themida unpacker/dumper in C#.
-Not included in the repository — provided separately.
-
-License: Proprietary
-Copyright (c) Magicmida Authors
-
-
 Windows Debugging Tools (KD/)
 -----------------------------
 
