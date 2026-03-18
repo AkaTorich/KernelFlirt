@@ -46,20 +46,24 @@ public partial class DisasmView : UserControl
         "syscall","sysret","int","int3","into",
     };
 
-    // Colors matching OllyDbg palette
-    private static SolidColorBrush AddressColor => (SolidColorBrush)Application.Current.Resources["AddressBrush"];
-    private static SolidColorBrush BytesColor => (SolidColorBrush)Application.Current.Resources["HexBrush"];
-    private static SolidColorBrush MnemonicColor => (SolidColorBrush)Application.Current.Resources["MnemonicBrush"];
-    private static SolidColorBrush RegisterColor => (SolidColorBrush)Application.Current.Resources["RegisterBrush"];
-    private static SolidColorBrush NumberColor => new(Color.FromRgb(0xB5, 0xCE, 0xA8));    // green numbers
-    private static SolidColorBrush JumpColor => new(Color.FromRgb(0xFF, 0x80, 0x80));       // red-ish jumps
-    private static SolidColorBrush PunctuationColor => new(Color.FromRgb(0x80, 0x80, 0x80));// gray
-    private static SolidColorBrush StringColor => new(Color.FromRgb(0xCE, 0x91, 0x78));     // orange strings
-    private static SolidColorBrush CommentColor => new(Color.FromRgb(0x60, 0x8B, 0x4E));    // green comments
-    private static SolidColorBrush SymbolColor => new(Color.FromRgb(0x4E, 0xC9, 0xB0));         // teal/cyan symbols
-    private static SolidColorBrush BpMarkerColor => (SolidColorBrush)Application.Current.Resources["BreakpointBrush"];
-    private static SolidColorBrush CurrentLineColor => new(Color.FromRgb(0x26, 0x4F, 0x78));
-    private static SolidColorBrush BpLineColor => new(Color.FromRgb(0x8B, 0x20, 0x20));
+    // Colors — all from theme resources so they can be changed in Settings
+    private static SolidColorBrush Res(string key) =>
+        Application.Current.Resources.MergedDictionaries[0][key] as SolidColorBrush
+        ?? new SolidColorBrush(Colors.Magenta);
+    private static SolidColorBrush AddressColor => Res("AddressBrush");
+    private static SolidColorBrush BytesColor => Res("HexBrush");
+    private static SolidColorBrush MnemonicColor => Res("MnemonicBrush");
+    private static SolidColorBrush RegisterColor => Res("RegisterBrush");
+    private static SolidColorBrush NumberColor => Res("DsmNumberBrush");
+    private static SolidColorBrush JumpColor => Res("DsmJumpBrush");
+    private static SolidColorBrush PunctuationColor => Res("DsmPunctuationBrush");
+    private static SolidColorBrush StringColor => Res("DsmStringBrush");
+    private static SolidColorBrush CommentColor => Res("DsmCommentBrush");
+    private static SolidColorBrush SymbolColor => Res("DsmSymbolBrush");
+    private static SolidColorBrush FunctionColor => Res("DsmFunctionBrush");
+    private static SolidColorBrush BpMarkerColor => Res("BreakpointBrush");
+    private static SolidColorBrush CurrentLineColor => Res("DsmCurrentLineBrush");
+    private static SolidColorBrush BpLineColor => Res("BpRowBrush");
 
     private int _selectedIndex = -1;
     private ObservableCollection<Instruction>? _instructions;
@@ -180,7 +184,7 @@ public partial class DisasmView : UserControl
             Text = symbolName,
             FontFamily = new FontFamily("Consolas"),
             FontSize = 13,
-            Foreground = SymbolColor,
+            Foreground = FunctionColor,
             Cursor = Cursors.Hand,
             TextDecorations = TextDecorations.Underline,
             ToolTip = $"{symbolName}\n{address:X16}",

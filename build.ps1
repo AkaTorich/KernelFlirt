@@ -177,6 +177,15 @@ if (Test-Path $retDecSrc) {
     }
 }
 
+# Copy themes directory from root themes/ to bin/UI/themes/
+$themesSrc = Join-Path $Root "themes"
+if (Test-Path $themesSrc) {
+    $themesDst = Join-Path $BinUI "themes"
+    if (!(Test-Path $themesDst)) { New-Item -ItemType Directory -Path $themesDst -Force | Out-Null }
+    Copy-Item "$themesSrc\*" $themesDst -Recurse -Force
+    Write-Host "  -> bin\UI\themes\ (color themes)" -ForegroundColor DarkGreen
+}
+
 # Create plugins directory
 $pluginsDir = Join-Path $BinUI "plugins"
 if (!(Test-Path $pluginsDir)) { New-Item -ItemType Directory -Path $pluginsDir -Force | Out-Null }

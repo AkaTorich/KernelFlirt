@@ -165,6 +165,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     }
 
     private string _lastConnectAddress = "";
+    public Dictionary<string, string> ThemeColors { get; set; } = new();
 
     private void LoadSettings()
     {
@@ -177,6 +178,16 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     _symbols.SymbolPath = line["SymbolPath=".Length..];
                 else if (line.StartsWith("LastConnect=", StringComparison.Ordinal))
                     _lastConnectAddress = line["LastConnect=".Length..];
+                else if (line.StartsWith("Color.", StringComparison.Ordinal))
+                {
+                    var eq = line.IndexOf('=');
+                    if (eq > 6)
+                    {
+                        var key = line[6..eq];
+                        var val = line[(eq + 1)..];
+                        ThemeColors[key] = val;
+                    }
+                }
             }
         }
         catch { /* ignore */ }
@@ -186,11 +197,17 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         try
         {
-            File.WriteAllText(SettingsFile,
-                $"SymbolPath={_symbols.SymbolPath}\nLastConnect={_lastConnectAddress}\n");
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"SymbolPath={_symbols.SymbolPath}");
+            sb.AppendLine($"LastConnect={_lastConnectAddress}");
+            foreach (var (key, val) in ThemeColors)
+                sb.AppendLine($"Color.{key}={val}");
+            File.WriteAllText(SettingsFile, sb.ToString());
         }
         catch { /* ignore */ }
     }
+
+    public void SaveThemeColors() => SaveSettings();
 
     /* ================================================================== */
     /*  Connection                                                         */
