@@ -195,7 +195,8 @@ $pluginProjects = @(
     "samples\SamplePlugin\SamplePlugin.csproj",
     "samples\AntiDebugPlugin\AntiDebugPlugin.csproj",
     "samples\ThemidaPlugin\ThemidaPlugin.csproj",
-    "samples\ApiMonitorPlugin\ApiMonitorPlugin.csproj"
+    "samples\ApiMonitorPlugin\ApiMonitorPlugin.csproj",
+    "samples\StringDecryptorPlugin\StringDecryptorPlugin.csproj"
 )
 foreach ($pluginRelPath in $pluginProjects) {
     $pluginProj = Join-Path $Root $pluginRelPath
@@ -252,6 +253,30 @@ if ((Test-Path $antiDebugSrc) -and $canBuildNative) {
             Write-Host "  -> bin\Samples\antidebug_test.exe + .pdb" -ForegroundColor DarkGreen
         } else {
             Write-Host "  [WARNING] AntiDebugTest compilation failed" -ForegroundColor Yellow
+        }
+    }
+}
+
+# Build StringDecryptorTest samples (native C, needs MSVC cl.exe)
+$strDecTestDir = Join-Path $Root "samples\StringDecryptorTest"
+if ((Test-Path $strDecTestDir) -and $canBuildNative) {
+    $BinSamples = Join-Path $BinDir "Samples"
+    if (!(Test-Path $BinSamples)) { New-Item -ItemType Directory -Path $BinSamples -Force | Out-Null }
+
+    $vsInstall = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath 2>$null
+    if ($vsInstall) { $vcvars = Join-Path $vsInstall "VC\Auxiliary\Build\vcvarsall.bat" }
+
+    if ($vcvars -and (Test-Path $vcvars)) {
+        foreach ($testSrc in @("xor_strings.c", "rc4_strings.c")) {
+            $testName = [System.IO.Path]::GetFileNameWithoutExtension($testSrc)
+            cmd /c "call `"$vcvars`" x64 >nul 2>&1 && cd /d `"$strDecTestDir`" && cl /Od /Zi /W3 /GS- /MT $testSrc /Fe:$testName.exe /link /RELEASE /DEBUG /ENTRY:Entry /SUBSYSTEM:CONSOLE /NODEFAULTLIB /INCREMENTAL:NO kernel32.lib >nul 2>&1"
+            if ($LASTEXITCODE -eq 0) {
+                Copy-Item (Join-Path $strDecTestDir "$testName.exe") $BinSamples -Force
+                Copy-Item (Join-Path $strDecTestDir "$testName.pdb") $BinSamples -Force -ErrorAction SilentlyContinue
+                Write-Host "  -> bin\Samples\$testName.exe + .pdb" -ForegroundColor DarkGreen
+            } else {
+                Write-Host "  [WARNING] $testName compilation failed" -ForegroundColor Yellow
+            }
         }
     }
 }
@@ -373,7 +398,7 @@ Write-Host "  bin\Loader\      KfLoader.exe"
 Write-Host "  bin\Relay\       KfRelay.exe"
 Write-Host "  bin\TestDriver\  KfTestDriver.sys"
 Write-Host "  bin\UI\          KernelFlirt.exe"
-Write-Host "  bin\Samples\     antidebug_test.exe"
+Write-Host "  bin\Samples\     antidebug_test.exe, xor_strings.exe, rc4_strings.exe"
 Write-Host ""
 Write-Host "Usage:" -ForegroundColor Yellow
 Write-Host "  1. On VM: KfLoader.exe install + start"

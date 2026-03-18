@@ -419,4 +419,7 @@ FodyWeavers.xsd
 
 # Test programs (binaries)
 TestPrograms/
+samples/StringDecryptorTest/*.exe
+samples/StringDecryptorTest/*.obj
+samples/StringDecryptorTest/*.pdb
 
