@@ -415,6 +415,7 @@ FodyWeavers.xsd
 
 # Claude Code
 .claude/
+.mcp.json
 
 # Test programs (binaries)
 TestPrograms/
