@@ -43,8 +43,6 @@ samples/MagicmidaCSharp.zip
 !retdec-bin/**
 !KD/
 !KD/**
-!TestPrograms/
-!TestPrograms/**
 !Scripts/
 !Scripts/**
 
@@ -414,4 +412,10 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# Claude Code
+.claude/
+
+# Test programs (binaries)
+TestPrograms/
 
