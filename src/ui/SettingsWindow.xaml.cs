@@ -113,28 +113,22 @@ public partial class SettingsWindow : Window
             Margin = new Thickness(0, 0, 8, 0)
         };
 
-        var combo = new ComboBox
-        {
-            Width = 180,
-            Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#252526")),
-            Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#D4D4D4")),
-            BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#3F3F46")),
-        };
+        var combo = new ComboBox { Width = 180 };
         RefreshThemeCombo(combo);
 
-        var loadBtn = new Button { Content = "Load", Padding = new Thickness(8, 4, 8, 4), Margin = new Thickness(4, 0, 0, 0) };
-        loadBtn.Click += (_, _) =>
+        var loadAllBtn = new Button { Content = "Load All", Padding = new Thickness(8, 4, 8, 4), Margin = new Thickness(4, 0, 0, 0) };
+        loadAllBtn.Click += (_, _) =>
         {
             if (combo.SelectedItem is not string themeName) return;
-            LoadThemeForKeys(themeName, keysFilter);
+            LoadAllFromTheme(themeName);
         };
 
         var saveBtn = new Button { Content = "Save As...", Padding = new Thickness(8, 4, 8, 4), Margin = new Thickness(4, 0, 0, 0) };
-        saveBtn.Click += (_, _) => SaveThemeFromKeys(keysFilter, combo);
+        saveBtn.Click += (_, _) => SaveAllTheme(combo);
 
         bar.Children.Add(lbl);
         bar.Children.Add(combo);
-        bar.Children.Add(loadBtn);
+        bar.Children.Add(loadAllBtn);
         bar.Children.Add(saveBtn);
 
         return bar;
@@ -142,48 +136,7 @@ public partial class SettingsWindow : Window
 
     private StackPanel CreatePerTabThemeBar()
     {
-        var bar = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Margin = new Thickness(0, 0, 0, 12)
-        };
-
-        var lbl = new TextBlock
-        {
-            Text = "Theme:",
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 8, 0)
-        };
-
-        var combo = new ComboBox
-        {
-            Width = 180,
-            Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#252526")),
-            Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#D4D4D4")),
-            BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#3F3F46")),
-        };
-        RefreshThemeCombo(combo);
-
-        var loadBtn = new Button { Content = "Load", Padding = new Thickness(8, 4, 8, 4), Margin = new Thickness(4, 0, 0, 0) };
-        loadBtn.Click += (_, _) =>
-        {
-            if (combo.SelectedItem is not string themeName) return;
-            LoadThemeForPrefix(themeName, "Tab.");
-        };
-
-        var saveBtn = new Button { Content = "Save As...", Padding = new Thickness(8, 4, 8, 4), Margin = new Thickness(4, 0, 0, 0) };
-        saveBtn.Click += (_, _) =>
-        {
-            var perTabKeys = _colors.Keys.Where(k => k.StartsWith("Tab.") && k.Contains('.')).ToArray();
-            SaveThemeFromKeys(perTabKeys, combo);
-        };
-
-        bar.Children.Add(lbl);
-        bar.Children.Add(combo);
-        bar.Children.Add(loadBtn);
-        bar.Children.Add(saveBtn);
-
-        return bar;
+        return CreateThemeBar([]); // same UI, Load All loads everything
     }
 
     private void RefreshThemeCombo(ComboBox combo)
@@ -212,39 +165,23 @@ public partial class SettingsWindow : Window
         return dict;
     }
 
-    private void LoadThemeForKeys(string themeName, string[] keys)
-    {
-        var theme = ReadThemeFile(themeName);
-        foreach (var key in keys)
-        {
-            if (theme.TryGetValue(key, out var val))
-            {
-                _colors[key] = val;
-                if (_ui.TryGetValue(key, out var entry))
-                    ApplyColorToButton(entry.Btn, entry.Txt, val);
-            }
-        }
-    }
-
-    private void LoadThemeForPrefix(string themeName, string prefix)
+    private void LoadAllFromTheme(string themeName)
     {
         var theme = ReadThemeFile(themeName);
         foreach (var (tKey, tVal) in theme)
         {
-            if (!tKey.StartsWith(prefix)) continue;
             _colors[tKey] = tVal;
             if (_ui.TryGetValue(tKey, out var entry))
                 ApplyColorToButton(entry.Btn, entry.Txt, tVal);
         }
     }
 
-    private void SaveThemeFromKeys(string[] keys, ComboBox combo)
+    private void SaveAllTheme(ComboBox combo)
     {
         var dlg = new InputDialog("Save Theme", "Theme name:") { Owner = this };
         if (dlg.ShowDialog() != true || string.IsNullOrWhiteSpace(dlg.InputText)) return;
 
         var name = dlg.InputText.Trim();
-        // Sanitize filename
         foreach (var c in Path.GetInvalidFileNameChars())
             name = name.Replace(c, '_');
 
@@ -253,27 +190,15 @@ public partial class SettingsWindow : Window
 
         var path = Path.Combine(ThemesDir, name + ".txt");
 
-        // Read existing theme file if it exists (to preserve keys from other tabs)
-        var existing = new Dictionary<string, string>();
-        if (File.Exists(path))
+        // Save all current colors
+        var toSave = new Dictionary<string, string>();
+        foreach (var (key, val) in _colors)
         {
-            foreach (var line in File.ReadAllLines(path))
-            {
-                if (!line.StartsWith("Color.", StringComparison.Ordinal)) continue;
-                var eq = line.IndexOf('=');
-                if (eq > 6) existing[line[6..eq]] = line[(eq + 1)..];
-            }
+            if (!string.IsNullOrWhiteSpace(val))
+                toSave[key] = val;
         }
 
-        // Update with current keys
-        foreach (var key in keys)
-        {
-            if (_colors.TryGetValue(key, out var val) && !string.IsNullOrWhiteSpace(val))
-                existing[key] = val;
-        }
-
-        // Write
-        var lines = existing.OrderBy(kv => kv.Key).Select(kv => $"Color.{kv.Key}={kv.Value}");
+        var lines = toSave.OrderBy(kv => kv.Key).Select(kv => $"Color.{kv.Key}={kv.Value}");
         File.WriteAllLines(path, lines);
 
         RefreshThemeCombo(combo);

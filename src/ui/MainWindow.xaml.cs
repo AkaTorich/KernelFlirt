@@ -989,6 +989,7 @@ public partial class MainWindow : Window
             VM.ThemeColors = dlg.ResultColors;
             VM.SaveThemeColors();
             ApplyThemeColors(dlg.ResultColors);
+            RefreshDisasmView();
         }
     }
 
@@ -1002,8 +1003,7 @@ public partial class MainWindow : Window
             try
             {
                 var color = (Color)ColorConverter.ConvertFromString(colorHex);
-                if (dict.Contains(brushKey) && dict[brushKey] is SolidColorBrush b)
-                    b.Color = color;
+                dict[brushKey] = new SolidColorBrush(color);
             }
             catch { /* ignore invalid */ }
         }
@@ -1021,6 +1021,7 @@ public partial class MainWindow : Window
             ["Accent"]          = "AccentBrush",
             ["Selection"]       = "SelectionBrush",
             ["Toolbar"]         = "ToolbarBgBrush",
+            ["StatusBar"]       = "StatusBarBrush",
             ["ValueChanged"]    = "ValueChangedBrush",
             // Disassembly
             ["DsmAddress"]      = "AddressBrush",
@@ -1039,41 +1040,63 @@ public partial class MainWindow : Window
             ["DsmFunction"]     = "DsmFunctionBrush",
         };
 
+        int applied = 0;
         foreach (var (settingKey, brushKey) in map)
         {
             if (colors.TryGetValue(settingKey, out var hex))
+            {
                 SetBrush(brushKey, hex);
+                applied++;
+            }
         }
+        VM.Log($"[Theme] Applied {applied}/{map.Count} brushes from {colors.Count} color entries");
+        if (dict.Contains("BgBrush") && dict["BgBrush"] is SolidColorBrush bgb)
+            VM.Log($"[Theme] BgBrush = {bgb.Color}");
+        if (colors.TryGetValue("Bg", out var dbgBg))
+            VM.Log($"[Theme] Bg setting = {dbgBg}");
+        if (dict.Contains("MnemonicBrush") && dict["MnemonicBrush"] is SolidColorBrush mb)
+            VM.Log($"[Theme] MnemonicBrush = {mb.Color}");
+        if (colors.TryGetValue("DsmMnemonic", out var dbgHex))
+            VM.Log($"[Theme] DsmMnemonic setting = {dbgHex}");
 
-        // Per-tab header colors
-        ApplyPerTabColors(colors);
+        // Tab header colors (global TabStyle + per-tab overrides)
+        ApplyTabColors(colors);
     }
 
-    private void ApplyPerTabColors(Dictionary<string, string> colors)
+    private static SolidColorBrush? TryParseBrush(Dictionary<string, string> colors, string key)
     {
+        if (!colors.TryGetValue(key, out var hex) || string.IsNullOrWhiteSpace(hex)) return null;
+        try { return new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex)); }
+        catch { return null; }
+    }
+
+    private void ApplyTabColors(Dictionary<string, string> colors)
+    {
+        // Global tab style colors
+        var globalBg       = TryParseBrush(colors, "TabBg");
+        var globalFg       = TryParseBrush(colors, "TabFg");
+        var globalSelBg    = TryParseBrush(colors, "TabSelBg");
+        var globalSelFg    = TryParseBrush(colors, "TabSelFg");
+        var globalSelBorder = TryParseBrush(colors, "TabSelBorder");
+        var globalHoverBg  = TryParseBrush(colors, "TabHoverBg");
+
         foreach (TabItem tab in MainTabControl.Items)
         {
             var name = tab.Header?.ToString() ?? "";
-            var fgKey = $"Tab.{name}.Fg";
-            var bgKey = $"Tab.{name}.Bg";
 
-            SolidColorBrush? fgBrush = null, bgBrush = null;
+            // Per-tab overrides (individual tab colors)
+            var perTabFg = TryParseBrush(colors, $"Tab.{name}.Fg");
+            var perTabBg = TryParseBrush(colors, $"Tab.{name}.Bg");
 
-            if (colors.TryGetValue(fgKey, out var fg) && !string.IsNullOrWhiteSpace(fg))
-            {
-                try { fgBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(fg)); }
-                catch { /* ignore */ }
-            }
-            if (colors.TryGetValue(bgKey, out var bg) && !string.IsNullOrWhiteSpace(bg))
-            {
-                try { bgBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(bg)); }
-                catch { /* ignore */ }
-            }
+            // Effective colors: per-tab override > global > fallback from resources
+            var tabBg      = perTabBg ?? globalBg;
+            var tabFg      = perTabFg ?? globalFg;
+            var selBg      = globalSelBg;
+            var selFg      = perTabFg ?? globalSelFg;
+            var selBorder  = globalSelBorder ?? (FindResource("AccentBrush") as SolidColorBrush);
+            var hoverBg    = globalHoverBg;
 
-            if (fgBrush == null && bgBrush == null) continue;
-
-            // Build a custom template that keeps the assigned color constant
-            // regardless of IsSelected / IsMouseOver state
+            // Build custom template
             var borderFactory = new FrameworkElementFactory(typeof(System.Windows.Controls.Border), "TabBorder");
             borderFactory.SetValue(System.Windows.Controls.Border.BorderBrushProperty,
                 FindResource("BorderBrush") as Brush ?? Brushes.Gray);
@@ -1082,8 +1105,8 @@ public partial class MainWindow : Window
             borderFactory.SetValue(System.Windows.Controls.Border.MarginProperty, new Thickness(0, 0, -1, 0));
             borderFactory.SetValue(System.Windows.Controls.Border.SnapsToDevicePixelsProperty, true);
 
-            if (bgBrush != null)
-                borderFactory.SetValue(System.Windows.Controls.Border.BackgroundProperty, bgBrush);
+            if (tabBg != null)
+                borderFactory.SetValue(System.Windows.Controls.Border.BackgroundProperty, tabBg);
             else
                 borderFactory.SetBinding(System.Windows.Controls.Border.BackgroundProperty,
                     new System.Windows.Data.Binding("Background") { RelativeSource = new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.TemplatedParent) });
@@ -1096,17 +1119,31 @@ public partial class MainWindow : Window
 
             var template = new ControlTemplate(typeof(TabItem)) { VisualTree = borderFactory };
 
-            // Selected state: thicker top border with accent color, but keep our fg/bg
+            // Selected trigger
             var selectedTrigger = new Trigger { Property = TabItem.IsSelectedProperty, Value = true };
-            selectedTrigger.Setters.Add(new Setter(System.Windows.Controls.Border.BorderBrushProperty,
-                FindResource("AccentBrush") as Brush ?? Brushes.Blue) { TargetName = "TabBorder" });
+            if (selBg != null)
+                selectedTrigger.Setters.Add(new Setter(System.Windows.Controls.Border.BackgroundProperty, selBg) { TargetName = "TabBorder" });
+            if (selFg != null)
+                selectedTrigger.Setters.Add(new Setter(TabItem.ForegroundProperty, selFg));
+            if (selBorder != null)
+                selectedTrigger.Setters.Add(new Setter(System.Windows.Controls.Border.BorderBrushProperty, selBorder) { TargetName = "TabBorder" });
             selectedTrigger.Setters.Add(new Setter(System.Windows.Controls.Border.BorderThicknessProperty,
                 new Thickness(1, 2, 1, 0)) { TargetName = "TabBorder" });
             template.Triggers.Add(selectedTrigger);
 
+            // Hover trigger
+            if (hoverBg != null)
+            {
+                var hoverTrigger = new Trigger { Property = TabItem.IsMouseOverProperty, Value = true };
+                hoverTrigger.Setters.Add(new Setter(System.Windows.Controls.Border.BackgroundProperty, hoverBg) { TargetName = "TabBorder" });
+                template.Triggers.Add(hoverTrigger);
+            }
+
             var style = new Style(typeof(TabItem));
-            if (fgBrush != null)
-                style.Setters.Add(new Setter(TabItem.ForegroundProperty, fgBrush));
+            if (tabFg != null)
+                style.Setters.Add(new Setter(TabItem.ForegroundProperty, tabFg));
+            if (tabBg != null)
+                style.Setters.Add(new Setter(TabItem.BackgroundProperty, tabBg));
             style.Setters.Add(new Setter(TabItem.TemplateProperty, template));
 
             tab.Style = style;

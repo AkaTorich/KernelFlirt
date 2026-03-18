@@ -4,8 +4,8 @@
         Title="Select Process"
         Width="600" Height="500"
         WindowStartupLocation="CenterOwner"
-        Background="{StaticResource BgBrush}"
-        Foreground="{StaticResource FgBrush}"
+        Background="{DynamicResource BgBrush}"
+        Foreground="{DynamicResource FgBrush}"
         FontFamily="Consolas" FontSize="13"
         ShowInTaskbar="False"
         ResizeMode="CanResizeWithGrip">
@@ -30,12 +30,12 @@
         <!-- Process list -->
         <DataGrid x:Name="ProcessGrid" AutoGenerateColumns="False" IsReadOnly="True"
                   SelectionMode="Single" MouseDoubleClick="OnProcessDoubleClick"
-                  BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                  BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
             <DataGrid.Columns>
                 <DataGridTextColumn Header="PID" Width="70" Binding="{Binding ProcessId}">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
-                            <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
                         </Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>

@@ -8,8 +8,8 @@
         Title="KernelFlirt - Kernel Debugger"
         Width="1400" Height="900"
         WindowStartupLocation="CenterScreen"
-        Background="{StaticResource BgBrush}"
-        Foreground="{StaticResource FgBrush}"
+        Background="{DynamicResource BgBrush}"
+        Foreground="{DynamicResource FgBrush}"
         FontFamily="Consolas" FontSize="13"
         PreviewKeyDown="Window_PreviewKeyDown">
 
@@ -26,16 +26,16 @@
         <Style x:Key="BpCellStyle" TargetType="DataGridCell">
             <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource FgBrush}" />
             <Style.Triggers>
                 <!-- Normal selection: dark blue -->
                 <Trigger Property="IsSelected" Value="True">
-                    <Setter Property="Background" Value="{StaticResource SelectionBrush}" />
-                    <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+                    <Setter Property="Background" Value="{DynamicResource SelectionBrush}" />
+                    <Setter Property="Foreground" Value="{DynamicResource FgBrush}" />
                 </Trigger>
                 <!-- Breakpoint row: red -->
                 <DataTrigger Binding="{Binding HasBreakpoint}" Value="True">
-                    <Setter Property="Background" Value="{StaticResource BpRowBrush}" />
+                    <Setter Property="Background" Value="{DynamicResource BpRowBrush}" />
                 </DataTrigger>
                 <!-- Selected + breakpoint: brighter red -->
                 <MultiDataTrigger>
@@ -50,7 +50,7 @@
         <Style x:Key="BpRowStyle" TargetType="DataGridRow">
             <Style.Triggers>
                 <DataTrigger Binding="{Binding HasBreakpoint}" Value="True">
-                    <Setter Property="Background" Value="{StaticResource BpRowBrush}" />
+                    <Setter Property="Background" Value="{DynamicResource BpRowBrush}" />
                 </DataTrigger>
             </Style.Triggers>
         </Style>
@@ -72,7 +72,7 @@
 
     <DockPanel>
         <!-- Menu Bar -->
-        <Menu DockPanel.Dock="Top" Background="{StaticResource BgLightBrush}">
+        <Menu DockPanel.Dock="Top" Background="{DynamicResource BgLightBrush}">
             <MenuItem Header="_File">
                 <MenuItem Header="_Open Process..." Command="{Binding OpenProcessCommand}" />
                 <MenuItem Header="Open &amp; _Debug (.exe)..." Command="{Binding OpenAndDebugCommand}" />
@@ -133,7 +133,7 @@
         </Menu>
 
         <!-- Toolbar -->
-        <Border DockPanel.Dock="Top" Background="{StaticResource ToolbarBgBrush}" Padding="4,2">
+        <Border DockPanel.Dock="Top" Background="{DynamicResource ToolbarBgBrush}" Padding="4,2">
             <WrapPanel>
                 <Button Content="Open" Command="{Binding OpenProcessCommand}"
                         ToolTip="Select process to attach" />
@@ -148,7 +148,7 @@
                         Visibility="{Binding IsConnected, Converter={StaticResource BoolVisConv}}"
                         Content="Disconnect" />
 
-                <Rectangle Width="1" Fill="{StaticResource BorderBrush}" Margin="8,2" />
+                <Rectangle Width="1" Fill="{DynamicResource BorderBrush}" Margin="8,2" />
 
                 <TextBlock Text="PID:" VerticalAlignment="Center" Margin="4,0" />
                 <TextBox x:Name="PidBox" Width="80" VerticalAlignment="Center"
@@ -157,7 +157,7 @@
                         ToolTip="Attach to process by PID" />
                 <Button Content="Detach" Command="{Binding DetachProcessCommand}" />
 
-                <Rectangle Width="1" Fill="{StaticResource BorderBrush}" Margin="8,2" />
+                <Rectangle Width="1" Fill="{DynamicResource BorderBrush}" Margin="8,2" />
 
                 <Button Content="Run" Command="{Binding RunCommand}" ToolTip="Run (F9)" />
                 <Button Content="Pause" Command="{Binding PauseCommand}" ToolTip="Pause (F12)" />
@@ -167,7 +167,7 @@
                 <Button Content="Out" Command="{Binding StepOutCommand}" ToolTip="Step Out (Ctrl+F9)" />
                 <Button Content="F4" Command="{Binding RunToCursorCommand}" ToolTip="Run to Cursor (F4)" />
 
-                <Rectangle Width="1" Fill="{StaticResource BorderBrush}" Margin="8,2" />
+                <Rectangle Width="1" Fill="{DynamicResource BorderBrush}" Margin="8,2" />
 
                 <Button Content="BP" Click="OnBpButtonClick" ToolTip="Toggle breakpoint (F2)" />
                 <Button Content="HW" Command="{Binding ToggleHwBreakpointCommand}" ToolTip="Toggle hardware breakpoint" />
@@ -175,7 +175,7 @@
                 <Button Content="RW" Command="{Binding ToggleHwRwBreakpointCommand}" ToolTip="Toggle HW read/write watchpoint" />
                 <Button Content="Mem" Command="{Binding ToggleMemoryBreakpointCommand}" ToolTip="Toggle memory breakpoint (PAGE_GUARD)" />
 
-                <Rectangle Width="1" Fill="{StaticResource BorderBrush}" Margin="8,2" />
+                <Rectangle Width="1" Fill="{DynamicResource BorderBrush}" Margin="8,2" />
 
                 <TextBlock Text="Addr:" VerticalAlignment="Center" Margin="4,0" />
                 <TextBox x:Name="GoToBox" Width="160" VerticalAlignment="Center"
@@ -222,17 +222,17 @@
 
                         <ctrl:DisasmView x:Name="DisasmControl" Grid.Column="0" />
 
-                        <GridSplitter Grid.Column="1" Width="3" Background="{StaticResource BorderBrush}"
+                        <GridSplitter Grid.Column="1" Width="3" Background="{DynamicResource BorderBrush}"
                                       HorizontalAlignment="Center" VerticalAlignment="Stretch" />
 
                         <!-- Registers -->
                         <DockPanel Grid.Column="2">
-                            <Border DockPanel.Dock="Top" Background="{StaticResource ToolbarBgBrush}" Padding="4,2">
+                            <Border DockPanel.Dock="Top" Background="{DynamicResource ToolbarBgBrush}" Padding="4,2">
                                 <TextBlock Text="Registers" FontWeight="SemiBold" />
                             </Border>
                             <DataGrid x:Name="RegistersGrid" ItemsSource="{Binding Registers}" IsReadOnly="True"
                                       AutoGenerateColumns="False" HeadersVisibility="None"
-                                      BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                                      BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
                                 <DataGrid.ContextMenu>
                                     <ContextMenu>
                                         <MenuItem Header="Copy All Registers" Command="{Binding CopyRegisterValueCommand}" />
@@ -244,7 +244,7 @@
                                     <DataGridTextColumn Header="Reg" Width="60" Binding="{Binding Name}">
                                         <DataGridTextColumn.ElementStyle>
                                             <Style TargetType="TextBlock">
-                                                <Setter Property="Foreground" Value="{StaticResource RegisterBrush}" />
+                                                <Setter Property="Foreground" Value="{DynamicResource RegisterBrush}" />
                                                 <Setter Property="FontWeight" Value="Bold" />
                                             </Style>
                                         </DataGridTextColumn.ElementStyle>
@@ -254,7 +254,7 @@
                                             <Style TargetType="TextBlock">
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding Changed}" Value="True">
-                                                        <Setter Property="Foreground" Value="{StaticResource ValueChangedBrush}" />
+                                                        <Setter Property="Foreground" Value="{DynamicResource ValueChangedBrush}" />
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
@@ -269,7 +269,7 @@
                 <!-- Tab: Breakpoints -->
             <TabItem Header="Breakpoints">
                 <DataGrid x:Name="BpGrid" ItemsSource="{Binding Breakpoints}" IsReadOnly="True"
-                          AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
+                          AutoGenerateColumns="False" BorderBrush="{DynamicResource BorderBrush}"
                           MouseDoubleClick="OnBreakpointDoubleClick">
                     <DataGrid.ContextMenu>
                         <ContextMenu>
@@ -285,7 +285,7 @@
                         <DataGridTextColumn Header="Address" Width="160" Binding="{Binding AddressHex}">
                             <DataGridTextColumn.ElementStyle>
                                 <Style TargetType="TextBlock">
-                                    <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource AddressBrush}" />
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
@@ -301,7 +301,7 @@
             <!-- Tab: Modules -->
             <TabItem Header="Modules">
                 <DataGrid x:Name="ModulesGrid" ItemsSource="{Binding Modules}" IsReadOnly="True"
-                          AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
+                          AutoGenerateColumns="False" BorderBrush="{DynamicResource BorderBrush}"
                           MouseDoubleClick="OnModuleDoubleClick">
                     <DataGrid.ContextMenu>
                         <ContextMenu>
@@ -317,7 +317,7 @@
                         <DataGridTextColumn Header="Base" Width="160" Binding="{Binding BaseHex}">
                             <DataGridTextColumn.ElementStyle>
                                 <Style TargetType="TextBlock">
-                                    <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource AddressBrush}" />
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
@@ -330,7 +330,7 @@
             <!-- Tab: Kernel Modules -->
             <TabItem Header="Kernel Modules">
                 <DataGrid x:Name="KernelModulesGrid" ItemsSource="{Binding KernelModules}" IsReadOnly="True"
-                          AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
+                          AutoGenerateColumns="False" BorderBrush="{DynamicResource BorderBrush}"
                           MouseDoubleClick="OnKernelModuleDoubleClick">
                     <DataGrid.ContextMenu>
                         <ContextMenu>
@@ -349,7 +349,7 @@
                         <DataGridTextColumn Header="Base" Width="160" Binding="{Binding BaseHex}">
                             <DataGridTextColumn.ElementStyle>
                                 <Style TargetType="TextBlock">
-                                    <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource AddressBrush}" />
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
@@ -363,7 +363,7 @@
             <!-- Tab: Threads -->
             <TabItem Header="Threads">
                 <DataGrid x:Name="ThreadsGrid" ItemsSource="{Binding Threads}" IsReadOnly="True"
-                          AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
+                          AutoGenerateColumns="False" BorderBrush="{DynamicResource BorderBrush}"
                           MouseDoubleClick="OnThreadDoubleClick">
                     <DataGrid.ContextMenu>
                         <ContextMenu>
@@ -378,7 +378,7 @@
                         <DataGridTextColumn Header="Start Address" Width="160" Binding="{Binding StartAddressHex}">
                             <DataGridTextColumn.ElementStyle>
                                 <Style TargetType="TextBlock">
-                                    <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource AddressBrush}" />
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
@@ -391,7 +391,7 @@
             <!-- Tab: Call Stack -->
             <TabItem Header="Call Stack">
                 <DataGrid x:Name="CallStackGrid" ItemsSource="{Binding CallStack}" IsReadOnly="True"
-                          AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
+                          AutoGenerateColumns="False" BorderBrush="{DynamicResource BorderBrush}"
                           MouseDoubleClick="OnCallStackDoubleClick">
                     <DataGrid.ContextMenu>
                         <ContextMenu>
@@ -406,7 +406,7 @@
                         <DataGridTextColumn Header="Return Address" Width="160" Binding="{Binding ReturnAddressHex}">
                             <DataGridTextColumn.ElementStyle>
                                 <Style TargetType="TextBlock">
-                                    <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource AddressBrush}" />
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
@@ -414,7 +414,7 @@
                         <DataGridTextColumn Header="Symbol" Width="*" Binding="{Binding Symbol}">
                             <DataGridTextColumn.ElementStyle>
                                 <Style TargetType="TextBlock">
-                                    <Setter Property="Foreground" Value="{StaticResource CommentBrush}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource CommentBrush}" />
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
@@ -425,7 +425,7 @@
             <!-- Tab: Bookmarks -->
             <TabItem Header="Bookmarks">
                 <DataGrid x:Name="BookmarksGrid" ItemsSource="{Binding Bookmarks}" IsReadOnly="True"
-                          AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
+                          AutoGenerateColumns="False" BorderBrush="{DynamicResource BorderBrush}"
                           MouseDoubleClick="OnBookmarkDoubleClick">
                     <DataGrid.ContextMenu>
                         <ContextMenu>
@@ -438,7 +438,7 @@
                         <DataGridTextColumn Header="Address" Width="160" Binding="{Binding AddressHex}">
                             <DataGridTextColumn.ElementStyle>
                                 <Style TargetType="TextBlock">
-                                    <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource AddressBrush}" />
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
@@ -451,7 +451,7 @@
             <!-- Tab: Patches -->
             <TabItem Header="Patches">
                 <DataGrid x:Name="PatchesGrid" ItemsSource="{Binding Patches}" IsReadOnly="True"
-                          AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}">
+                          AutoGenerateColumns="False" BorderBrush="{DynamicResource BorderBrush}">
                     <DataGrid.ContextMenu>
                         <ContextMenu>
                             <MenuItem Header="Restore Original" Click="OnPatchRestore" />
@@ -463,7 +463,7 @@
                         <DataGridTextColumn Header="Address" Width="160" Binding="{Binding AddressHex}">
                             <DataGridTextColumn.ElementStyle>
                                 <Style TargetType="TextBlock">
-                                    <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource AddressBrush}" />
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
@@ -479,13 +479,13 @@
             <TabItem Header="Exceptions">
                 <DockPanel>
                     <DockPanel DockPanel.Dock="Top" Margin="2">
-                        <TextBlock Text="Filter: " VerticalAlignment="Center" Foreground="{StaticResource CommentBrush}" />
+                        <TextBlock Text="Filter: " VerticalAlignment="Center" Foreground="{DynamicResource CommentBrush}" />
                         <TextBox Text="{Binding ExceptionFilter, UpdateSourceTrigger=PropertyChanged}"
-                                 Background="{StaticResource BgLightBrush}" Foreground="{StaticResource FgBrush}"
-                                 BorderBrush="{StaticResource BorderBrush}" Padding="3,1" />
+                                 Background="{DynamicResource BgLightBrush}" Foreground="{DynamicResource FgBrush}"
+                                 BorderBrush="{DynamicResource BorderBrush}" Padding="3,1" />
                     </DockPanel>
                     <DataGrid x:Name="ExceptionsGrid" ItemsSource="{Binding FilteredExceptions}" IsReadOnly="True"
-                              AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
+                              AutoGenerateColumns="False" BorderBrush="{DynamicResource BorderBrush}"
                               RowStyle="{StaticResource BpRowStyle}"
                               CellStyle="{StaticResource BpCellStyle}"
                               RowBackground="{x:Null}" AlternatingRowBackground="{x:Null}"
@@ -513,28 +513,28 @@
                             <DataGridTextColumn Header="Function" Width="220" Binding="{Binding Display}">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
-                                        <Setter Property="Foreground" Value="{StaticResource CommentBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource CommentBrush}" />
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
                             <DataGridTextColumn Header="Start" Width="160" Binding="{Binding StartHex}">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
-                                        <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource AddressBrush}" />
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
                             <DataGridTextColumn Header="End" Width="160" Binding="{Binding EndHex}">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
-                                        <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource AddressBrush}" />
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
                             <DataGridTextColumn Header="Size" Width="80" Binding="{Binding SizeHex}">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
-                                        <Setter Property="Foreground" Value="{StaticResource HexBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource HexBrush}" />
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
@@ -547,13 +547,13 @@
             <TabItem Header="Sections">
                 <DockPanel>
                     <DockPanel DockPanel.Dock="Top" Margin="2">
-                        <TextBlock Text="Filter: " VerticalAlignment="Center" Foreground="{StaticResource CommentBrush}" />
+                        <TextBlock Text="Filter: " VerticalAlignment="Center" Foreground="{DynamicResource CommentBrush}" />
                         <TextBox Text="{Binding SectionFilter, UpdateSourceTrigger=PropertyChanged}"
-                                 Background="{StaticResource BgLightBrush}" Foreground="{StaticResource FgBrush}"
-                                 BorderBrush="{StaticResource BorderBrush}" Padding="3,1" />
+                                 Background="{DynamicResource BgLightBrush}" Foreground="{DynamicResource FgBrush}"
+                                 BorderBrush="{DynamicResource BorderBrush}" Padding="3,1" />
                     </DockPanel>
                     <DataGrid x:Name="SectionsGrid" ItemsSource="{Binding FilteredSections}" IsReadOnly="True"
-                              AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
+                              AutoGenerateColumns="False" BorderBrush="{DynamicResource BorderBrush}"
                               RowStyle="{StaticResource BpRowStyle}"
                               CellStyle="{StaticResource BpCellStyle}"
                               RowBackground="{x:Null}" AlternatingRowBackground="{x:Null}"
@@ -584,35 +584,35 @@
                             <DataGridTextColumn Header="Section" Width="100" Binding="{Binding Name}">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
-                                        <Setter Property="Foreground" Value="{StaticResource CommentBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource CommentBrush}" />
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
                             <DataGridTextColumn Header="Virtual Address" Width="160" Binding="{Binding VaHex}">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
-                                        <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource AddressBrush}" />
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
                             <DataGridTextColumn Header="Virtual Size" Width="100" Binding="{Binding VirtualSizeHex}">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
-                                        <Setter Property="Foreground" Value="{StaticResource HexBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource HexBrush}" />
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
                             <DataGridTextColumn Header="Raw Size" Width="100" Binding="{Binding RawSizeHex}">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
-                                        <Setter Property="Foreground" Value="{StaticResource HexBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource HexBrush}" />
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
                             <DataGridTextColumn Header="Flags" Width="*" Binding="{Binding Flags}">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
-                                        <Setter Property="Foreground" Value="{StaticResource CommentBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource CommentBrush}" />
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
@@ -625,13 +625,13 @@
             <TabItem Header="Strings">
                 <DockPanel>
                     <DockPanel DockPanel.Dock="Top" Margin="2">
-                        <TextBlock Text="Filter: " VerticalAlignment="Center" Foreground="{StaticResource CommentBrush}" />
+                        <TextBlock Text="Filter: " VerticalAlignment="Center" Foreground="{DynamicResource CommentBrush}" />
                         <TextBox Text="{Binding StringFilter, UpdateSourceTrigger=PropertyChanged}"
-                                 Background="{StaticResource BgLightBrush}" Foreground="{StaticResource FgBrush}"
-                                 BorderBrush="{StaticResource BorderBrush}" Padding="3,1" />
+                                 Background="{DynamicResource BgLightBrush}" Foreground="{DynamicResource FgBrush}"
+                                 BorderBrush="{DynamicResource BorderBrush}" Padding="3,1" />
                     </DockPanel>
                     <DataGrid x:Name="StringsGrid" ItemsSource="{Binding FilteredStrings}" IsReadOnly="True"
-                              AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
+                              AutoGenerateColumns="False" BorderBrush="{DynamicResource BorderBrush}"
                               RowStyle="{StaticResource BpRowStyle}"
                               CellStyle="{StaticResource BpCellStyle}"
                               RowBackground="{x:Null}" AlternatingRowBackground="{x:Null}"
@@ -654,21 +654,21 @@
                             <DataGridTextColumn Header="Section" Width="70" Binding="{Binding SectionName}">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
-                                        <Setter Property="Foreground" Value="{StaticResource CommentBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource CommentBrush}" />
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
                             <DataGridTextColumn Header="Address" Width="150" Binding="{Binding AddressHex}">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
-                                        <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource AddressBrush}" />
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
                             <DataGridTextColumn Header="Type" Width="60" Binding="{Binding TypeName}">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
-                                        <Setter Property="Foreground" Value="{StaticResource CommentBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource CommentBrush}" />
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
@@ -676,7 +676,7 @@
                             <DataGridTextColumn Header="String" Width="*" Binding="{Binding Value}">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
-                                        <Setter Property="Foreground" Value="{StaticResource HexBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource HexBrush}" />
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
@@ -688,7 +688,7 @@
             <!-- Tab: Search -->
             <TabItem Header="Search">
                 <DataGrid x:Name="SearchGrid" ItemsSource="{Binding SearchResults}" IsReadOnly="True"
-                          AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
+                          AutoGenerateColumns="False" BorderBrush="{DynamicResource BorderBrush}"
                           RowStyle="{StaticResource BpRowStyle}"
                           CellStyle="{StaticResource BpCellStyle}"
                           RowBackground="{x:Null}" AlternatingRowBackground="{x:Null}"
@@ -705,7 +705,7 @@
                         <DataGridTextColumn Header="Address" Width="160" Binding="{Binding AddressHex}">
                             <DataGridTextColumn.ElementStyle>
                                 <Style TargetType="TextBlock">
-                                    <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource AddressBrush}" />
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
@@ -719,13 +719,13 @@
             <TabItem Header="Imports">
                 <DockPanel>
                     <DockPanel DockPanel.Dock="Top" Margin="2">
-                        <TextBlock Text="Filter: " VerticalAlignment="Center" Foreground="{StaticResource CommentBrush}" />
+                        <TextBlock Text="Filter: " VerticalAlignment="Center" Foreground="{DynamicResource CommentBrush}" />
                         <TextBox Text="{Binding ImportFilter, UpdateSourceTrigger=PropertyChanged}"
-                                 Background="{StaticResource BgLightBrush}" Foreground="{StaticResource FgBrush}"
-                                 BorderBrush="{StaticResource BorderBrush}" Padding="3,1" />
+                                 Background="{DynamicResource BgLightBrush}" Foreground="{DynamicResource FgBrush}"
+                                 BorderBrush="{DynamicResource BorderBrush}" Padding="3,1" />
                     </DockPanel>
                     <DataGrid x:Name="ImportsGrid" ItemsSource="{Binding FilteredImports}" IsReadOnly="True"
-                              AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
+                              AutoGenerateColumns="False" BorderBrush="{DynamicResource BorderBrush}"
                               RowStyle="{StaticResource BpRowStyle}"
                               CellStyle="{StaticResource BpCellStyle}"
                               RowBackground="{x:Null}" AlternatingRowBackground="{x:Null}"
@@ -746,14 +746,14 @@
                             <DataGridTextColumn Header="IAT Address" Width="160" Binding="{Binding IatHex}">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
-                                        <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource AddressBrush}" />
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
                             <DataGridTextColumn Header="Resolved" Width="*" Binding="{Binding ResolvedHex}">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
-                                        <Setter Property="Foreground" Value="{StaticResource HexBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource HexBrush}" />
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
@@ -766,13 +766,13 @@
             <TabItem Header="Functions">
                 <DockPanel>
                     <DockPanel DockPanel.Dock="Top" Margin="2">
-                        <TextBlock Text="Filter: " VerticalAlignment="Center" Foreground="{StaticResource CommentBrush}" />
+                        <TextBlock Text="Filter: " VerticalAlignment="Center" Foreground="{DynamicResource CommentBrush}" />
                         <TextBox x:Name="FunctionFilterBox" Text="{Binding FunctionFilter, UpdateSourceTrigger=PropertyChanged}"
-                                 Background="{StaticResource BgLightBrush}" Foreground="{StaticResource FgBrush}"
-                                 BorderBrush="{StaticResource BorderBrush}" Padding="3,1" />
+                                 Background="{DynamicResource BgLightBrush}" Foreground="{DynamicResource FgBrush}"
+                                 BorderBrush="{DynamicResource BorderBrush}" Padding="3,1" />
                     </DockPanel>
                     <DataGrid x:Name="FunctionsGrid" ItemsSource="{Binding FilteredFunctions}" IsReadOnly="True"
-                              AutoGenerateColumns="False" BorderBrush="{StaticResource BorderBrush}"
+                              AutoGenerateColumns="False" BorderBrush="{DynamicResource BorderBrush}"
                               RowStyle="{StaticResource BpRowStyle}"
                               CellStyle="{StaticResource BpCellStyle}"
                               RowBackground="{x:Null}" AlternatingRowBackground="{x:Null}"
@@ -791,14 +791,14 @@
                             <DataGridTextColumn Header="Address" Width="160" Binding="{Binding AddressHex}">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
-                                        <Setter Property="Foreground" Value="{StaticResource AddressBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource AddressBrush}" />
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
                             <DataGridTextColumn Header="Size" Width="*" Binding="{Binding SizeHex}">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
-                                        <Setter Property="Foreground" Value="{StaticResource HexBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource HexBrush}" />
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
@@ -810,19 +810,19 @@
             <!-- Tab: Decompiler -->
             <TabItem Header="Decompiler" x:Name="DecompilerTab">
                 <DockPanel>
-                    <Border DockPanel.Dock="Top" Background="{StaticResource ToolbarBgBrush}" Padding="4,2">
+                    <Border DockPanel.Dock="Top" Background="{DynamicResource ToolbarBgBrush}" Padding="4,2">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="Decompiler (RetDec)" FontWeight="SemiBold" Margin="0,0,12,0" />
-                            <TextBlock Text="Decompiling..." Foreground="{StaticResource CommentBrush}" VerticalAlignment="Center"
+                            <TextBlock Text="Decompiling..." Foreground="{DynamicResource CommentBrush}" VerticalAlignment="Center"
                                        Visibility="{Binding IsDecompiling, Converter={StaticResource BoolVisConv}}" />
                         </StackPanel>
                     </Border>
                     <ae:TextEditor x:Name="DecompilerOutput"
                                    IsReadOnly="True"
                                    FontFamily="Consolas" FontSize="13"
-                                   Background="{StaticResource BgBrush}"
-                                   Foreground="{StaticResource FgBrush}"
-                                   BorderBrush="{StaticResource BorderBrush}"
+                                   Background="{DynamicResource BgBrush}"
+                                   Foreground="{DynamicResource FgBrush}"
+                                   BorderBrush="{DynamicResource BorderBrush}"
                                    VerticalScrollBarVisibility="Auto"
                                    HorizontalScrollBarVisibility="Auto"
                                    ShowLineNumbers="True"
@@ -833,7 +833,7 @@
             <!-- Tab: Log -->
             <TabItem Header="Log">
                 <ListBox x:Name="LogList" ItemsSource="{Binding LogMessages}"
-                         BorderBrush="{StaticResource BorderBrush}">
+                         BorderBrush="{DynamicResource BorderBrush}">
                     <ListBox.ContextMenu>
                         <ContextMenu>
                             <MenuItem Header="Copy All" Click="OnLogCopyAll" />
@@ -842,7 +842,7 @@
                     </ListBox.ContextMenu>
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
-                            <Setter Property="Foreground" Value="{StaticResource CommentBrush}" />
+                            <Setter Property="Foreground" Value="{DynamicResource CommentBrush}" />
                         </Style>
                     </ListBox.ItemContainerStyle>
                 </ListBox>
@@ -850,7 +850,7 @@
 
             </TabControl>
 
-            <GridSplitter Grid.Row="1" Height="3" Background="{StaticResource BorderBrush}"
+            <GridSplitter Grid.Row="1" Height="3" Background="{DynamicResource BorderBrush}"
                           HorizontalAlignment="Stretch" VerticalAlignment="Center" />
 
             <!-- Bottom: Hex Dump (left) + Stack (right) -->
@@ -863,7 +863,7 @@
 
                 <!-- Hex Dump -->
                 <DockPanel Grid.Column="0">
-                    <Border DockPanel.Dock="Top" Background="{StaticResource ToolbarBgBrush}" Padding="4,2">
+                    <Border DockPanel.Dock="Top" Background="{DynamicResource ToolbarBgBrush}" Padding="4,2">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="Hex Dump" FontWeight="SemiBold" Margin="0,0,12,0" />
                             <TextBlock Text="Address:" VerticalAlignment="Center" Margin="0,0,4,0" />
@@ -875,16 +875,16 @@
                     <ctrl:HexDumpView x:Name="HexDumpControl" />
                 </DockPanel>
 
-                <GridSplitter Grid.Column="1" Width="3" Background="{StaticResource BorderBrush}"
+                <GridSplitter Grid.Column="1" Width="3" Background="{DynamicResource BorderBrush}"
                               HorizontalAlignment="Center" VerticalAlignment="Stretch" />
 
                 <!-- Stack -->
                 <DockPanel Grid.Column="2">
-                    <Border DockPanel.Dock="Top" Background="{StaticResource ToolbarBgBrush}" Padding="4,2">
+                    <Border DockPanel.Dock="Top" Background="{DynamicResource ToolbarBgBrush}" Padding="4,2">
                         <TextBlock Text="Stack" FontWeight="SemiBold" />
                     </Border>
                     <ListBox x:Name="StackList" ItemsSource="{Binding StackEntries}"
-                             BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                             BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
                         <ListBox.ContextMenu>
                             <ContextMenu>
                                 <MenuItem Header="Follow in Dump" Click="OnStackFollowInDump" />
