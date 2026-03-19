@@ -1,0 +1,14 @@
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\samples\AntiDebugPlugin\bin\Release\net9.0\AntiDebugPlugin.deps.json
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\samples\AntiDebugPlugin\bin\Release\net9.0\AntiDebugPlugin.runtimeconfig.json
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\samples\AntiDebugPlugin\bin\Release\net9.0\AntiDebugPlugin.dll
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\samples\AntiDebugPlugin\bin\Release\net9.0\AntiDebugPlugin.pdb
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\samples\AntiDebugPlugin\obj\Release\net9.0\AntiDebugPlugin.csproj.AssemblyReference.cache
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\samples\AntiDebugPlugin\obj\Release\net9.0\AntiDebugPlugin.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\samples\AntiDebugPlugin\obj\Release\net9.0\AntiDebugPlugin.AssemblyInfoInputs.cache
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\samples\AntiDebugPlugin\obj\Release\net9.0\AntiDebugPlugin.AssemblyInfo.cs
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\samples\AntiDebugPlugin\obj\Release\net9.0\AntiDebugPlugin.csproj.CoreCompileInputs.cache
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\samples\AntiDebugPlugin\obj\Release\net9.0\AntiDebugPlugin.dll
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\samples\AntiDebugPlugin\obj\Release\net9.0\refint\AntiDebugPlugin.dll
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\samples\AntiDebugPlugin\obj\Release\net9.0\AntiDebugPlugin.pdb
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\samples\AntiDebugPlugin\obj\Release\net9.0\AntiDebugPlugin.genruntimeconfig.cache
+C:\Users\psysh\OneDrive\Desktop\KernelFlirt\samples\AntiDebugPlugin\obj\Release\net9.0\ref\AntiDebugPlugin.dll

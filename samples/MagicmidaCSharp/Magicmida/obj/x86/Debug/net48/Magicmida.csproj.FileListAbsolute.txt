@@ -1,0 +1,13 @@
+C:\Users\psysh\OneDrive\Desktop\Magicmida\MagicmidaCSharp\Magicmida\obj\x86\Debug\net48\Magicmida.csproj.AssemblyReference.cache
+C:\Users\psysh\OneDrive\Desktop\Magicmida\MagicmidaCSharp\Magicmida\obj\x86\Debug\net48\Magicmida.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\psysh\OneDrive\Desktop\Magicmida\MagicmidaCSharp\Magicmida\obj\x86\Debug\net48\Magicmida.AssemblyInfoInputs.cache
+C:\Users\psysh\OneDrive\Desktop\Magicmida\MagicmidaCSharp\Magicmida\obj\x86\Debug\net48\Magicmida.AssemblyInfo.cs
+C:\Users\psysh\OneDrive\Desktop\Magicmida\MagicmidaCSharp\Magicmida\obj\x86\Debug\net48\Magicmida.csproj.CoreCompileInputs.cache
+C:\Users\psysh\OneDrive\Desktop\Magicmida\MagicmidaCSharp\Magicmida\obj\x86\Debug\net48\Magicmida.sourcelink.json
+C:\Users\psysh\OneDrive\Desktop\Magicmida\MagicmidaCSharp\Magicmida\bin\x86\Debug\net48\Magicmida.exe.config
+C:\Users\psysh\OneDrive\Desktop\Magicmida\MagicmidaCSharp\Magicmida\bin\x86\Debug\net48\Magicmida.exe
+C:\Users\psysh\OneDrive\Desktop\Magicmida\MagicmidaCSharp\Magicmida\bin\x86\Debug\net48\Magicmida.pdb
+C:\Users\psysh\OneDrive\Desktop\Magicmida\MagicmidaCSharp\Magicmida\bin\x86\Debug\net48\Iced.dll
+C:\Users\psysh\OneDrive\Desktop\Magicmida\MagicmidaCSharp\Magicmida\obj\x86\Debug\net48\Magicmida.csproj.Up2Date
+C:\Users\psysh\OneDrive\Desktop\Magicmida\MagicmidaCSharp\Magicmida\obj\x86\Debug\net48\Magicmida.exe
+C:\Users\psysh\OneDrive\Desktop\Magicmida\MagicmidaCSharp\Magicmida\obj\x86\Debug\net48\Magicmida.pdb
