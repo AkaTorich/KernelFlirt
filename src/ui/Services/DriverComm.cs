@@ -71,6 +71,11 @@ public class DriverComm : IDisposable
     private static readonly uint IOCTL_KF_LOAD_DRIVER      = CTL_CODE(DeviceType, 0x903, 0, 0);
     private static readonly uint IOCTL_KF_UNLOAD_DRIVER    = CTL_CODE(DeviceType, 0x904, 0, 0);
     private static readonly uint IOCTL_KF_START_DRIVER     = CTL_CODE(DeviceType, 0x905, 0, 0);
+    private static readonly uint IOCTL_KF_READ_FILE       = CTL_CODE(DeviceType, 0x906, 0, 0);
+    private static readonly uint IOCTL_KF_WRITE_FILE      = CTL_CODE(DeviceType, 0x907, 0, 0);
+    private static readonly uint IOCTL_KF_DELETE_PATH     = CTL_CODE(DeviceType, 0x908, 0, 0);
+    private static readonly uint IOCTL_KF_CREATE_DIR      = CTL_CODE(DeviceType, 0x909, 0, 0);
+    private static readonly uint IOCTL_KF_RENAME_PATH     = CTL_CODE(DeviceType, 0x90A, 0, 0);
 
     #endregion
 
@@ -244,7 +249,9 @@ public class DriverComm : IDisposable
     private unsafe struct KF_DIR_ENTRY
     {
         public uint IsDirectory;
+        public uint Attributes;
         public ulong FileSize;
+        public ulong LastWriteTime;
         public fixed char Name[KF_MAX_FILENAME];
     }
 
@@ -1127,7 +1134,11 @@ public class DriverComm : IDisposable
                 {
                     Name = new string(entry.Name).TrimEnd('\0'),
                     IsDirectory = entry.IsDirectory != 0,
-                    FileSize = entry.FileSize
+                    FileSize = entry.FileSize,
+                    Attributes = entry.Attributes,
+                    LastWriteTime = entry.LastWriteTime > 0
+                        ? DateTime.FromFileTimeUtc((long)entry.LastWriteTime).ToLocalTime()
+                        : DateTime.MinValue
                 });
             }
         }
@@ -1172,6 +1183,109 @@ public class DriverComm : IDisposable
         byte[] input = System.Text.Encoding.ASCII.GetBytes(serviceName + "\0");
         var (ok, _) = SendIoctl(IOCTL_KF_UNLOAD_DRIVER, input, 0);
         return ok;
+    }
+
+    // ── File browser operations ──
+
+    private const int FILE_CHUNK_SIZE = 2 * 1024 * 1024; // 2MB chunks
+
+    /// <summary>Read a chunk of a remote file. Returns null on failure, empty array at EOF.</summary>
+    public byte[]? ReadRemoteFileChunk(string path, ulong offset, uint length)
+    {
+        byte[] pathBytes = System.Text.Encoding.Unicode.GetBytes(path + "\0");
+        byte[] input = new byte[pathBytes.Length + 12];
+        Array.Copy(pathBytes, 0, input, 0, pathBytes.Length);
+        BitConverter.GetBytes(offset).CopyTo(input, pathBytes.Length);
+        BitConverter.GetBytes(length).CopyTo(input, pathBytes.Length + 8);
+
+        var (ok, data) = SendIoctl(IOCTL_KF_READ_FILE, input, (int)length);
+        if (!ok) return null;
+        return data ?? [];
+    }
+
+    /// <summary>Write a chunk to a remote file. Returns bytes written, 0 on failure.</summary>
+    public uint WriteRemoteFileChunk(string path, byte[] data, bool append)
+    {
+        byte[] pathBytes = System.Text.Encoding.Unicode.GetBytes(path + "\0");
+        uint flags = append ? 1u : 0u;
+        uint dataLen = (uint)data.Length;
+
+        byte[] input = new byte[pathBytes.Length + 8 + data.Length];
+        Array.Copy(pathBytes, 0, input, 0, pathBytes.Length);
+        BitConverter.GetBytes(flags).CopyTo(input, pathBytes.Length);
+        BitConverter.GetBytes(dataLen).CopyTo(input, pathBytes.Length + 4);
+        Array.Copy(data, 0, input, pathBytes.Length + 8, data.Length);
+
+        var (ok, result) = SendIoctl(IOCTL_KF_WRITE_FILE, input, 4);
+        if (!ok || result == null || result.Length < 4) return 0;
+        return BitConverter.ToUInt32(result, 0);
+    }
+
+    public bool DeleteRemotePath(string path)
+    {
+        byte[] input = System.Text.Encoding.Unicode.GetBytes(path + "\0");
+        var (ok, _) = SendIoctl(IOCTL_KF_DELETE_PATH, input, 0);
+        return ok;
+    }
+
+    public bool CreateRemoteDirectory(string path)
+    {
+        byte[] input = System.Text.Encoding.Unicode.GetBytes(path + "\0");
+        var (ok, _) = SendIoctl(IOCTL_KF_CREATE_DIR, input, 0);
+        return ok;
+    }
+
+    public bool RenameRemotePath(string oldPath, string newPath)
+    {
+        byte[] oldBytes = System.Text.Encoding.Unicode.GetBytes(oldPath + "\0");
+        byte[] newBytes = System.Text.Encoding.Unicode.GetBytes(newPath + "\0");
+        byte[] input = new byte[oldBytes.Length + newBytes.Length];
+        Array.Copy(oldBytes, 0, input, 0, oldBytes.Length);
+        Array.Copy(newBytes, 0, input, oldBytes.Length, newBytes.Length);
+
+        var (ok, _) = SendIoctl(IOCTL_KF_RENAME_PATH, input, 0);
+        return ok;
+    }
+
+    /// <summary>Download entire remote file to a local path. Reports progress via callback.</summary>
+    public bool DownloadRemoteFile(string remotePath, string localPath, Action<long, long>? progress, CancellationToken ct)
+    {
+        using var fs = new System.IO.FileStream(localPath, System.IO.FileMode.Create, System.IO.FileAccess.Write);
+        ulong offset = 0;
+        while (!ct.IsCancellationRequested)
+        {
+            var chunk = ReadRemoteFileChunk(remotePath, offset, (uint)FILE_CHUNK_SIZE);
+            if (chunk == null) return false; // error
+            if (chunk.Length == 0) break; // EOF
+            fs.Write(chunk, 0, chunk.Length);
+            offset += (ulong)chunk.Length;
+            progress?.Invoke((long)offset, -1);
+            if (chunk.Length < FILE_CHUNK_SIZE) break; // last chunk
+        }
+        return !ct.IsCancellationRequested;
+    }
+
+    /// <summary>Upload a local file to the remote VM. Reports progress via callback.</summary>
+    public bool UploadLocalFile(string localPath, string remotePath, Action<long, long>? progress, CancellationToken ct)
+    {
+        var fi = new System.IO.FileInfo(localPath);
+        long totalSize = fi.Length;
+        using var fs = new System.IO.FileStream(localPath, System.IO.FileMode.Open, System.IO.FileAccess.Read);
+        byte[] buf = new byte[FILE_CHUNK_SIZE];
+        long sent = 0;
+        bool first = true;
+        while (!ct.IsCancellationRequested)
+        {
+            int read = fs.Read(buf, 0, buf.Length);
+            if (read == 0) break;
+            byte[] chunk = read == buf.Length ? buf : buf[..read];
+            uint written = WriteRemoteFileChunk(remotePath, chunk, !first);
+            if (written == 0) return false;
+            sent += written;
+            first = false;
+            progress?.Invoke(sent, totalSize);
+        }
+        return !ct.IsCancellationRequested;
     }
 
     #endregion

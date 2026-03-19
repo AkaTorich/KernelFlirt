@@ -40,6 +40,11 @@
 #define KF_PSEUDO_LOAD_DRIVER     CTL_CODE(0x00008000, 0x903, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define KF_PSEUDO_UNLOAD_DRIVER   CTL_CODE(0x00008000, 0x904, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define KF_PSEUDO_START_DRIVER    CTL_CODE(0x00008000, 0x905, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define KF_PSEUDO_READ_FILE       CTL_CODE(0x00008000, 0x906, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define KF_PSEUDO_WRITE_FILE      CTL_CODE(0x00008000, 0x907, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define KF_PSEUDO_DELETE_PATH     CTL_CODE(0x00008000, 0x908, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define KF_PSEUDO_CREATE_DIR      CTL_CODE(0x00008000, 0x909, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define KF_PSEUDO_RENAME_PATH     CTL_CODE(0x00008000, 0x90A, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 static HANDLE g_hDeviceCmd = INVALID_HANDLE_VALUE;  /* CMD channel handle */
 static HANDLE g_hDeviceDbg = INVALID_HANDLE_VALUE;  /* DBG channel handle */
@@ -203,7 +208,10 @@ static BOOL HandleListDirectory(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, D
 
         memset(&entries[count], 0, sizeof(KF_DIR_ENTRY));
         entries[count].IsDirectory = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? 1 : 0;
+        entries[count].Attributes = fd.dwFileAttributes;
         entries[count].FileSize = ((ULONGLONG)fd.nFileSizeHigh << 32) | fd.nFileSizeLow;
+        entries[count].LastWriteTime = ((ULONGLONG)fd.ftLastWriteTime.dwHighDateTime << 32)
+                                     | fd.ftLastWriteTime.dwLowDateTime;
         wcsncpy(entries[count].Name, fd.cFileName, 259);
         count++;
     } while (FindNextFileW(hFind, &fd));
@@ -684,6 +692,201 @@ static BOOL HandleStartDriver(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, DWO
     return TRUE;
 }
 
+/* ── File browser operations ── */
+
+/*
+ * READ_FILE: read a chunk from a remote file.
+ * Input: [wchar_path\0][uint64 offset][uint32 length]
+ * Output: raw file bytes
+ */
+static BOOL HandleReadFile(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, DWORD *pOutSize)
+{
+    if (!inputBuf || inputSize < 16) return FALSE;
+
+    WCHAR *path = (WCHAR *)inputBuf;
+    int maxChars = inputSize / sizeof(WCHAR);
+    /* Find null terminator to locate the trailer (offset + length) */
+    int pathLen = 0;
+    while (pathLen < maxChars && path[pathLen] != L'\0') pathLen++;
+    if (pathLen >= maxChars) return FALSE;
+
+    /* Trailer starts after the null terminator */
+    DWORD trailerOff = (DWORD)((pathLen + 1) * sizeof(WCHAR));
+    if (trailerOff + 12 > inputSize) return FALSE; /* need 8 + 4 bytes */
+
+    ULONGLONG offset;
+    ULONG chunkLen;
+    memcpy(&offset,   inputBuf + trailerOff, 8);
+    memcpy(&chunkLen,  inputBuf + trailerOff + 8, 4);
+
+    /* Clamp to 4MB */
+    if (chunkLen > KF_MAX_BUFFER) chunkLen = KF_MAX_BUFFER;
+
+    HANDLE hFile = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                               NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) return FALSE;
+
+    LARGE_INTEGER li;
+    li.QuadPart = (LONGLONG)offset;
+    if (!SetFilePointerEx(hFile, li, NULL, FILE_BEGIN)) {
+        CloseHandle(hFile);
+        return FALSE;
+    }
+
+    BYTE *buf = (BYTE *)malloc(chunkLen);
+    if (!buf) { CloseHandle(hFile); return FALSE; }
+
+    DWORD bytesRead = 0;
+    if (!ReadFile(hFile, buf, chunkLen, &bytesRead, NULL)) {
+        free(buf);
+        CloseHandle(hFile);
+        return FALSE;
+    }
+    CloseHandle(hFile);
+
+    if (bytesRead == 0) {
+        free(buf);
+        *ppOut = NULL;
+        *pOutSize = 0;
+        return TRUE;
+    }
+
+    *ppOut = buf;
+    *pOutSize = bytesRead;
+    return TRUE;
+}
+
+/*
+ * WRITE_FILE: write a chunk to a remote file.
+ * Input: [wchar_path\0][uint32 flags][uint32 data_len][raw bytes]
+ * flags: bit 0 = append(1) / create-or-truncate(0)
+ * Output: [uint32 bytes_written]
+ */
+static BOOL HandleWriteFile(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, DWORD *pOutSize)
+{
+    if (!inputBuf || inputSize < 12) return FALSE;
+
+    WCHAR *path = (WCHAR *)inputBuf;
+    int maxChars = inputSize / sizeof(WCHAR);
+    int pathLen = 0;
+    while (pathLen < maxChars && path[pathLen] != L'\0') pathLen++;
+    if (pathLen >= maxChars) return FALSE;
+
+    DWORD trailerOff = (DWORD)((pathLen + 1) * sizeof(WCHAR));
+    if (trailerOff + 8 > inputSize) return FALSE;
+
+    ULONG flags, dataLen;
+    memcpy(&flags,   inputBuf + trailerOff, 4);
+    memcpy(&dataLen,  inputBuf + trailerOff + 4, 4);
+
+    DWORD dataOff = trailerOff + 8;
+    if (dataOff + dataLen > inputSize) return FALSE;
+
+    BOOL append = (flags & 1) != 0;
+    DWORD creationDisposition = append ? OPEN_ALWAYS : CREATE_ALWAYS;
+
+    HANDLE hFile = CreateFileW(path, GENERIC_WRITE, 0,
+                               NULL, creationDisposition, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) return FALSE;
+
+    if (append) {
+        LARGE_INTEGER li;
+        li.QuadPart = 0;
+        SetFilePointerEx(hFile, li, NULL, FILE_END);
+    }
+
+    DWORD bytesWritten = 0;
+    if (!WriteFile(hFile, inputBuf + dataOff, dataLen, &bytesWritten, NULL)) {
+        CloseHandle(hFile);
+        return FALSE;
+    }
+    CloseHandle(hFile);
+
+    ULONG *result = (ULONG *)malloc(sizeof(ULONG));
+    if (!result) return FALSE;
+    *result = bytesWritten;
+
+    *ppOut = (BYTE *)result;
+    *pOutSize = sizeof(ULONG);
+    return TRUE;
+}
+
+/*
+ * DELETE_PATH: delete a file or empty directory.
+ * Input: wchar null-terminated path
+ * Output: none
+ */
+static BOOL HandleDeletePath(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, DWORD *pOutSize)
+{
+    if (!inputBuf || inputSize < 4) return FALSE;
+
+    WCHAR *path = (WCHAR *)inputBuf;
+    int maxChars = inputSize / sizeof(WCHAR);
+    path[maxChars - 1] = L'\0';
+
+    DWORD attrs = GetFileAttributesW(path);
+    if (attrs == INVALID_FILE_ATTRIBUTES) return FALSE;
+
+    BOOL ok;
+    if (attrs & FILE_ATTRIBUTE_DIRECTORY)
+        ok = RemoveDirectoryW(path);
+    else
+        ok = DeleteFileW(path);
+
+    *ppOut = NULL;
+    *pOutSize = 0;
+    return ok;
+}
+
+/*
+ * CREATE_DIR: create a new directory.
+ * Input: wchar null-terminated path
+ * Output: none
+ */
+static BOOL HandleCreateDir(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, DWORD *pOutSize)
+{
+    if (!inputBuf || inputSize < 4) return FALSE;
+
+    WCHAR *path = (WCHAR *)inputBuf;
+    int maxChars = inputSize / sizeof(WCHAR);
+    path[maxChars - 1] = L'\0';
+
+    BOOL ok = CreateDirectoryW(path, NULL);
+
+    *ppOut = NULL;
+    *pOutSize = 0;
+    return ok;
+}
+
+/*
+ * RENAME_PATH: rename/move a file or directory.
+ * Input: [wchar oldPath\0][wchar newPath\0]
+ * Output: none
+ */
+static BOOL HandleRenamePath(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, DWORD *pOutSize)
+{
+    if (!inputBuf || inputSize < 8) return FALSE;
+
+    WCHAR *oldPath = (WCHAR *)inputBuf;
+    int maxChars = inputSize / sizeof(WCHAR);
+
+    /* Find end of first string */
+    int oldLen = 0;
+    while (oldLen < maxChars && oldPath[oldLen] != L'\0') oldLen++;
+    if (oldLen >= maxChars) return FALSE;
+
+    WCHAR *newPath = oldPath + oldLen + 1;
+    int remaining = maxChars - (oldLen + 1);
+    if (remaining <= 0) return FALSE;
+    newPath[remaining - 1] = L'\0';
+
+    BOOL ok = MoveFileW(oldPath, newPath);
+
+    *ppOut = NULL;
+    *pOutSize = 0;
+    return ok;
+}
+
 /*
  * Check if this IOCTL is a relay pseudo-IOCTL.
  * If so, handle it locally and return TRUE; caller should send response.
@@ -710,6 +913,21 @@ static BOOL TryHandlePseudoIoctl(DWORD ioctlCode, BYTE *inputBuf, DWORD inputSiz
         return TRUE;
     case KF_PSEUDO_START_DRIVER:
         *pSuccess = HandleStartDriver(inputBuf, inputSize, ppOut, pOutSize);
+        return TRUE;
+    case KF_PSEUDO_READ_FILE:
+        *pSuccess = HandleReadFile(inputBuf, inputSize, ppOut, pOutSize);
+        return TRUE;
+    case KF_PSEUDO_WRITE_FILE:
+        *pSuccess = HandleWriteFile(inputBuf, inputSize, ppOut, pOutSize);
+        return TRUE;
+    case KF_PSEUDO_DELETE_PATH:
+        *pSuccess = HandleDeletePath(inputBuf, inputSize, ppOut, pOutSize);
+        return TRUE;
+    case KF_PSEUDO_CREATE_DIR:
+        *pSuccess = HandleCreateDir(inputBuf, inputSize, ppOut, pOutSize);
+        return TRUE;
+    case KF_PSEUDO_RENAME_PATH:
+        *pSuccess = HandleRenamePath(inputBuf, inputSize, ppOut, pOutSize);
         return TRUE;
     default:
         break;
