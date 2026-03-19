@@ -3,6 +3,8 @@
 
 Windows kernel-level debugger with an OllyDbg-style interface. Designed for security research and reverse engineering in VM environments (VMware).
 
+![KernelFlirt](docs/screenshot.png)
+
 ## Architecture
 
 ```
