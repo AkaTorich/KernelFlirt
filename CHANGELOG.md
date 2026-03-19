@@ -15,7 +15,6 @@
 ### Bug Fixes
 
 - **Plugin tab colors not applied on startup** — `ApplyTabColors` was called before `LoadPlugins()`, so plugin tabs didn't exist yet. Added re-apply after plugin loading.
-- **Fixed XOR test strings** (`xor_strings.c`) — 6 encrypted strings had wrong bytes causing garbled decryption: `Hello, World)` -> `!`, `cmd,ere` -> `cmd.exe`, `CreateRemoteTfread` -> `Thread`, `VirtualAllocEr` -> `Ex`, `HKEA%LOCAL%MACHINE.SODTWARE` -> `HKEY_LOCAL_MACHINE\SOFTWARE`, `http,//evil.com/pasload.bin` -> `http://evil.com/payload.bin`.
 
 ### Build
 

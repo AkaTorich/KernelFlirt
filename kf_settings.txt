@@ -1,4 +1,4 @@
-SymbolPath=C:\Users\psysh\OneDrive\Desktop\Magicmida\KernelFlirt\TestPrograms;srv*C:\Symbols*https://msdl.microsoft.com/download/symbols
+SymbolPath=srv*C:\Symbols*https://msdl.microsoft.com/download/symbols
 LastConnect=10.100.102.4
 Color.Bg=#1A1A2E
 Color.BgLight=#22223A
