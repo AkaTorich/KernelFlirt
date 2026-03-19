@@ -281,6 +281,13 @@ if ((Test-Path $strDecTestDir) -and $canBuildNative) {
     }
 }
 
+# Copy settings file
+$settingsFile = Join-Path $Root "kf_settings.txt"
+if (Test-Path $settingsFile) {
+    Copy-Item $settingsFile $BinUI -Force
+    Write-Host "  -> bin\UI\kf_settings.txt (settings)" -ForegroundColor DarkGreen
+}
+
 # Copy KD debugger (kd.exe, dbgeng.dll, dbghelp.dll, symsrv.dll, etc.)
 $kdSrc = Join-Path $Root "KD"
 if (Test-Path $kdSrc) {
