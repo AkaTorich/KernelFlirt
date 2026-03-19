@@ -58,6 +58,10 @@ public partial class MainWindow : Window
         };
         VM.LoadPlugins();
 
+        // Re-apply tab colors now that plugin tabs exist
+        if (VM.ThemeColors.Count > 0)
+            ApplyTabColors(VM.ThemeColors);
+
         // Add Settings item to Plugins menu
         if (PluginsMenu.Items.Count > 0)
             PluginsMenu.Items.Insert(0, new Separator());
