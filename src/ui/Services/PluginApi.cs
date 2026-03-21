@@ -188,7 +188,8 @@ public class BreakpointApiAdapter : IBreakpointApi
             Type = (PluginBreakpointType)(int)b.Type,
             Enabled = b.Enabled,
             Condition = b.Condition,
-            HitCount = b.HitCount
+            HitCount = b.HitCount,
+            OriginalByte = b.OriginalByte
         }).ToList();
 }
 

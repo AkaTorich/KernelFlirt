@@ -102,6 +102,9 @@ public class AntiDebugPanel : ScrollViewer
     public CheckBox ChkGetTickCount { get; }
     public CheckBox ChkQueryPerformanceCounter { get; }
 
+    // Software breakpoint hiding
+    public CheckBox ChkHideSwBreakpoints { get; }
+
     // Misc
     public CheckBox ChkOutputDebugString { get; }
     public CheckBox ChkBlockInput { get; }
@@ -114,7 +117,6 @@ public class AntiDebugPanel : ScrollViewer
 
     public bool AutoApply => ChkAutoApply.IsChecked == true;
 
-    private bool _ntQsiHookInstalled = false;
     private ulong _discoveredOep = 0;
     private ulong _unpackedPeBase = 0;
     private string _originalModuleName = "unpacked.exe";
@@ -217,8 +219,8 @@ public class AntiDebugPanel : ScrollViewer
         root.Children.Add(MakeGroup("NtQueryInformationProcess (via ClearDebugPort)", [ChkDebugPort, ChkDebugObjectHandle, ChkDebugFlags]));
 
         // ── NtQuerySystemInformation ──
-        ChkSystemKernelDebugger = MakeCheckBox("SystemKernelDebuggerInfo", false, "Hook NtQuerySystemInformation to spoof class 0x23 (DANGER: triggers PatchGuard BSOD!)", true);
-        root.Children.Add(MakeGroup("NtQuerySystemInformation (via inline hook)", [ChkSystemKernelDebugger]));
+        ChkSystemKernelDebugger = MakeCheckBox("SystemKernelDebuggerInfo", false, "Hook NtQuerySystemInformation to spoof class 0x23 (usermode breakpoint hook, safe)", true);
+        root.Children.Add(MakeGroup("NtQuerySystemInformation", [ChkSystemKernelDebugger]));
 
         // ── NtSetInformationThread ──
         ChkThreadHideFromDebugger = MakeCheckBox("ThreadHideFromDebugger", true, "Clear HideFromDebugger bit in all threads' CrossThreadFlags", true);
@@ -251,6 +253,10 @@ public class AntiDebugPanel : ScrollViewer
         ChkGetTickCount = MakeCheckBox("GetTickCount / GetTickCount64", false, "Hook GetTickCount/GetTickCount64 to return consistent incremental values", true);
         ChkQueryPerformanceCounter = MakeCheckBox("QueryPerformanceCounter", false, "Hook QueryPerformanceCounter/NtQuerySystemTime to normalize timing", true);
         root.Children.Add(MakeGroup("Timing Checks", [ChkPatchRdtsc, ChkGetTickCount, ChkQueryPerformanceCounter]));
+
+        // ── Software breakpoint hiding ──
+        ChkHideSwBreakpoints = MakeCheckBox("Hide INT3 (0xCC) breakpoints", false, "Hook NtReadVirtualMemory to replace 0xCC with original bytes when process reads its own memory (defeats 0xCC scan)", true);
+        root.Children.Add(MakeGroup("Software Breakpoint Protection", [ChkHideSwBreakpoints]));
 
         // ── Misc ──
         ChkOutputDebugString = MakeCheckBox("OutputDebugStringA", false, "Hook OutputDebugStringA to set LastError correctly (anti-debug via return value)", true);
@@ -765,29 +771,8 @@ public class AntiDebugPanel : ScrollViewer
         if (ChkKdDebuggerNotPresent.IsChecked == true)
             patches += PatchKernelByte("KdDebuggerNotPresent", 1);
 
-        if (ChkSystemKernelDebugger.IsChecked == true)
-        {
-            if (_ntQsiHookInstalled)
-            {
-                patches++; // already installed, count it
-            }
-            else
-            {
-                var probeResult = _api.Process.ProbeNtQsiHook();
-                _api.Log.Info($"  NtQSI probe: {probeResult}");
-
-                if (_api.Process.InstallNtQsiHook())
-                {
-                    patches++;
-                    _ntQsiHookInstalled = true;
-                    _api.Log.Info("  NtQuerySystemInformation hook installed (spoofing class 0x23)");
-                }
-                else
-                {
-                    _api.Log.Warning("  InstallNtQsiHook failed — see probe result above");
-                }
-            }
-        }
+        // NtQuerySystemInformation class 0x23 is now handled via usermode breakpoint hook
+        // in InstallApiHooks() — no kernel inline hook needed (avoids PatchGuard BSOD)
 
         if (patches > 0)
             _api.Log.Info($"Anti-debug: {patches} kernel-level patches applied");
@@ -2266,6 +2251,12 @@ public class AntiDebugPanel : ScrollViewer
         if (ChkNtYieldExecution.IsChecked == true)
             installed += InstallHook(pid, tid, "ntdll!NtYieldExecution", HandleNtYieldExecution);
 
+        if (ChkSystemKernelDebugger.IsChecked == true)
+            installed += InstallHook(pid, tid, "ntdll!NtQuerySystemInformation", HandleNtQuerySystemInformation);
+
+        if (ChkHideSwBreakpoints.IsChecked == true)
+            installed += InstallHook(pid, tid, "ntdll!NtReadVirtualMemory", HandleNtReadVirtualMemory);
+
         if (installed > 0)
         {
             _apiHooksInstalled = true;
@@ -2587,6 +2578,127 @@ public class AntiDebugPanel : ScrollViewer
             _api.Memory.WriteMemory(pid, rdx + 0x368, zero8); // DR3
             _api.Memory.WriteMemory(pid, rdx + 0x370, zero8); // DR6
             _api.Memory.WriteMemory(pid, rdx + 0x378, zero8); // DR7
+        }
+        _api.Continue();
+    }
+
+    // ── NtQuerySystemInformation hook ──
+    // Spoof SystemKernelDebuggerInformation (class 0x23) — safe usermode breakpoint hook
+    private void HandleNtQuerySystemInformation(uint pid, uint tid, ulong addr)
+    {
+        ulong rcx = ReadRegister(pid, tid, "RCX"); // SystemInformationClass
+        if (rcx == 0x23) // SystemKernelDebuggerInformation
+        {
+            ulong rdx = ReadRegister(pid, tid, "RDX"); // SystemInformation buffer
+            ulong retAddr = ReadReturnAddress(pid, tid);
+            if (rdx != 0 && retAddr != 0 && !_returnHooks.ContainsKey(retAddr))
+            {
+                var h = _api.Breakpoints.SetBreakpoint(pid, 0, retAddr, PluginBreakpointType.Software);
+                if (h.HasValue)
+                {
+                    ulong bufPtr = rdx;
+                    _returnHooks[retAddr] = new ReturnHookInfo
+                    {
+                        ParentApi = "NtQuerySystemInformation",
+                        BpHandle = h.Value,
+                        Handler = (p, t) =>
+                        {
+                            ulong rax = ReadRegister(p, t, "RAX");
+                            if (rax == 0) // STATUS_SUCCESS
+                            {
+                                // SYSTEM_KERNEL_DEBUGGER_INFORMATION:
+                                //   offset 0: BOOLEAN DebuggerEnabled    → FALSE (0)
+                                //   offset 1: BOOLEAN DebuggerNotPresent → TRUE  (1)
+                                _api.Memory.WriteMemory(p, bufPtr, [0x00, 0x01]);
+                            }
+                            _api.Continue();
+                        }
+                    };
+                }
+            }
+        }
+        _api.Continue();
+    }
+
+    // ── NtReadVirtualMemory hook ──
+    // Hides software breakpoints (0xCC) when process reads its own memory
+    // NtReadVirtualMemory(HANDLE ProcessHandle, PVOID BaseAddress, PVOID Buffer, SIZE_T Size, ...)
+    //                     RCX                   RDX               R8            R9
+    private void HandleNtReadVirtualMemory(uint pid, uint tid, ulong addr)
+    {
+        ulong rcx = ReadRegister(pid, tid, "RCX");
+
+        // Only intercept self-reads: handle == -1 (NtCurrentProcess) or 0xFFFFFFFFFFFFFFFF
+        // Also handle == actual process handle (but -1 is most common for self-read)
+        if (rcx != unchecked((ulong)(long)-1) && rcx != 0)
+        {
+            _api.Continue();
+            return;
+        }
+
+        ulong baseAddress = ReadRegister(pid, tid, "RDX");
+        ulong buffer = ReadRegister(pid, tid, "R8");
+        ulong size = ReadRegister(pid, tid, "R9");
+
+        if (baseAddress == 0 || buffer == 0 || size == 0 || size > 0x1000000)
+        {
+            _api.Continue();
+            return;
+        }
+
+        // Get all active software breakpoints
+        var allBps = _api.Breakpoints.GetAll();
+        var swBps = new List<PluginBreakpoint>();
+        foreach (var bp in allBps)
+        {
+            if (bp.Type == PluginBreakpointType.Software && bp.Enabled &&
+                bp.Address >= baseAddress && bp.Address < baseAddress + size)
+            {
+                swBps.Add(bp);
+            }
+        }
+
+        if (swBps.Count == 0)
+        {
+            _api.Continue();
+            return;
+        }
+
+        // Have BPs in the read range — install return hook to patch buffer
+        ulong retAddr = ReadReturnAddress(pid, tid);
+        if (retAddr != 0 && !_returnHooks.ContainsKey(retAddr))
+        {
+            var h = _api.Breakpoints.SetBreakpoint(pid, 0, retAddr, PluginBreakpointType.Software);
+            if (h.HasValue)
+            {
+                ulong capturedBase = baseAddress;
+                ulong capturedBuf = buffer;
+                var capturedBps = swBps;
+                _returnHooks[retAddr] = new ReturnHookInfo
+                {
+                    ParentApi = "NtReadVirtualMemory",
+                    BpHandle = h.Value,
+                    Handler = (p, t) =>
+                    {
+                        ulong rax = ReadRegister(p, t, "RAX");
+                        if (rax == 0) // STATUS_SUCCESS
+                        {
+                            foreach (var bp in capturedBps)
+                            {
+                                ulong offset = bp.Address - capturedBase;
+                                ulong bufAddr = capturedBuf + offset;
+                                // Read the byte in the output buffer
+                                var data = _api.Memory.ReadMemory(p, bufAddr, 1);
+                                if (data != null && data[0] == 0xCC && bp.OriginalByte != 0xCC)
+                                {
+                                    _api.Memory.WriteMemory(p, bufAddr, [bp.OriginalByte]);
+                                }
+                            }
+                        }
+                        _api.Continue();
+                    }
+                };
+            }
         }
         _api.Continue();
     }

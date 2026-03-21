@@ -34,6 +34,7 @@ public class PluginBreakpoint
     public bool Enabled { get; set; }
     public string? Condition { get; set; }
     public uint HitCount { get; set; }
+    public byte OriginalByte { get; set; }
 }
 
 public class PluginModuleInfo

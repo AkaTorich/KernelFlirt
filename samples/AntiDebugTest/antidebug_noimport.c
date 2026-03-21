@@ -86,8 +86,10 @@ typedef struct { INT64 QuadPart; } LARGE_INTEGER;
  * ═══════════════════════════════════════════════════════════════════════ */
 unsigned __int64 __readgsqword(unsigned long);
 unsigned __int64 __rdtsc(void);
+void __cpuid(int[4], int);
 #pragma intrinsic(__readgsqword)
 #pragma intrinsic(__rdtsc)
+#pragma intrinsic(__cpuid)
 
 /* ═══════════════════════════════════════════════════════════════════════
  * HASH FUNCTION — djb2
@@ -137,6 +139,15 @@ static DWORD djb2_w_lower(const WCHAR *s, int len)
 #define H_GetStdHandle              0xF178843Cu
 #define H_WriteConsoleA             0xEE4211A4u
 #define H_SetConsoleTextAttribute   0x4A3A951Du
+#define H_OutputDebugStringA        0x79729F95u
+#define H_SetLastError              0x6BEB4B6Fu
+#define H_GetLastError              0x2082EAE3u
+#define H_NtSetInformationThread    0x54212E31u
+#define H_NtQueryObject             0x218116F4u
+#define H_NtClose                   0x8B8E133Du
+#define H_VirtualProtect            0x844FF18Du
+#define H_SetUnhandledExceptionFilter 0x252C3659u
+#define H_GetProcessHeap            0xC6580D02u
 
 /* ═══════════════════════════════════════════════════════════════════════
  * PEB WALKING — find module base by hash
@@ -226,6 +237,15 @@ typedef NTSTATUS (__stdcall *fn_NtQuerySystemInformation)(DWORD, PVOID, DWORD, P
 typedef HANDLE (__stdcall *fn_GetStdHandle)(DWORD);
 typedef BOOL   (__stdcall *fn_WriteConsoleA)(HANDLE, const void*, DWORD, PDWORD, PVOID);
 typedef BOOL   (__stdcall *fn_SetConsoleTextAttribute)(HANDLE, WORD);
+typedef void   (__stdcall *fn_OutputDebugStringA)(const char*);
+typedef void   (__stdcall *fn_SetLastError)(DWORD);
+typedef DWORD  (__stdcall *fn_GetLastError)(void);
+typedef NTSTATUS (__stdcall *fn_NtSetInformationThread)(HANDLE, DWORD, PVOID, DWORD);
+typedef NTSTATUS (__stdcall *fn_NtQueryObject)(HANDLE, DWORD, PVOID, DWORD, PDWORD);
+typedef NTSTATUS (__stdcall *fn_NtClose)(HANDLE);
+typedef BOOL   (__stdcall *fn_VirtualProtect)(PVOID, QWORD, DWORD, PDWORD);
+typedef PVOID  (__stdcall *fn_SetUnhandledExceptionFilter)(PVOID);
+typedef HANDLE (__stdcall *fn_GetProcessHeap)(void);
 
 static fn_GetCurrentProcess             pGetCurrentProcess;
 static fn_GetCurrentThread              pGetCurrentThread;
@@ -241,6 +261,15 @@ static fn_NtQuerySystemInformation      pNtQuerySystemInformation;
 static fn_GetStdHandle                  pGetStdHandle;
 static fn_WriteConsoleA                 pWriteConsoleA;
 static fn_SetConsoleTextAttribute       pSetConsoleTextAttribute;
+static fn_OutputDebugStringA            pOutputDebugStringA;
+static fn_SetLastError                  pSetLastError;
+static fn_GetLastError                  pGetLastError;
+static fn_NtSetInformationThread        pNtSetInformationThread;
+static fn_NtQueryObject                 pNtQueryObject;
+static fn_NtClose                       pNtClose;
+static fn_VirtualProtect                pVirtualProtect;
+static fn_SetUnhandledExceptionFilter   pSetUnhandledExceptionFilter;
+static fn_GetProcessHeap                pGetProcessHeap;
 static HANDLE                           hStdOut;
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -326,6 +355,15 @@ static BOOL resolve_all(void)
     pGetStdHandle               = (fn_GetStdHandle)              get_proc(k32, H_GetStdHandle);
     pWriteConsoleA              = (fn_WriteConsoleA)             get_proc(k32, H_WriteConsoleA);
     pSetConsoleTextAttribute    = (fn_SetConsoleTextAttribute)   get_proc(k32, H_SetConsoleTextAttribute);
+    pOutputDebugStringA         = (fn_OutputDebugStringA)        get_proc(k32, H_OutputDebugStringA);
+    pSetLastError               = (fn_SetLastError)              get_proc(k32, H_SetLastError);
+    pGetLastError               = (fn_GetLastError)              get_proc(k32, H_GetLastError);
+    pNtSetInformationThread     = (fn_NtSetInformationThread)    get_proc(ntdll, H_NtSetInformationThread);
+    pNtQueryObject              = (fn_NtQueryObject)             get_proc(ntdll, H_NtQueryObject);
+    pNtClose                    = (fn_NtClose)                   get_proc(ntdll, H_NtClose);
+    pVirtualProtect             = (fn_VirtualProtect)            get_proc(k32, H_VirtualProtect);
+    pSetUnhandledExceptionFilter= (fn_SetUnhandledExceptionFilter)get_proc(k32, H_SetUnhandledExceptionFilter);
+    pGetProcessHeap             = (fn_GetProcessHeap)            get_proc(k32, H_GetProcessHeap);
 
     if (pGetStdHandle)
         hStdOut = pGetStdHandle(STD_OUTPUT_HANDLE);
@@ -557,13 +595,26 @@ static void Check14(void)
     Report(msg, delta > 100);
 }
 
-/* 15. Software breakpoint scan (0xCC in code) */
+/* 15. Software breakpoint scan (0xCC in code)
+ *     MSVC pads between functions with 0xCC for alignment,
+ *     so we skip trailing CC runs and only flag an isolated 0xCC
+ *     (= a real int3 breakpoint patched into the middle of code). */
 static void Check15(void)
 {
     BYTE *func = (BYTE *)&Check01;
     BOOL detected = FALSE;
     for (int i = 0; i < 64; i++) {
-        if (func[i] == 0xCC) { detected = TRUE; break; }
+        if (func[i] == 0xCC) {
+            /* Check if this is inter-function CC padding:
+               padding = CC followed by more CCs until next function.
+               A real BP is a single CC surrounded by non-CC code. */
+            if (i + 1 < 64 && func[i + 1] == 0xCC)
+                break;          /* hit CC padding tail — stop, not a BP */
+            detected = TRUE;
+            break;
+        }
+        if (func[i] == 0xC3)   /* ret — end of function, stop before padding */
+            break;
     }
     Report("15. Software breakpoint scan (0xCC in code)", detected);
 }
@@ -582,6 +633,260 @@ static void Check16(void)
     }
 }
 
+/* ── 17. OutputDebugString trick ── */
+static void Check17(void)
+{
+    if (!pOutputDebugStringA || !pSetLastError || !pGetLastError) {
+        Report("17. OutputDebugStringA (n/a)", FALSE); return;
+    }
+    pSetLastError(0x1337);
+    pOutputDebugStringA("antidebug probe");
+    DWORD err = pGetLastError();
+    /* Under debugger the error code gets cleared / changed */
+    Report("17. OutputDebugStringA (error changed)", err != 0x1337);
+}
+
+/* ── 18. KUSER_SHARED_DATA.KdDebuggerEnabled (0x7FFE02D4) ── */
+static void Check18(void)
+{
+    BYTE val = *(volatile BYTE *)0x7FFE02D4;
+    Report("18. SharedUserData->KdDebuggerEnabled", val != 0);
+}
+
+/* ── 19. NtSetInformationThread(ThreadHideFromDebugger) ── */
+static void Check19(void)
+{
+    if (!pNtSetInformationThread) { Report("19. ThreadHideFromDebugger (n/a)", FALSE); return; }
+    /* ThreadHideFromDebugger = 0x11; succeeds = we were/are being debugged context */
+    NTSTATUS st = pNtSetInformationThread(pGetCurrentThread(), 0x11, NULL, 0);
+    /* This always succeeds, but if a debugger is attached it will lose visibility.
+       We just report success — the real test is that the debugger stops seeing us. */
+    Report("19. NtSetInformationThread(HideFromDebugger)", FALSE);
+    (void)st;
+}
+
+/* ── 20. PEB.ProcessHeap via GetProcessHeap — alternative heap check ── */
+static void Check20(void)
+{
+    if (!pGetProcessHeap) { Report("20. GetProcessHeap Flags (n/a)", FALSE); return; }
+    BYTE *heap = (BYTE *)pGetProcessHeap();
+    if (!heap) { Report("20. GetProcessHeap returned NULL", FALSE); return; }
+    DWORD flags      = *(DWORD *)(heap + 0x70);
+    DWORD forceFlags = *(DWORD *)(heap + 0x74);
+    char msg[128];
+    my_strcpy(msg, "20. GetProcessHeap Flags=");
+    my_itoa_hex(msg + my_strlen(msg), flags);
+    my_strcat(msg, " Force=");
+    my_itoa_hex(msg + my_strlen(msg), forceFlags);
+    Report(msg, flags != 2 || forceFlags != 0);
+}
+
+/* ── 21. CPUID hypervisor bit — VM detection ── */
+static void Check21(void)
+{
+    int regs[4];  /* eax, ebx, ecx, edx */
+    __cpuid(regs, 1);
+    BOOL hypervisor = (regs[2] >> 31) & 1;
+    Report("21. CPUID hypervisor bit (VM)", hypervisor);
+}
+
+/* ── 22. NtQueryObject — count DebugObject type objects ── */
+static void Check22(void)
+{
+    if (!pNtQueryObject) { Report("22. NtQueryObject DebugObjects (n/a)", FALSE); return; }
+    /* ObjectAllTypesInformation = 3 */
+    DWORD needed = 0;
+    NTSTATUS st = pNtQueryObject(NULL, 3, NULL, 0, &needed);
+    if (needed == 0 || needed > 1024 * 1024) {
+        Report("22. NtQueryObject DebugObjects (can't query size)", FALSE); return;
+    }
+    /* Use a static buffer to avoid __chkstk (no CRT). Typical size ~4-16 KB. */
+    static BYTE buf[32768];
+    if (needed > sizeof(buf)) { Report("22. NtQueryObject (buffer too small)", FALSE); return; }
+    st = pNtQueryObject(NULL, 3, buf, needed, NULL);
+    if (!NT_SUCCESS(st)) { Report("22. NtQueryObject failed", FALSE); return; }
+
+    /* Walk OBJECT_TYPES_INFORMATION:
+       +0x00: NumberOfTypes (DWORD)
+       Then array of OBJECT_TYPE_INFORMATION, each variable-sized and aligned to pointer.
+       Each entry:
+         +0x00: TypeName.Length (WORD)
+         +0x02: TypeName.MaxLen (WORD)
+         +0x08: TypeName.Buffer (WCHAR*) -- on x64
+         +0x10...: other fields
+         total fixed = 0x68 on x64
+       We search for "DebugObject" type name */
+    DWORD numTypes = *(DWORD *)buf;
+    BYTE *ptr = buf + 8;  /* skip NumberOfTypes + alignment */
+    BOOL found = FALSE;
+
+    for (DWORD t = 0; t < numTypes && ptr < buf + needed; t++) {
+        WORD nameLen = *(WORD *)ptr;          /* in bytes */
+        WCHAR *nameBuf = *(WCHAR **)(ptr + 8);
+        int charLen = nameLen / 2;
+
+        /* Check for "DebugObject" (11 chars) */
+        if (charLen == 11 && nameBuf) {
+            const WCHAR target[] = { 'D','e','b','u','g','O','b','j','e','c','t' };
+            BOOL match = TRUE;
+            for (int i = 0; i < 11; i++) {
+                if (nameBuf[i] != target[i]) { match = FALSE; break; }
+            }
+            if (match) {
+                /* TotalNumberOfObjects at fixed offset 0x28 in OBJECT_TYPE_INFORMATION */
+                DWORD totalObjects = *(DWORD *)(ptr + 0x40);
+                char msg[128];
+                my_strcpy(msg, "22. DebugObject count = ");
+                my_itoa(msg + my_strlen(msg), (int)totalObjects);
+                Report(msg, totalObjects > 0);
+                found = TRUE;
+                break;
+            }
+        }
+
+        /* Advance: fixed size (0x68) + name buffer (aligned to 8) */
+        DWORD entrySize = 0x68;
+        DWORD nameBytes = *(WORD *)(ptr + 2);  /* MaximumLength */
+        entrySize += (nameBytes + 7) & ~7u;
+        ptr += entrySize;
+    }
+
+    if (!found)
+        Report("22. DebugObject type not found in list", FALSE);
+}
+
+/* ── 23. PEB.NumberOfProcessors — VM often has 1 ── */
+static void Check23(void)
+{
+    BYTE *peb = (BYTE *)__readgsqword(0x60);
+    DWORD numProc = *(DWORD *)(peb + 0xB8);  /* NumberOfProcessors */
+    char msg[128];
+    my_strcpy(msg, "23. NumberOfProcessors = ");
+    my_itoa(msg + my_strlen(msg), (int)numProc);
+    my_strcat(msg, " (VM if < 2)");
+    Report(msg, numProc < 2);
+}
+
+/* ── 24. KUSER_SHARED_DATA.NtMajorVersion sanity (0x7FFE026C) ── */
+static void Check24(void)
+{
+    DWORD major = *(volatile DWORD *)0x7FFE026C;
+    DWORD minor = *(volatile DWORD *)0x7FFE0270;
+    char msg[128];
+    my_strcpy(msg, "24. OS version = ");
+    my_itoa(msg + my_strlen(msg), (int)major);
+    my_strcat(msg, ".");
+    my_itoa(msg + my_strlen(msg), (int)minor);
+    /* Major < 6 = ancient OS, or tampered SharedUserData */
+    Report(msg, major < 6);
+}
+
+/* ── 25. NtQueryInformationProcess — ProcessBasicInformation — parent PID ── */
+static void Check25(void)
+{
+    if (!pNtQueryInformationProcess) { Report("25. Parent PID (n/a)", FALSE); return; }
+    /* PROCESS_BASIC_INFORMATION: ExitStatus(4+pad) + PebBaseAddress(8) + AffinityMask(8) +
+       BasePriority(4+pad) + UniqueProcessId(8) + InheritedFromUniqueProcessId(8) */
+    struct {
+        QWORD ExitStatus;
+        QWORD PebBaseAddress;
+        QWORD AffinityMask;
+        QWORD BasePriority;
+        QWORD UniqueProcessId;
+        QWORD InheritedFromUniqueProcessId;
+    } pbi;
+    my_memset(&pbi, 0, sizeof(pbi));
+    NTSTATUS st = pNtQueryInformationProcess(pGetCurrentProcess(), 0, &pbi, sizeof(pbi), NULL);
+    if (!NT_SUCCESS(st)) { Report("25. Parent PID (query failed)", FALSE); return; }
+    char msg[128];
+    my_strcpy(msg, "25. Parent PID = ");
+    my_itoa(msg + my_strlen(msg), (int)pbi.InheritedFromUniqueProcessId);
+    /* Can't easily check name without process enum — just report */
+    Report(msg, FALSE);
+}
+
+/* ── 26. PEB.OSMajorVersion vs SharedUserData cross-check ── */
+static void Check26(void)
+{
+    BYTE *peb = (BYTE *)__readgsqword(0x60);
+    DWORD pebMajor = *(DWORD *)(peb + 0x118);   /* OSMajorVersion */
+    DWORD sudMajor = *(volatile DWORD *)0x7FFE026C;
+    char msg[128];
+    my_strcpy(msg, "26. PEB.OSMajor=");
+    my_itoa(msg + my_strlen(msg), (int)pebMajor);
+    my_strcat(msg, " SUD.OSMajor=");
+    my_itoa(msg + my_strlen(msg), (int)sudMajor);
+    /* Mismatch means someone patched PEB or SharedUserData */
+    Report(msg, pebMajor != sudMajor);
+}
+
+/* ── 27. Check PEB.Ldr for suspicious unlinking ── */
+static void Check27(void)
+{
+    BYTE *peb = (BYTE *)__readgsqword(0x60);
+    BYTE *ldr = *(BYTE **)(peb + 0x18);
+    if (!ldr) { Report("27. PEB.Ldr is NULL (tampered!)", TRUE); return; }
+
+    /* Walk InMemoryOrderModuleList, count modules */
+    BYTE *head = ldr + 0x20;
+    BYTE *node = *(BYTE **)head;
+    int count = 0;
+    while (node != head && count < 500) {
+        count++;
+        node = *(BYTE **)node;
+    }
+    char msg[128];
+    my_strcpy(msg, "27. Loaded modules count = ");
+    my_itoa(msg + my_strlen(msg), count);
+    /* Very few modules (< 3) = someone unlinked modules from PEB */
+    Report(msg, count < 3);
+}
+
+/* ── 28. TEB.SameTebFlags — debug related bits ── */
+static void Check28(void)
+{
+    /* TEB is at gs:[0x30], SameTebFlags at +0x17EE (Win10+) */
+    BYTE *teb = (BYTE *)__readgsqword(0x30);
+    WORD sameTebFlags = *(WORD *)(teb + 0x17EE);
+    /* Bit 0: DbgSafeThunkCall, Bit 1: DbgInDebugger, Bit 2: DbgHasFiberData */
+    BOOL dbgFlag = (sameTebFlags & 0x02) != 0;
+    char msg[128];
+    my_strcpy(msg, "28. TEB.SameTebFlags = ");
+    my_itoa_hex(msg + my_strlen(msg), sameTebFlags);
+    Report(msg, dbgFlag);
+}
+
+/* ── 29. NtQueryInformationProcess — ProcessHandleTracing (0x20) ── */
+static void Check29(void)
+{
+    if (!pNtQueryInformationProcess) { Report("29. HandleTracing (n/a)", FALSE); return; }
+    /* ProcessHandleTracing = 0x20. Enabled by debuggers to track handle operations.
+       Query returns STATUS_SUCCESS if tracing is active. */
+    DWORD dummy = 0;
+    NTSTATUS st = pNtQueryInformationProcess(
+        pGetCurrentProcess(), 0x20, &dummy, sizeof(dummy), NULL);
+    /* STATUS_INVALID_PARAMETER (0xC000000D) = tracing not enabled = no debugger
+       STATUS_SUCCESS or other = tracing enabled = debugger likely */
+    Report("29. ProcessHandleTracing", NT_SUCCESS(st));
+}
+
+/* ── 30. KUSER_SHARED_DATA timestamp consistency ── */
+static void Check30(void)
+{
+    /* Read two timestamps from SharedUserData in quick succession.
+       A debugger stepping through causes large gaps. */
+    volatile QWORD *pTickCount = (volatile QWORD *)0x7FFE0320;  /* TickCountQuad */
+    QWORD t1 = *pTickCount;
+    volatile int x = 0;
+    for (int i = 0; i < 10; i++) x += i;
+    QWORD t2 = *pTickCount;
+    QWORD delta = t2 - t1;
+    char msg[128];
+    my_strcpy(msg, "30. SharedUserData tick delta = ");
+    my_itoa(msg + my_strlen(msg), (int)delta);
+    Report(msg, delta > 100);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
  * ENTRY POINT — no CRT, no main()
  * ═══════════════════════════════════════════════════════════════════════ */
@@ -597,7 +902,7 @@ void __stdcall entry(void)
     con_color(FG_CYAN);
     con_write("\n  ============================================\n");
     con_write("   AntiDebug Test (No-Import Edition)\n");
-    con_write("   All APIs resolved by hash - zero imports\n");
+    con_write("   30 checks, zero imports, all by hash\n");
     con_write("  ============================================\n\n");
     con_color(FG_DEFAULT);
 
@@ -630,6 +935,22 @@ void __stdcall entry(void)
 
     /* Flags */
     Check16();      /* Trap Flag                */
+
+    /* Extended checks */
+    Check17();      /* OutputDebugString        */
+    Check18();      /* KdDebuggerEnabled        */
+    Check19();      /* ThreadHideFromDebugger   */
+    Check20();      /* GetProcessHeap flags     */
+    Check21();      /* CPUID hypervisor (VM)    */
+    Check22();      /* DebugObject count        */
+    Check23();      /* NumberOfProcessors (VM)  */
+    Check24();      /* OS version sanity        */
+    Check25();      /* Parent PID               */
+    Check26();      /* PEB vs SUD cross-check   */
+    Check27();      /* Module list integrity    */
+    Check28();      /* TEB.SameTebFlags         */
+    Check29();      /* PAGE_GUARD trick         */
+    Check30();      /* SharedUserData timing    */
 
     /* Console summary */
     con_color(FG_CYAN);
