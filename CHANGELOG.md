@@ -1,5 +1,30 @@
 # Changelog
 
+## v1.2.0 — 2026-03-21
+
+### AI Assistant Plugin
+
+- **New plugin: AI Assistant** — interactive chat-based reverse engineering assistant integrated into KernelFlirt. Works like AI plugins in IDA Pro — analyzes code, explains functions, sets breakpoints, reads memory, steps through code.
+- **Universal AI provider support** — works with any OpenAI-compatible API: DeepSeek, Qwen, ChatGPT, Ollama, LM Studio, Anthropic (via proxy), and others. Configurable endpoint, model, API key, temperature, max tokens, and system prompt.
+- **Decompiler integration** — `decompile` tool sends C pseudocode to AI for analysis (like Hex-Rays in IDA Pro), much more efficient than raw disassembly.
+- **Debugger tool calling** — AI can execute real debugger actions: set/remove breakpoints, read/write memory, read registers, step in/over/out, continue execution, disassemble, resolve symbols, navigate disassembly, list modules/threads.
+- **Settings dialog** — provider presets (DeepSeek, OpenAI, Anthropic, Ollama, LM Studio, Qwen, Custom), API key input, model selection, token/temperature sliders, editable system prompt with reset.
+- **Chat history management** — automatic context trimming to stay within token limits.
+- **AI Assistant tab colors** added to all 9 themes (purple/violet tones).
+
+### Remote File Browser
+
+- **Full-featured file browser** when connecting to relay VM via Open & Debug.
+- **5 new relay IOCTLs** — `READ_FILE`, `WRITE_FILE`, `DELETE_PATH`, `CREATE_DIR`, `RENAME_PATH`.
+- **File operations** — download, upload, delete, rename, create folder, copy path. Chunked transfer with progress.
+- **Navigation** — back/forward history, up button, editable address bar, drive selector, refresh.
+- **Multi-select**, drag-and-drop upload, keyboard shortcuts (F2, Del, F5, Backspace, Alt+arrows).
+- **Double-click**: folders navigate, .exe/.sys open in debugger, others download.
+
+### Disassembler
+
+- **Go Back** in context menu — returns to previous location after following imports, symbols, or Go To commands.
+
 ## v1.1.0 — 2026-03-19
 
 ### Theme System: Plugin Customization
