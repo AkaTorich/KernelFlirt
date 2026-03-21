@@ -160,6 +160,8 @@ public class MemoryApiAdapter : IMemoryApi
 
     public (bool ok, uint oldProtection) ProtectMemory(uint pid, ulong address, uint size, uint newProtection)
         => _driver.ProtectMemory(pid, address, size, newProtection);
+    public ulong AllocateMemory(uint pid, ulong size) => _driver.AllocateMemory(pid, size);
+    public bool FreeMemory(uint pid, ulong address) => _driver.FreeMemory(pid, address);
 }
 
 public class BreakpointApiAdapter : IBreakpointApi
@@ -263,6 +265,7 @@ public class ProcessApiAdapter : IProcessApi
     public bool ClearThreadHide(uint pid) => _driver.ClearThreadHide(pid);
     public bool InstallNtQsiHook() => _driver.InstallNtQsiHook();
     public bool RemoveNtQsiHook() => _driver.RemoveNtQsiHook();
+    public bool SetSpoofSharedUserData(bool enable) => _driver.SetSpoofSharedUserData(enable);
 
     public string ProbeNtQsiHook()
     {

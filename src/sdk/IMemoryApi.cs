@@ -8,4 +8,6 @@ public interface IMemoryApi
     bool WriteRip(uint pid, uint tid, ulong newRip);
     bool WriteRipAndRsp(uint tid, ulong newRip, ulong newRsp);
     (bool ok, uint oldProtection) ProtectMemory(uint pid, ulong address, uint size, uint newProtection);
+    ulong AllocateMemory(uint pid, ulong size);
+    bool FreeMemory(uint pid, ulong address);
 }

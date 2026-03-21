@@ -77,6 +77,9 @@ public class AntiDebugPanel : ScrollViewer
     // NtQuerySystemInformation
     public CheckBox ChkSystemKernelDebugger { get; }
 
+    // SharedUserData
+    public CheckBox ChkSharedUserData { get; }
+
     // NtSetInformationThread
     public CheckBox ChkThreadHideFromDebugger { get; }
 
@@ -116,6 +119,12 @@ public class AntiDebugPanel : ScrollViewer
     public CheckBox ChkAutoOep { get; }
 
     public bool AutoApply => ChkAutoApply.IsChecked == true;
+
+    // NtQuerySystemInformation inline hook state
+    private ulong _ntQsiHookMem = 0;
+    private ulong _ntQsiOrigAddr = 0;
+    private byte[]? _ntQsiOrigBytes = null;
+    private bool _ntQsiInlineHooked = false;
 
     private ulong _discoveredOep = 0;
     private ulong _unpackedPeBase = 0;
@@ -219,8 +228,12 @@ public class AntiDebugPanel : ScrollViewer
         root.Children.Add(MakeGroup("NtQueryInformationProcess (via ClearDebugPort)", [ChkDebugPort, ChkDebugObjectHandle, ChkDebugFlags]));
 
         // ── NtQuerySystemInformation ──
-        ChkSystemKernelDebugger = MakeCheckBox("SystemKernelDebuggerInfo", false, "Hook NtQuerySystemInformation to spoof class 0x23 (usermode breakpoint hook, safe)", true);
+        ChkSystemKernelDebugger = MakeCheckBox("SystemKernelDebuggerInfo", false, "Inline hook NtQuerySystemInformation to spoof class 0x23 (usermode, safe)", true);
         root.Children.Add(MakeGroup("NtQuerySystemInformation", [ChkSystemKernelDebugger]));
+
+        // ── SharedUserData ──
+        ChkSharedUserData = MakeCheckBox("SharedUserData.KdDebuggerEnabled", false, "Patch KUSER_SHARED_DATA.KdDebuggerEnabled to 0 (kernel-level, defeats direct 0x7FFE02D4 read)", true);
+        root.Children.Add(MakeGroup("SharedUserData", [ChkSharedUserData]));
 
         // ── NtSetInformationThread ──
         ChkThreadHideFromDebugger = MakeCheckBox("ThreadHideFromDebugger", true, "Clear HideFromDebugger bit in all threads' CrossThreadFlags", true);
@@ -771,8 +784,22 @@ public class AntiDebugPanel : ScrollViewer
         if (ChkKdDebuggerNotPresent.IsChecked == true)
             patches += PatchKernelByte("KdDebuggerNotPresent", 1);
 
-        // NtQuerySystemInformation class 0x23 is now handled via usermode breakpoint hook
-        // in InstallApiHooks() — no kernel inline hook needed (avoids PatchGuard BSOD)
+        // NtQuerySystemInformation class 0x23 is now handled via usermode inline hook
+        // in ApplyPatches() — no kernel inline hook needed (avoids PatchGuard BSOD)
+
+        // SharedUserData.KdDebuggerEnabled — spoof via driver
+        if (ChkSharedUserData.IsChecked == true)
+        {
+            if (_api.Process.SetSpoofSharedUserData(true))
+            {
+                patches++;
+                _api.Log.Info("  SharedUserData.KdDebuggerEnabled spoofing enabled (driver will zero 0x7FFE02D4)");
+            }
+            else
+            {
+                _api.Log.Warning("  SharedUserData spoofing failed — driver may not support this IOCTL");
+            }
+        }
 
         if (patches > 0)
             _api.Log.Info($"Anti-debug: {patches} kernel-level patches applied");
@@ -898,6 +925,13 @@ public class AntiDebugPanel : ScrollViewer
 
         // ── Install breakpoint-based API hooks ──
         InstallApiHooks();
+
+        // NtQuerySystemInformation inline hook (class 0x23 spoofing)
+        if (ChkSystemKernelDebugger.IsChecked == true && !_ntQsiInlineHooked)
+        {
+            if (InstallNtQsiInlineHook(pid))
+                patches++;
+        }
 
         _api.Log.Info($"Anti-debug: {patches} patches applied to PID {pid}");
     }
@@ -1975,24 +2009,34 @@ public class AntiDebugPanel : ScrollViewer
             var sectData = _api.Memory.ReadMemory(pid, imageBase + sectionTableOffset, (uint)(numSections * 40));
             if (sectData == null) return 0;
 
+            _api.Log.Info($"  RDTSC scan: {numSections} sections at imageBase 0x{imageBase:X}");
+
             for (int s = 0; s < numSections; s++)
             {
                 uint characteristics = BitConverter.ToUInt32(sectData, s * 40 + 36);
-                // Only scan executable sections
-                if ((characteristics & 0x20000000) == 0) continue;
-
-                // Read section name (first 8 bytes) and skip protector sections
-                // Themida/WinLicense CRC-checks .boot/.themida — patching there crashes the protector
-                string sectName = System.Text.Encoding.ASCII.GetString(sectData, s * 40, 8).TrimEnd('\0').ToLowerInvariant();
-                if (sectName is ".themida" or ".boot" or ".vmp0" or ".vmp1" or ".packed" or ".upx")
-                    continue;
-
+                string sectName = System.Text.Encoding.ASCII.GetString(sectData, s * 40, 8).TrimEnd('\0');
                 uint virtualAddr = BitConverter.ToUInt32(sectData, s * 40 + 12);
                 uint virtualSize = BitConverter.ToUInt32(sectData, s * 40 + 8);
 
-                // Skip huge sections (>2MB) — likely protector VM code, not original program
-                if (virtualSize > 0x200000) continue;
-                if (virtualSize > 0x100000) virtualSize = 0x100000; // cap at 1MB
+                if ((characteristics & 0x20000000) == 0)
+                {
+                    _api.Log.Info($"    '{sectName}': VA=0x{virtualAddr:X} Size=0x{virtualSize:X} — skipped (not executable)");
+                    continue;
+                }
+
+                string sectNameLower = sectName.ToLowerInvariant();
+                if (sectNameLower is ".themida" or ".boot" or ".vmp0" or ".vmp1" or ".packed" or ".upx")
+                {
+                    _api.Log.Info($"    '{sectName}': VA=0x{virtualAddr:X} Size=0x{virtualSize:X} — skipped (protector section)");
+                    continue;
+                }
+
+                if (virtualSize > 0x200000)
+                {
+                    _api.Log.Info($"    '{sectName}': VA=0x{virtualAddr:X} Size=0x{virtualSize:X} — skipped (too large)");
+                    continue;
+                }
+                if (virtualSize > 0x100000) virtualSize = 0x100000;
 
                 ulong sectionBase = imageBase + virtualAddr;
                 var code = _api.Memory.ReadMemory(pid, sectionBase, virtualSize);
@@ -2021,6 +2065,8 @@ public class AntiDebugPanel : ScrollViewer
                     }
                 }
             }
+            if (count == 0)
+                _api.Log.Warning("  RDTSC scan: no RDTSC/CPUID instructions found in any code section");
         }
         catch (Exception ex)
         {
@@ -2251,8 +2297,7 @@ public class AntiDebugPanel : ScrollViewer
         if (ChkNtYieldExecution.IsChecked == true)
             installed += InstallHook(pid, tid, "ntdll!NtYieldExecution", HandleNtYieldExecution);
 
-        if (ChkSystemKernelDebugger.IsChecked == true)
-            installed += InstallHook(pid, tid, "ntdll!NtQuerySystemInformation", HandleNtQuerySystemInformation);
+        // NtQuerySystemInformation uses inline hook (not breakpoint) — installed separately
 
         if (ChkHideSwBreakpoints.IsChecked == true)
             installed += InstallHook(pid, tid, "ntdll!NtReadVirtualMemory", HandleNtReadVirtualMemory);
@@ -2618,6 +2663,104 @@ public class AntiDebugPanel : ScrollViewer
             }
         }
         _api.Continue();
+    }
+
+    // ── NtQuerySystemInformation inline hook (ScyllaHide-style) ──
+    private bool InstallNtQsiInlineHook(uint pid)
+    {
+        try
+        {
+            ulong ntqsiAddr = _api.Symbols.ResolveNameToAddress("ntdll!NtQuerySystemInformation");
+            if (ntqsiAddr == 0)
+            {
+                _api.Log.Warning("  NtQSI inline hook: symbol not found");
+                return false;
+            }
+
+            byte[]? origBytes = _api.Memory.ReadMemory(pid, ntqsiAddr, 20);
+            if (origBytes == null)
+            {
+                _api.Log.Warning("  NtQSI inline hook: can't read original bytes");
+                return false;
+            }
+
+            if (origBytes[0] != 0x4C || origBytes[1] != 0x8B || origBytes[2] != 0xD1 || origBytes[3] != 0xB8)
+            {
+                _api.Log.Warning($"  NtQSI inline hook: unexpected stub bytes: {BitConverter.ToString(origBytes, 0, 8)}");
+                return false;
+            }
+
+            uint syscallNum = BitConverter.ToUInt32(origBytes, 4);
+            _api.Log.Info($"  NtQSI syscall number: 0x{syscallNum:X}");
+
+            ulong hookMem = _api.Memory.AllocateMemory(pid, 0x1000);
+            if (hookMem == 0)
+            {
+                _api.Log.Warning("  NtQSI inline hook: AllocateMemory failed");
+                return false;
+            }
+
+            ulong trampolineAddr = hookMem;
+            ulong hookAddr = hookMem + 0x100;
+
+            // Clean trampoline: mov r10,rcx; mov eax,N; syscall; ret
+            byte[] trampoline = new byte[] {
+                0x4C, 0x8B, 0xD1,
+                0xB8, (byte)syscallNum, (byte)(syscallNum >> 8),
+                      (byte)(syscallNum >> 16), (byte)(syscallNum >> 24),
+                0x0F, 0x05,
+                0xC3
+            };
+            _api.Memory.WriteMemory(pid, trampolineAddr, trampoline);
+
+            byte[] hook = BuildNtQsiShellcode(trampolineAddr);
+            _api.Memory.WriteMemory(pid, hookAddr, hook);
+
+            byte[] jmpStub = new byte[14];
+            jmpStub[0] = 0xFF;
+            jmpStub[1] = 0x25;
+            BitConverter.GetBytes(hookAddr).CopyTo(jmpStub, 6);
+
+            _ntQsiOrigBytes = new byte[14];
+            Array.Copy(origBytes, _ntQsiOrigBytes, 14);
+            _ntQsiOrigAddr = ntqsiAddr;
+            _ntQsiHookMem = hookMem;
+
+            _api.Memory.WriteMemory(pid, ntqsiAddr, jmpStub);
+            _ntQsiInlineHooked = true;
+
+            _api.Log.Info($"  NtQuerySystemInformation inline hook: 0x{ntqsiAddr:X} → 0x{hookAddr:X}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _api.Log.Warning($"  NtQSI inline hook: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static byte[] BuildNtQsiShellcode(ulong trampolineAddr)
+    {
+        var c = new System.IO.MemoryStream();
+        c.WriteByte(0x53);                                          // push rbx
+        c.WriteByte(0x56);                                          // push rsi
+        c.Write([0x48, 0x83, 0xEC, 0x28]);                         // sub rsp, 0x28
+        c.Write([0x8B, 0xF1]);                                     // mov esi, ecx
+        c.Write([0x48, 0x8B, 0xDA]);                                // mov rbx, rdx
+        c.WriteByte(0x48); c.WriteByte(0xB8);                      // mov rax, imm64
+        c.Write(BitConverter.GetBytes(trampolineAddr));
+        c.Write([0xFF, 0xD0]);                                     // call rax
+        c.Write([0x83, 0xFE, 0x23]);                                // cmp esi, 0x23
+        c.Write([0x75, 0x0B]);                                     // jne done (+11)
+        c.Write([0x85, 0xC0]);                                     // test eax, eax
+        c.Write([0x75, 0x07]);                                     // jnz done (+7)
+        c.Write([0xC6, 0x03, 0x00]);                                // mov byte [rbx], 0
+        c.Write([0xC6, 0x43, 0x01, 0x01]);                         // mov byte [rbx+1], 1
+        c.Write([0x48, 0x83, 0xC4, 0x28]);                         // add rsp, 0x28
+        c.WriteByte(0x5E);                                          // pop rsi
+        c.WriteByte(0x5B);                                          // pop rbx
+        c.WriteByte(0xC3);                                          // ret
+        return c.ToArray();
     }
 
     // ── NtReadVirtualMemory hook ──

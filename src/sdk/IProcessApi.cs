@@ -12,4 +12,5 @@ public interface IProcessApi
     bool InstallNtQsiHook();
     bool RemoveNtQsiHook();
     string ProbeNtQsiHook();
+    bool SetSpoofSharedUserData(bool enable);
 }

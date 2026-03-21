@@ -81,6 +81,11 @@ static PBOOLEAN g_pKdDebuggerNotPresent    = NULL;
 static BOOLEAN  g_OrigKdDebuggerEnabled    = FALSE;
 static BOOLEAN  g_OrigKdDebuggerNotPresent = TRUE;
 
+/* SharedUserData spoofing: when TRUE, KfReassertDebugFlags will also
+   zero KUSER_SHARED_DATA.KdDebuggerEnabled (offset 0x2D4) so usermode
+   sees KdDebuggerEnabled=FALSE even though the kernel variable is TRUE. */
+static BOOLEAN  g_SpoofSharedUserData      = FALSE;
+
 /* CALL-site patch (primary approach) — patch BOTH paths in KdTrap */
 static PUCHAR   g_CallSite                 = NULL;   /* &E8 byte for select=origValue path */
 static INT32    g_OrigCallDisp             = 0;       /* Original rel32 */
@@ -1787,6 +1792,25 @@ void KfReassertDebugFlags(void)
         BOOLEAN val = FALSE;
         KfPatchBytes(g_pKdDebuggerNotPresent, &val, sizeof(BOOLEAN));
     }
+
+    /* Spoof SharedUserData: zero KdDebuggerEnabled in KUSER_SHARED_DATA
+     * so usermode reads at 0x7FFE02D4 see FALSE, even though the kernel
+     * variable KdDebuggerEnabled is TRUE (needed for KdTrap). */
+    if (g_SpoofSharedUserData) {
+        PUCHAR ksud = (PUCHAR)0xFFFFF78000000000ULL;
+        PUCHAR pSudKdDbg = ksud + 0x2D4;
+        if (*(volatile UCHAR *)pSudKdDbg != 0) {
+            BOOLEAN val = FALSE;
+            KfPatchBytes((PVOID)pSudKdDbg, &val, sizeof(BOOLEAN));
+        }
+    }
+}
+
+void KfSetSpoofSharedUserData(BOOLEAN enable)
+{
+    g_SpoofSharedUserData = enable;
+    if (enable)
+        KfReassertDebugFlags();
 }
 
 NTSTATUS KfGetHookStats(PIRP Irp, PIO_STACK_LOCATION IoStack)

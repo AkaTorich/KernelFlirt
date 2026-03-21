@@ -56,6 +56,9 @@ public class DriverComm : IDisposable
     private static readonly uint IOCTL_KF_INSTALL_NTQSI_HOOK = CTL_CODE(DeviceType, 0x850, 0, 0);
     private static readonly uint IOCTL_KF_REMOVE_NTQSI_HOOK = CTL_CODE(DeviceType, 0x851, 0, 0);
     private static readonly uint IOCTL_KF_PROBE_NTQSI = CTL_CODE(DeviceType, 0x852, 0, 0);
+    private static readonly uint IOCTL_KF_SPOOF_SHARED_DATA = CTL_CODE(DeviceType, 0x853, 0, 0);
+    private static readonly uint IOCTL_KF_ALLOC_MEMORY = CTL_CODE(DeviceType, 0x806, 0, 0);
+    private static readonly uint IOCTL_KF_FREE_MEMORY = CTL_CODE(DeviceType, 0x807, 0, 0);
     private static readonly uint IOCTL_KF_INSTALL_HOOK    = CTL_CODE(DeviceType, 0x840, 0, 0);
     private static readonly uint IOCTL_KF_REMOVE_HOOK     = CTL_CODE(DeviceType, 0x841, 0, 0);
     private static readonly uint IOCTL_KF_WAIT_DEBUG_EVENT = CTL_CODE(DeviceType, 0x842, 0, 0);
@@ -1066,6 +1069,32 @@ public class DriverComm : IDisposable
     public bool RemoveNtQsiHook()
     {
         var (ok, _) = SendIoctl(IOCTL_KF_REMOVE_NTQSI_HOOK, [], 0);
+        return ok;
+    }
+
+    public bool SetSpoofSharedUserData(bool enable)
+    {
+        var (ok, _) = SendIoctl(IOCTL_KF_SPOOF_SHARED_DATA, [enable ? (byte)1 : (byte)0], 0);
+        return ok;
+    }
+
+    public ulong AllocateMemory(uint pid, ulong size, uint protection = 0x40 /* PAGE_EXECUTE_READWRITE */)
+    {
+        byte[] input = new byte[16];
+        BitConverter.GetBytes(pid).CopyTo(input, 0);
+        BitConverter.GetBytes(size).CopyTo(input, 4);
+        BitConverter.GetBytes(protection).CopyTo(input, 12);
+        var (ok, data) = SendIoctl(IOCTL_KF_ALLOC_MEMORY, input, 8);
+        if (!ok || data == null || data.Length < 8) return 0;
+        return BitConverter.ToUInt64(data, 0);
+    }
+
+    public bool FreeMemory(uint pid, ulong address)
+    {
+        byte[] input = new byte[12];
+        BitConverter.GetBytes(pid).CopyTo(input, 0);
+        BitConverter.GetBytes(address).CopyTo(input, 4);
+        var (ok, _) = SendIoctl(IOCTL_KF_FREE_MEMORY, input, 0);
         return ok;
     }
 

@@ -5,8 +5,16 @@
 
 #include <ntddk.h>
 #include "../../include/kf_shared.h"
+#include "ntundoc.h"
 #include "debughook.h"
 #include "ntqsi_hook.h"
+
+/* ntifs.h declarations needed for alloc/free in target process */
+NTSYSAPI NTSTATUS NTAPI ZwAllocateVirtualMemory(
+    HANDLE ProcessHandle, PVOID *BaseAddress, ULONG_PTR ZeroBits,
+    PSIZE_T RegionSize, ULONG AllocationType, ULONG Protect);
+NTSYSAPI NTSTATUS NTAPI ZwFreeVirtualMemory(
+    HANDLE ProcessHandle, PVOID *BaseAddress, PSIZE_T RegionSize, ULONG FreeType);
 
 /* Forward declarations for handlers (implemented in other files) */
 extern NTSTATUS KfReadMemory(PIRP Irp, PIO_STACK_LOCATION IoStack);
@@ -159,6 +167,97 @@ KfDispatchIoctl(
     case IOCTL_KF_PROBE_NTQSI:
         status = KfProbeNtQsi(Irp, ioStack);
         break;
+
+    case IOCTL_KF_SPOOF_SHARED_DATA:
+    {
+        PUCHAR pInput;
+        extern void KfSetSpoofSharedUserData(BOOLEAN enable);
+        if (ioStack->Parameters.DeviceIoControl.InputBufferLength >= 1) {
+            pInput = (PUCHAR)Irp->AssociatedIrp.SystemBuffer;
+            KfSetSpoofSharedUserData(pInput[0] ? TRUE : FALSE);
+            status = STATUS_SUCCESS;
+        } else {
+            status = STATUS_BUFFER_TOO_SMALL;
+        }
+        Irp->IoStatus.Information = 0;
+        break;
+    }
+
+    case IOCTL_KF_ALLOC_MEMORY:
+    {
+        PUCHAR pIn;
+        ULONG  pid2;
+        ULONG64 reqSize;
+        ULONG  prot;
+        PEPROCESS proc2 = NULL;
+        KAPC_STATE apc2;
+        PVOID base2 = NULL;
+        SIZE_T sz2;
+
+        if (ioStack->Parameters.DeviceIoControl.InputBufferLength < 16 ||
+            ioStack->Parameters.DeviceIoControl.OutputBufferLength < 8) {
+            status = STATUS_BUFFER_TOO_SMALL;
+            Irp->IoStatus.Information = 0;
+            break;
+        }
+
+        pIn     = (PUCHAR)Irp->AssociatedIrp.SystemBuffer;
+        pid2    = *(PULONG)(pIn);
+        reqSize = *(PULONG64)(pIn + 4);
+        prot    = *(PULONG)(pIn + 12);
+
+        status = PsLookupProcessByProcessId((HANDLE)(ULONG_PTR)pid2, &proc2);
+        if (NT_SUCCESS(status)) {
+            sz2 = (SIZE_T)reqSize;
+            KeStackAttachProcess(proc2, &apc2);
+            status = ZwAllocateVirtualMemory(
+                ZwCurrentProcess(), &base2, 0, &sz2,
+                MEM_COMMIT | MEM_RESERVE, prot);
+            KeUnstackDetachProcess(&apc2);
+
+            if (NT_SUCCESS(status)) {
+                *(PULONG64)Irp->AssociatedIrp.SystemBuffer = (ULONG64)base2;
+                Irp->IoStatus.Information = 8;
+            } else {
+                Irp->IoStatus.Information = 0;
+            }
+            ObDereferenceObject(proc2);
+        } else {
+            Irp->IoStatus.Information = 0;
+        }
+        break;
+    }
+
+    case IOCTL_KF_FREE_MEMORY:
+    {
+        PUCHAR pIn3;
+        ULONG  pid3;
+        PEPROCESS proc3 = NULL;
+        KAPC_STATE apc3;
+        PVOID base3;
+        SIZE_T sz3 = 0;
+
+        if (ioStack->Parameters.DeviceIoControl.InputBufferLength < 12) {
+            status = STATUS_BUFFER_TOO_SMALL;
+            Irp->IoStatus.Information = 0;
+            break;
+        }
+
+        pIn3  = (PUCHAR)Irp->AssociatedIrp.SystemBuffer;
+        pid3  = *(PULONG)(pIn3);
+        base3 = (PVOID)*(PULONG64)(pIn3 + 4);
+
+        status = PsLookupProcessByProcessId((HANDLE)(ULONG_PTR)pid3, &proc3);
+        if (NT_SUCCESS(status)) {
+            KeStackAttachProcess(proc3, &apc3);
+            ZwFreeVirtualMemory(ZwCurrentProcess(), &base3, &sz3, MEM_RELEASE);
+            KeUnstackDetachProcess(&apc3);
+            ObDereferenceObject(proc3);
+            status = STATUS_SUCCESS;
+        }
+        Irp->IoStatus.Information = 0;
+        break;
+    }
 
     case IOCTL_KF_INSTALL_HOOK:
     {
