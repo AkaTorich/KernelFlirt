@@ -254,7 +254,7 @@ public class AiChatPanel : Grid
         var tools = _debuggerTools != null ? DebuggerTools.GetToolDefinitions() : null;
 
         // Tool use loop — AI can call tools multiple times before giving final text answer
-        const int maxToolRounds = 25;
+        const int maxToolRounds = int.MaxValue;
         for (int round = 0; round < maxToolRounds; round++)
         {
             _currentAssistantPara = AppendAssistantStart();
