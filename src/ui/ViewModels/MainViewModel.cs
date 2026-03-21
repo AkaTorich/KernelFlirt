@@ -122,13 +122,25 @@ public partial class MainViewModel : ObservableObject, IDisposable
             (title, content) => AddPluginToolPanel?.Invoke(title, content),
             (peBase, name) => AddUnpackedModule(peBase, name),
             () => { _ = RefreshModulesAndSectionsAsync(); },
-            (modName, sections) => AddModuleSections(modName, sections));
+            (modName, sections) => AddModuleSections(modName, sections),
+            addr => DecompileFunction(addr, 0),
+            () => DecompiledCode);
 
         // Wire Continue/SingleStep callbacks so plugins can resume execution
         _pluginManager.ContinueAction = () =>
             Application.Current.Dispatcher.InvokeAsync(async () => await PluginContinue());
         _pluginManager.SingleStepAction = () =>
             Application.Current.Dispatcher.InvokeAsync(async () => await PluginSingleStep());
+        _pluginManager.StepOverAction = () =>
+            Application.Current.Dispatcher.InvokeAsync(async () => await StepOver());
+        _pluginManager.StepOutAction = () =>
+            Application.Current.Dispatcher.InvokeAsync(async () => await StepOut());
+        _pluginManager.RunToCursorAction = (addr) =>
+            Application.Current.Dispatcher.InvokeAsync(async () => await PluginRunToCursor(addr));
+        _pluginManager.SkipInstructionAction = () =>
+            Application.Current.Dispatcher.Invoke(() => SkipInstruction());
+        _pluginManager.PauseAction = () =>
+            Application.Current.Dispatcher.InvokeAsync(async () => await Pause());
 
         _pluginManager.LoadPlugins(pluginsDir, AdapterFactory);
     }
@@ -1678,6 +1690,49 @@ public partial class MainViewModel : ObservableObject, IDisposable
         else
         {
             Log("Run to cursor: failed to set temp breakpoint");
+        }
+    }
+
+    /// <summary>
+    /// Called by plugin via RunToCursor(address) — same as RunToCursor but with explicit address.
+    /// </summary>
+    private async Task PluginRunToCursor(ulong addr)
+    {
+        if (!IsConnected || TargetPid == 0 || SelectedThreadId == 0) return;
+        if (addr == 0) return;
+
+        var pid = TargetPid;
+        var tid = SelectedThreadId;
+
+        if (_isPausedViaSuspend && Is32Bit)
+        {
+            Log($"WoW64 run to cursor (plugin): {addr:X8}");
+            IsBreakState = false;
+            IsRunning = true;
+            StatusText = $"Running to {FormatAddr(addr)}...";
+
+            var ok = await Wow64SpinStep(pid, tid, addr);
+            await Wow64RefreshAfterStep();
+            IsBreakState = true;
+            IsRunning = false;
+            StatusText = ok ? $"Cursor - PID {pid} TID {tid}" : "Run to cursor failed";
+            _hitSwBp = null;
+            return;
+        }
+
+        var handle = await Task.Run(() => _driver.SetBreakpoint(pid, tid, addr, BreakpointType.Software));
+        if (handle.HasValue)
+        {
+            _tempBpHandle = handle.Value;
+            Log($"Run to cursor (plugin): temp BP at {addr:X16}");
+
+            IsBreakState = false;
+            IsRunning = true;
+            StatusText = $"Running to {addr:X16}...";
+            StartDebugListener();
+            await Task.Run(() => _driver.ContinueDebugEvent(
+                _hitSwBp != null ? DriverComm.CONTINUE_STEP_PAST : DriverComm.CONTINUE_RUN));
+            _hitSwBp = null;
         }
     }
 

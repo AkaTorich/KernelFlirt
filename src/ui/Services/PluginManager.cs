@@ -139,6 +139,11 @@ public class PluginManager
     // Action callbacks - set by MainViewModel for plugin→VM calls
     public Action? ContinueAction { get; set; }
     public Action? SingleStepAction { get; set; }
+    public Action? StepOverAction { get; set; }
+    public Action? StepOutAction { get; set; }
+    public Action<ulong>? RunToCursorAction { get; set; }
+    public Action? SkipInstructionAction { get; set; }
+    public Action? PauseAction { get; set; }
 
     public void NotifyDebugEvent(PluginDebugEvent evt) => SafeInvoke(() => OnDebugEvent?.Invoke(evt));
     public void NotifyConnected() => SafeInvoke(() => OnConnected?.Invoke());

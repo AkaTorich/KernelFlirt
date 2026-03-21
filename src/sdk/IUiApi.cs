@@ -22,4 +22,16 @@ public interface IUiApi
     /// Use when the PE header is zeroed by a packer (anti-dump).
     /// </summary>
     void AddModuleSections(string moduleName, IReadOnlyList<PluginSectionInfo> sections);
+
+    /// <summary>
+    /// Request decompilation of the function at the given address.
+    /// This is async — call GetDecompiledCode() after a delay to get the result.
+    /// </summary>
+    void DecompileFunction(ulong address);
+
+    /// <summary>
+    /// Get the current decompiled code text (C pseudocode from RetDec).
+    /// Returns empty string if no decompilation has been done.
+    /// </summary>
+    string GetDecompiledCode();
 }

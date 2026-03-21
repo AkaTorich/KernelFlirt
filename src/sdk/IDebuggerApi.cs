@@ -31,9 +31,40 @@ public interface IDebuggerApi
     void Continue();
 
     /// <summary>
-    /// Single-step one instruction on the current thread.
+    /// Single-step one instruction on the current thread (Step Into / F7).
+    /// Follows into CALL instructions.
     /// </summary>
     void SingleStep();
+
+    /// <summary>
+    /// Step over the current instruction (F8).
+    /// For CALL: sets temp BP at next instruction and runs.
+    /// For other instructions: same as SingleStep.
+    /// </summary>
+    void StepOver();
+
+    /// <summary>
+    /// Step out of current function (Ctrl+F9).
+    /// Reads return address from [RSP] and runs to it.
+    /// </summary>
+    void StepOut();
+
+    /// <summary>
+    /// Run to the specified address (F4 / Run to Cursor).
+    /// Sets temp BP at address and resumes.
+    /// </summary>
+    void RunToCursor(ulong address);
+
+    /// <summary>
+    /// Skip current instruction — move RIP past it without executing (Ctrl+F8).
+    /// </summary>
+    void SkipInstruction();
+
+    /// <summary>
+    /// Pause/break a running process (F12).
+    /// Suspends all threads.
+    /// </summary>
+    void Pause();
 
     /// <summary>
     /// Fires before the process resumes (Run/F9/Continue).
