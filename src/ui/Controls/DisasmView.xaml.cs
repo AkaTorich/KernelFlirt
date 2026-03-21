@@ -475,6 +475,11 @@ public partial class DisasmView : UserControl
         GetViewModel()?.DecompileAtCursorCommand.Execute(null);
     }
 
+    private void OnContextGoBack(object sender, RoutedEventArgs e)
+    {
+        GetViewModel()?.DisasmGoBackCommand.Execute(null);
+    }
+
     private static bool TryParseOperandAddress(string operands, out ulong address)
     {
         address = 0;

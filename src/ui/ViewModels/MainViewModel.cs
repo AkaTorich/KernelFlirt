@@ -124,7 +124,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
             () => { _ = RefreshModulesAndSectionsAsync(); },
             (modName, sections) => AddModuleSections(modName, sections),
             addr => DecompileFunction(addr, 0),
-            () => DecompiledCode);
+            () => DecompiledCode,
+            () => { if (CanDisasmGoBack) DisasmGoBackCommand.Execute(null); });
 
         // Wire Continue/SingleStep callbacks so plugins can resume execution
         _pluginManager.ContinueAction = () =>
@@ -2044,10 +2045,34 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public void SetBreakpointAtAddressWithType(ulong address, BreakpointType type, uint length = 1)
         => ToggleBreakpointAtAddress(address, type, length);
 
+    /* ================================================================== */
+    /*  Disasm navigation history (Go Back)                                */
+    /* ================================================================== */
+
+    private readonly Stack<ulong> _disasmBackStack = new();
+
+    public void PushDisasmHistory()
+    {
+        if (DisasmAddress != 0)
+            _disasmBackStack.Push(DisasmAddress);
+    }
+
+    [RelayCommand]
+    private void DisasmGoBack()
+    {
+        if (_disasmBackStack.Count == 0) return;
+        var addr = _disasmBackStack.Pop();
+        DisasmAddress = addr;
+        RefreshDisassembly();
+    }
+
+    public bool CanDisasmGoBack => _disasmBackStack.Count > 0;
+
     /// <summary>Navigate disassembly to a specific address (used by disasm context menus).</summary>
     public void NavigateDisasmTo(ulong address)
     {
         if (address == 0) return;
+        PushDisasmHistory();
         DisasmAddress = address;
         RefreshDisassembly();
     }
@@ -2278,6 +2303,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 ? trimmed[2..] : trimmed,
                 System.Globalization.NumberStyles.HexNumber, null, out var addr))
         {
+            PushDisasmHistory();
             DisasmAddress = addr;
             RefreshDisassembly();
             Log($"Navigate to {addr:X16}");
@@ -2288,6 +2314,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var resolved = _symbols.ResolveNameToAddress(trimmed);
         if (resolved != 0)
         {
+            PushDisasmHistory();
             DisasmAddress = resolved;
             RefreshDisassembly();
             Log($"Navigate to {trimmed} = {resolved:X16}");
@@ -2313,6 +2340,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void GoToRip()
     {
+        PushDisasmHistory();
         NavigateToRip();
         RefreshDisassembly();
     }
@@ -2445,6 +2473,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private void FollowInDisasm(ulong address)
     {
         if (address == 0) return;
+        PushDisasmHistory();
         DisasmAddress = address;
         RefreshDisassembly();
         Log($"Follow in disassembler: {address:X16}");
@@ -2877,6 +2906,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         if (bookmark != null)
         {
+            PushDisasmHistory();
             DisasmAddress = bookmark.Address;
             RefreshDisassembly();
             Log($"Go to bookmark: {bookmark.Label}");

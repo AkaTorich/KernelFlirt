@@ -100,6 +100,9 @@ public class DebuggerTools
                 timeout_ms = new { type = "integer", description = "Timeout in milliseconds, default 5000" }
             } }),
 
+        MakeTool("disasm_go_back", "Go back to previous disassembly location (undo navigate_disasm/decompile navigation)",
+            new { type = "object", properties = new { } }),
+
         MakeTool("decompile", "Decompile function at address to C pseudocode (like IDA Pro Hex-Rays). Much better for understanding code than raw disassembly. Takes a few seconds.",
             new { type = "object", properties = new {
                 address = new { type = "string", description = "Hex address of the function to decompile" }
@@ -140,6 +143,7 @@ public class DebuggerTools
                 "skip_instruction" => ExecSkipInstruction(),
                 "pause_execution" => ExecPause(),
                 "wait_for_break" => ExecWaitForBreak(root),
+                "disasm_go_back" => ExecDisasmGoBack(),
                 "decompile" => ExecDecompile(root),
                 _ => $"Unknown tool: {toolName}"
             };
@@ -460,6 +464,12 @@ public class DebuggerTools
         }
 
         return $"Timeout after {timeoutMs}ms — process is still running. Use pause_execution to force stop.";
+    }
+
+    private string ExecDisasmGoBack()
+    {
+        _api.UI.DisasmGoBack();
+        return "Navigated back to previous disassembly location";
     }
 
     private string ExecDecompile(JsonElement args)

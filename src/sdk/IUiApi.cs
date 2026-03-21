@@ -34,4 +34,9 @@ public interface IUiApi
     /// Returns empty string if no decompilation has been done.
     /// </summary>
     string GetDecompiledCode();
+
+    /// <summary>
+    /// Go back to previous disassembly location (undo NavigateDisassembly).
+    /// </summary>
+    void DisasmGoBack();
 }

@@ -30,6 +30,7 @@
                             <Separator />
                             <MenuItem Header="Follow in Dump" Click="OnContextFollowInDump" />
                             <MenuItem Header="Follow in Disassembler" Click="OnContextFollowInDisasm" />
+                            <MenuItem Header="Go Back" Click="OnContextGoBack" InputGestureText="Esc" />
                             <Separator />
                             <MenuItem Header="Copy Address" Click="OnContextCopyAddress" />
                             <MenuItem Header="Copy Line" Click="OnContextCopyLine" />

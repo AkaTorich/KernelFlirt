@@ -254,7 +254,7 @@ public class AiChatPanel : Grid
         var tools = _debuggerTools != null ? DebuggerTools.GetToolDefinitions() : null;
 
         // Tool use loop — AI can call tools multiple times before giving final text answer
-        const int maxToolRounds = 10;
+        const int maxToolRounds = 25;
         for (int round = 0; round < maxToolRounds; round++)
         {
             _currentAssistantPara = AppendAssistantStart();
@@ -353,7 +353,13 @@ public class AiChatPanel : Grid
 
         _currentAssistantPara = null;
         SetStreaming(false);
-        Dispatcher.Invoke(() => _chatBox.ScrollToEnd());
+        Dispatcher.Invoke(() =>
+        {
+            // If we hit the limit without a final text answer, notify user
+            if (_history.Count > 0 && _history[^1].Role == "tool")
+                AppendSystem("(AI reached tool call limit — send another message to continue)");
+            _chatBox.ScrollToEnd();
+        });
     }
 
     /// <summary>

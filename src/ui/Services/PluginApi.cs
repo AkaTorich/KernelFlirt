@@ -59,7 +59,8 @@ public class DebuggerApiAdapter : IDebuggerApi
         Action refreshModulesAndSections,
         Action<string, IReadOnlyList<PluginSectionInfo>> addModuleSections,
         Action<ulong> decompileFunction,
-        Func<string> getDecompiledCode)
+        Func<string> getDecompiledCode,
+        Action disasmGoBack)
     {
         _pluginManager = pluginManager;
         _getIsConnected = getIsConnected;
@@ -73,7 +74,7 @@ public class DebuggerApiAdapter : IDebuggerApi
         Symbols = new SymbolApiAdapter(symbols, getTargetPid, getModules, getKernelModules);
         Process = new ProcessApiAdapter(driver);
         Log = new LogApiAdapter(log);
-        UI = new UiApiAdapter(navigateDisasm, addMenuItem, addToolPanel, addUnpackedModule, refreshModulesAndSections, addModuleSections, decompileFunction, getDecompiledCode);
+        UI = new UiApiAdapter(navigateDisasm, addMenuItem, addToolPanel, addUnpackedModule, refreshModulesAndSections, addModuleSections, decompileFunction, getDecompiledCode, disasmGoBack);
 
         // Wire events from PluginManager — all gated by Enabled flag
         pluginManager.OnDebugEvent += evt => { if (Enabled) OnDebugEvent?.Invoke(evt); };
@@ -296,13 +297,15 @@ public class UiApiAdapter : IUiApi
     private readonly Action<string, IReadOnlyList<PluginSectionInfo>> _addModuleSections;
     private readonly Action<ulong> _decompileFunction;
     private readonly Func<string> _getDecompiledCode;
+    private readonly Action _disasmGoBack;
 
     public UiApiAdapter(Action<ulong> navigateDisasm, Action<string, Action> addMenuItem,
         Action<string, object> addToolPanel, Action<ulong, string> addUnpackedModule,
         Action refreshModulesAndSections,
         Action<string, IReadOnlyList<PluginSectionInfo>> addModuleSections,
         Action<ulong> decompileFunction,
-        Func<string> getDecompiledCode)
+        Func<string> getDecompiledCode,
+        Action disasmGoBack)
     {
         _navigateDisasm = navigateDisasm;
         _addMenuItem = addMenuItem;
@@ -312,6 +315,7 @@ public class UiApiAdapter : IUiApi
         _addModuleSections = addModuleSections;
         _decompileFunction = decompileFunction;
         _getDecompiledCode = getDecompiledCode;
+        _disasmGoBack = disasmGoBack;
     }
 
     public void NavigateDisassembly(ulong address)
@@ -352,5 +356,10 @@ public class UiApiAdapter : IUiApi
     public string GetDecompiledCode()
     {
         return Application.Current.Dispatcher.Invoke(() => _getDecompiledCode());
+    }
+
+    public void DisasmGoBack()
+    {
+        Application.Current.Dispatcher.Invoke(() => _disasmGoBack());
     }
 }

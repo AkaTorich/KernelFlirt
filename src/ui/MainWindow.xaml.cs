@@ -129,6 +129,11 @@ public partial class MainWindow : Window
             ToggleFullscreen();
             e.Handled = true;
         }
+        else if (e.Key == Key.Escape && VM.CanDisasmGoBack)
+        {
+            VM.DisasmGoBackCommand.Execute(null);
+            e.Handled = true;
+        }
     }
 
     private WindowState _preFullscreenState;
@@ -226,8 +231,7 @@ public partial class MainWindow : Window
     {
         if (sender is DataGrid grid && grid.SelectedItem is ModuleInfo module)
         {
-            VM.DisasmAddress = VM.ResolveEntryPoint(module.BaseAddress);
-            VM.RefreshDisassembly();
+            VM.NavigateDisasmTo(VM.ResolveEntryPoint(module.BaseAddress));
             RefreshDisasmView();
         }
     }
@@ -285,8 +289,9 @@ public partial class MainWindow : Window
     {
         if (KernelModulesGrid.SelectedItem is KernelModuleInfo mod)
         {
+            VM.PushDisasmHistory();
             VM.DisasmAddress = mod.BaseAddress;
-            VM.TargetPid = 4; // kernel PID for memory reads
+            VM.TargetPid = 4;
             VM.RefreshDisassembly();
             RefreshDisasmView();
         }
@@ -328,7 +333,7 @@ public partial class MainWindow : Window
 
     private void NavigateToKernelModule(KernelModuleInfo mod)
     {
-        // Read PE entry point from kernel memory (PID 4)
+        VM.PushDisasmHistory();
         var ep = VM.ResolveKernelEntryPoint(mod.BaseAddress);
         VM.DisasmAddress = ep;
         VM.TargetPid = 4;
@@ -448,8 +453,7 @@ public partial class MainWindow : Window
     {
         if (BpGrid.SelectedItem is Breakpoint bp)
         {
-            VM.DisasmAddress = bp.Address;
-            VM.RefreshDisassembly();
+            VM.NavigateDisasmTo(bp.Address);
             RefreshDisasmView();
         }
     }
