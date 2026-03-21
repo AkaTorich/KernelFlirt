@@ -88,6 +88,7 @@ public class ThemidaPanel : ScrollViewer
     private bool _traceMsvcOep;
     private ulong _msvcInitCookie;
     private ulong _msvcOep;
+    private bool _msvcOepWritten;   // WriteMsvcOep already called — skip re-tracing
 
     // IAT tracing (replaces Magicmida Tracer + TraceImports)
     private RemoteDumper? _dumper;
@@ -264,6 +265,7 @@ public class ThemidaPanel : ScrollViewer
         _tlsCounter = 0;
         _tmGuard = false;
         _traceMsvcOep = false;
+        _msvcOepWritten = false;
         int tlsDirOff = _is64 ? (int)lfanew + 4 + 20 + 0x90 : (int)lfanew + 4 + 20 + 0x80; // IMAGE_DIRECTORY_ENTRY_TLS = 9
         if (tlsDirOff + 8 <= hdr.Length)
         {
@@ -557,9 +559,11 @@ public class ThemidaPanel : ScrollViewer
         }
 
         // Check return addr for MSVC virtualized OEP (Magicmida TryFindCorrectOEP)
+        // Skip if we already wrote the MSVC OEP stub — prevents infinite loop
+        // when __security_init_cookie is also virtualized
         var regs = _api.Memory.ReadRegisters(pid, evt.ThreadId);
         ulong rsp = GetReg(regs, _is64 ? "RSP" : "ESP");
-        if (rsp != 0)
+        if (rsp != 0 && !_msvcOepWritten)
         {
             var retData = _api.Memory.ReadMemory(pid, rsp, (uint)_ptrSize);
             if (retData != null)
@@ -595,22 +599,31 @@ public class ThemidaPanel : ScrollViewer
             }
         }
 
-        // Check for Themida stolen bytes: "sub rsp, 28h" (48 83 EC 28) right before detected OEP.
-        // Themida steals the first instruction and executes it in VM, then jumps to the next one.
-        if (_is64)
+        // If MSVC OEP stub was already written, _oepAddr is already correct — skip to IAT
+        if (_msvcOepWritten && _oepAddr != 0)
         {
-            var pre = _api.Memory.ReadMemory(pid, rip - 4, 4);
-            if (pre != null && pre.Length == 4 &&
-                pre[0] == 0x48 && pre[1] == 0x83 && pre[2] == 0xEC && pre[3] == 0x28)
-            {
-                rip -= 4;
-                _api.Log.Info($"[OEP] Adjusted for stolen 'sub rsp,28h': 0x{rip:X}");
-            }
+            _api.Log.Info($"[OEP] MSVC OEP stub already written, using OEP = 0x{_oepAddr:X}");
+            rip = _oepAddr;
         }
+        else
+        {
+            // Check for Themida stolen bytes: "sub rsp, 28h" (48 83 EC 28) right before detected OEP.
+            // Themida steals the first instruction and executes it in VM, then jumps to the next one.
+            if (_is64)
+            {
+                var pre = _api.Memory.ReadMemory(pid, rip - 4, 4);
+                if (pre != null && pre.Length == 4 &&
+                    pre[0] == 0x48 && pre[1] == 0x83 && pre[2] == 0xEC && pre[3] == 0x28)
+                {
+                    rip -= 4;
+                    _api.Log.Info($"[OEP] Adjusted for stolen 'sub rsp,28h': 0x{rip:X}");
+                }
+            }
 
-        _oepAddr = rip;
-        _api.Log.Warning($"OEP = 0x{_oepAddr:X}");
-        SetStatus($"OEP = 0x{_oepAddr:X}");
+            _oepAddr = rip;
+            _api.Log.Warning($"OEP = 0x{_oepAddr:X}");
+            SetStatus($"OEP = 0x{_oepAddr:X}");
+        }
 
         bool autoIat = false;
         try { Application.Current?.Dispatcher.Invoke(() => autoIat = _chkAutoIat.IsChecked == true); }
@@ -682,6 +695,7 @@ public class ThemidaPanel : ScrollViewer
         Array.Copy(BitConverter.GetBytes(jmpRel), 0, code, 14, 4);
 
         _api.Memory.WriteMemory(pid, _msvcOep, code);
+        _msvcOepWritten = true;
         _api.Log.Warning($"Virtualized MSVC9+ OEP restored: {_msvcOep}");
     }
 
