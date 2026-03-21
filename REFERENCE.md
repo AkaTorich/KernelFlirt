@@ -112,14 +112,31 @@
 
 ### Disassembler / Дизассемблер
 
-| Item / Пункт | EN | RU |
-|---|---|---|
-| Go Back | Return to previous location after navigation | Вернуться к предыдущей позиции после перехода |
-| *Symbol right-click:* | | |
-| Go to {symbol} | Navigate to symbol address | Перейти к адресу символа |
-| Set breakpoint on {symbol} | Set BP at symbol entry | Поставить BP на символ |
-| Copy symbol name | Copy symbol name to clipboard | Скопировать имя символа |
-| Copy address | Copy symbol address to clipboard | Скопировать адрес символа |
+| Item / Пункт | Shortcut | EN | RU |
+|---|---|---|---|
+| Toggle Breakpoint | F2 | Toggle software breakpoint at address | Переключить программный BP на адресе |
+| Toggle HW Breakpoint | — | Toggle hardware execution breakpoint | Переключить аппаратный BP |
+| Set Conditional Breakpoint... | — | Set breakpoint with condition expression | Установить условный BP |
+| Set Log Breakpoint... | — | Set logging breakpoint (no break) | Установить логирующий BP |
+| Run to Cursor | F4 | Execute until this address | Выполнить до этого адреса |
+| Skip Instruction | Ctrl+F8 | Skip instruction (advance RIP) | Пропустить инструкцию (сдвинуть RIP) |
+| Set RIP Here | — | Move RIP to selected address | Переместить RIP на выбранный адрес |
+| Add Bookmark... | — | Bookmark this address | Добавить закладку на адрес |
+| Follow in Dump | — | Show address in hex dump | Показать адрес в hex-дампе |
+| Follow in Disassembler | — | Navigate to operand address | Перейти по адресу операнда |
+| Go Back | — | Return to previous location | Вернуться к предыдущей позиции |
+| Copy Address | — | Copy instruction address | Скопировать адрес инструкции |
+| Copy Line | — | Copy disassembly line | Скопировать строку дизассемблера |
+| Copy All | — | Copy all visible disassembly | Скопировать весь видимый дизасм |
+| Search Binary... | — | Search hex pattern from here | Поиск hex-паттерна |
+| Search Strings... | — | Search text strings from here | Поиск текстовых строк |
+| Decompile Function | — | Decompile function at this address | Декомпилировать функцию |
+| | | | |
+| *Symbol right-click:* | | | |
+| Go to {symbol} | — | Navigate to symbol address | Перейти к адресу символа |
+| Set breakpoint on {symbol} | — | Set BP at symbol entry | Поставить BP на символ |
+| Copy symbol name | — | Copy symbol name to clipboard | Скопировать имя символа |
+| Copy address | — | Copy symbol address to clipboard | Скопировать адрес символа |
 
 ### Decompiler Output / Вывод декомпилятора
 
@@ -349,4 +366,324 @@
 
 ---
 
-*Generated for KernelFlirt v1.2.0 — 168+ menu items across 15 context menus, 6 main menus, and toolbar.*
+## Dialogs / Диалоговые окна
+
+### Process Picker / Выбор процесса
+
+| Button / Кнопка | EN | RU |
+|---|---|---|
+| Refresh | Refresh process list | Обновить список процессов |
+| Attach | Attach to selected process | Подключиться к выбранному процессу |
+| Cancel | Close dialog | Закрыть диалог |
+
+### Settings / Настройки
+
+| Control / Элемент | EN | RU |
+|---|---|---|
+| Theme selector (ComboBox) | Select theme preset | Выбрать тему оформления |
+| Load All | Load all colors from selected theme | Загрузить все цвета из выбранной темы |
+| Save As... | Save current colors as new theme | Сохранить текущие цвета как новую тему |
+| Color pickers (per key) | Click to pick color for each UI element | Выбрать цвет для каждого элемента UI |
+| Plugin tab Fg/Bg pickers | Per-plugin tab header color overrides | Цвета заголовков вкладок для каждого плагина |
+| Reset Defaults | Reset all settings to defaults | Сбросить все настройки по умолчанию |
+| OK | Apply and close | Применить и закрыть |
+| Cancel | Discard and close | Отменить и закрыть |
+
+### Plugin Settings / Настройки плагинов
+
+| Control / Элемент | EN | RU |
+|---|---|---|
+| Enabled (CheckBox per plugin) | Enable/disable plugin | Включить/выключить плагин |
+| Close | Close plugin settings | Закрыть настройки плагинов |
+
+### Color Picker / Выбор цвета
+
+| Control / Элемент | EN | RU |
+|---|---|---|
+| 42 color presets | Quick-select common colors | Быстрый выбор типовых цветов |
+| Hex input field | Enter color as #RRGGBB | Ввести цвет в формате #RRGGBB |
+| OK | Accept selected color | Принять выбранный цвет |
+| Cancel | Discard selection | Отменить выбор |
+
+### Input Dialog / Диалог ввода
+
+| Control / Элемент | EN | RU |
+|---|---|---|
+| Text field | Enter value (address, name, etc.) | Ввести значение (адрес, имя и т.д.) |
+| OK | Accept input | Принять ввод |
+| Cancel | Cancel input | Отменить ввод |
+
+---
+
+## Plugins / Плагины
+
+### AI Assistant / ИИ-ассистент
+
+**Chat Panel / Панель чата:**
+
+| Control / Элемент | Shortcut | EN | RU |
+|---|---|---|---|
+| Message input (TextBox) | Enter | Type message to AI | Ввести сообщение для ИИ |
+| Send (Button) | Enter | Send message | Отправить сообщение |
+| Settings (⚙ Button) | — | Open AI provider settings | Открыть настройки провайдера ИИ |
+| Clear chat | — | Clear conversation history | Очистить историю чата |
+
+**AI Settings Dialog / Настройки ИИ:**
+
+| Control / Элемент | EN | RU |
+|---|---|---|
+| Provider (ComboBox) | Select AI provider (DeepSeek, OpenAI, Anthropic, Ollama, LM Studio, Qwen, Custom) | Выбрать провайдера ИИ |
+| API Endpoint (TextBox) | API URL (auto-filled per provider) | URL API (заполняется автоматически) |
+| API Key (TextBox) | API key (leave empty for local providers) | API ключ (пусто для локальных провайдеров) |
+| Model (TextBox) | Model name (auto-filled per provider) | Название модели |
+| Max Tokens (Slider) | Maximum response tokens (1–8192) | Максимум токенов ответа |
+| Temperature (Slider) | Response randomness (0.0–1.0) | Случайность ответа |
+| System Prompt (TextBox) | System prompt for AI behavior | Системный промпт для поведения ИИ |
+| Reset to Default | Reset all settings to defaults | Сбросить настройки по умолчанию |
+| OK | Save settings | Сохранить настройки |
+| Cancel | Discard changes | Отменить изменения |
+
+**Context Toggles / Контекстные переключатели:**
+
+| CheckBox | EN | RU |
+|---|---|---|
+| Registers | Include CPU registers in AI context | Включить регистры CPU в контекст ИИ |
+| Disasm | Include disassembly at RIP | Включить дизасм на RIP |
+| Stack | Include stack dump | Включить дамп стека |
+| Modules | Include loaded modules | Включить загруженные модули |
+| Threads | Include thread list | Включить список потоков |
+| Breakpoints | Include breakpoint list | Включить список BP |
+
+**AI Tools (used by AI automatically) / Инструменты ИИ (используются автоматически):**
+
+| Tool / Инструмент | EN | RU |
+|---|---|---|
+| decompile | Decompile function to C pseudocode | Декомпилировать функцию в псевдокод C |
+| disassemble | Disassemble instructions at address | Дизассемблировать инструкции по адресу |
+| read_memory | Read memory bytes at address | Прочитать байты памяти по адресу |
+| write_memory | Write bytes to memory | Записать байты в память |
+| read_registers | Read all CPU registers | Прочитать все регистры CPU |
+| resolve_symbol | Resolve symbol name ↔ address | Разрешить имя символа ↔ адрес |
+| list_modules | List loaded modules | Показать загруженные модули |
+| list_threads | List process threads | Показать потоки процесса |
+| set_breakpoint | Set software breakpoint | Установить программный BP |
+| remove_breakpoint | Remove breakpoint by handle | Удалить BP по handle |
+| list_breakpoints | List all breakpoints | Показать все BP |
+| continue_execution | Continue (F5) | Продолжить выполнение |
+| single_step | Step Into (F7) | Шаг внутрь |
+| step_over | Step Over (F8) | Шаг через |
+| step_out | Step Out (Ctrl+F9) | Шаг наружу |
+| run_to_address | Run to specific address | Выполнить до адреса |
+| skip_instruction | Skip instruction (Ctrl+F8) | Пропустить инструкцию |
+| pause_execution | Pause (F12) | Приостановить |
+| wait_for_break | Wait for process to stop | Ожидать остановки процесса |
+| navigate_disasm | Navigate disassembler view | Перейти в дизассемблере |
+| disasm_go_back | Go back in disassembler history | Вернуться назад в дизассемблере |
+
+### Anti-Debug / Антиотладка
+
+**Buttons / Кнопки:**
+
+| Button / Кнопка | EN | RU |
+|---|---|---|
+| Apply Now | Apply all checked anti-debug patches | Применить все отмеченные патчи антиотладки |
+| Check Status | Check current anti-debug status | Проверить текущий статус антиотладки |
+| Select All | Enable all checkboxes | Включить все чекбоксы |
+| Deselect All | Disable all checkboxes | Выключить все чекбоксы |
+| Analyze Protector | Scan process for packer/protector patterns | Сканировать процесс на паттерны протектора |
+| Jump to OEP | Set RIP to discovered OEP (after unpacking) | Установить RIP на найденный OEP |
+| Dump PE | Dump all sections of unpacked PE to file | Дамп секций распакованного PE в файл |
+
+**PEB Group / Группа PEB:**
+
+| CheckBox | Default | EN | RU |
+|---|---|---|---|
+| PEB.BeingDebugged = 0 | ON | IsDebuggerPresent — zero the flag | Обнуление флага IsDebuggerPresent |
+| PEB.NtGlobalFlag = 0 | ON | Clear FLG_HEAP_* debug flags | Очистить отладочные флаги кучи |
+| ProcessHeap.Flags | ON | Set Flags=HEAP_GROWABLE, ForceFlags=0 | Flags=HEAP_GROWABLE, ForceFlags=0 |
+| Zero STARTUPINFO fields | OFF | Zero dwFlags, wShowWindow in PEB | Обнуление dwFlags, wShowWindow в PEB |
+| Patch PEB.OSBuildNumber | OFF | VMProtect Win10 2019+ check bypass | Обход проверки VMProtect Win10 2019+ |
+
+**Kernel Debugger / Отладчик ядра:**
+
+| CheckBox | Default | EN | RU |
+|---|---|---|---|
+| KdDebuggerEnabled = FALSE | OFF | Patch kernel debugger enabled flag | Патч флага отладчика ядра |
+| KdDebuggerNotPresent = TRUE | OFF | Patch kernel debugger not present flag | Патч флага отсутствия отладчика ядра |
+
+**NtQueryInformationProcess:**
+
+| CheckBox | Default | EN | RU |
+|---|---|---|---|
+| Clear DebugPort | ON | Clear EPROCESS.DebugPort (defeats DebugPort/DebugObjectHandle/DebugFlags) | Очистить EPROCESS.DebugPort |
+| DebugObjectHandle | ON | Cleared by DebugPort zeroing | Очищается через обнуление DebugPort |
+| DebugFlags | ON | Cleared by DebugPort zeroing | Очищается через обнуление DebugPort |
+
+**NtQuerySystemInformation:**
+
+| CheckBox | Default | EN | RU |
+|---|---|---|---|
+| SystemKernelDebugger (class 0x23) | OFF | Hook to spoof. WARNING: PatchGuard BSOD! | Хук для спуфинга. ВНИМАНИЕ: BSOD от PatchGuard! |
+
+**NtSetInformationThread:**
+
+| CheckBox | Default | EN | RU |
+|---|---|---|---|
+| ThreadHideFromDebugger | ON | Clear HideFromDebugger bit in all threads | Очистить бит HideFromDebugger во всех потоках |
+
+**NtClose:**
+
+| CheckBox | Default | EN | RU |
+|---|---|---|---|
+| NtClose | ON | Cleared by DebugPort zeroing (no debug object) | Очищается обнулением DebugPort |
+
+**NtQueryObject:**
+
+| CheckBox | Default | EN | RU |
+|---|---|---|---|
+| NtQueryObject | OFF | Hook to hide DebugObject type from enumeration | Хук для скрытия типа DebugObject |
+
+**NtCreateThreadEx:**
+
+| CheckBox | Default | EN | RU |
+|---|---|---|---|
+| NtCreateThreadEx | OFF | Strip THREAD_CREATE_FLAGS_HIDE_FROM_DEBUGGER | Убрать флаг HIDE_FROM_DEBUGGER |
+
+**Window Detection / Обнаружение окон:**
+
+| CheckBox | Default | EN | RU |
+|---|---|---|---|
+| FindWindow | OFF | Hook NtUserFindWindowEx to hide debugger windows | Хук для скрытия окон отладчика |
+
+**Hardware Breakpoints / DRx Protection:**
+
+| CheckBox | Default | EN | RU |
+|---|---|---|---|
+| Hide DR0-DR3 | OFF | Zero DR0-DR3 in target thread context | Обнулить DR0-DR3 в контексте потока |
+| NtGetContextThread | OFF | Hook to zero DR0-DR7 in returned CONTEXT | Хук для обнуления DR в возвращаемом CONTEXT |
+| NtSetContextThread | OFF | Hook to prevent clearing HW breakpoints | Хук для защиты аппаратных BP |
+
+**Timing Checks / Проверки времени:**
+
+| CheckBox | Default | EN | RU |
+|---|---|---|---|
+| Patch RDTSC/CPUID | OFF | NOP out timing instructions. WARNING: breaks CRC checks! | NOP тайминг-инструкций. ВНИМАНИЕ: ломает CRC! |
+| GetTickCount | OFF | Hook to return consistent incremental values | Хук для стабильных значений |
+| QueryPerformanceCounter | OFF | Hook to normalize timing | Хук для нормализации тайминга |
+
+**Miscellaneous / Разное:**
+
+| CheckBox | Default | EN | RU |
+|---|---|---|---|
+| OutputDebugString | OFF | Hook to set LastError correctly | Хук для корректного LastError |
+| BlockInput | OFF | Hook to prevent locking user input | Хук для предотвращения блокировки ввода |
+| NtYieldExecution | OFF | Hook to return STATUS_NO_YIELD_PERFORMED | Хук для возврата NO_YIELD |
+| Remove SeDebugPrivilege | OFF | Remove debug privilege from token | Убрать SeDebugPrivilege из токена |
+
+**Automation / Автоматизация:**
+
+| CheckBox | Default | EN | RU |
+|---|---|---|---|
+| Auto-apply on break | ON | Automatically apply patches when debugger breaks | Автоматически применять патчи при остановке |
+| Auto-detect OEP | OFF | Detect unpacked PE and break at entry. WARNING: slows Themida! | Обнаружить OEP распакованного PE. ВНИМАНИЕ: замедляет Themida! |
+
+### API Monitor / Мониторинг API
+
+**Buttons / Кнопки:**
+
+| Button / Кнопка | EN | RU |
+|---|---|---|
+| Start | Start API monitoring (set breakpoints on selected APIs) | Начать мониторинг API (BP на выбранные API) |
+| Stop | Stop monitoring and remove breakpoints | Остановить мониторинг и убрать BP |
+| Clear | Clear captured call log | Очистить лог вызовов |
+| Export CSV | Export captured calls to CSV file | Экспорт вызовов в CSV файл |
+
+**Filters / Фильтры:**
+
+| Control / Элемент | EN | RU |
+|---|---|---|
+| Filter (TextBox) | Filter captured calls by text | Фильтр вызовов по тексту |
+| Category (ComboBox) | Filter by category: All, File, Registry, Process, Memory, Library, Network, Misc | Фильтр по категории |
+
+**API Categories / Категории API (CheckBoxes):**
+
+| Category | EN | RU |
+|---|---|---|
+| File | File system APIs (CreateFile, ReadFile, WriteFile, etc.) | API файловой системы |
+| Registry | Registry APIs (RegOpenKey, RegQueryValue, etc.) | API реестра |
+| Process | Process APIs (CreateProcess, OpenProcess, etc.) | API процессов |
+| Memory | Memory APIs (VirtualAlloc, VirtualProtect, etc.) | API памяти |
+| Library | Library APIs (LoadLibrary, GetProcAddress, etc.) | API библиотек |
+| Network | Network APIs (connect, send, recv, etc.) | API сети |
+| Misc | Miscellaneous APIs | Разные API |
+
+**Results Grid / Таблица результатов:**
+
+| Column / Колонка | EN | RU |
+|---|---|---|
+| # | Call index | Номер вызова |
+| Time | Timestamp of call | Время вызова |
+| TID | Thread ID (hex) | ID потока (hex) |
+| Module | Calling module name | Имя вызывающего модуля |
+| Function | API function name | Имя API функции |
+| Arguments | Function arguments | Аргументы функции |
+| Return | Return value | Возвращаемое значение |
+
+### Themida / Themida
+
+**Buttons / Кнопки:**
+
+| Button / Кнопка | EN | RU |
+|---|---|---|
+| Detect | Detect Themida/WinLicense protection | Обнаружить защиту Themida/WinLicense |
+| Unpack | Start automated unpacking | Запустить автоматическую распаковку |
+| Fix IAT | Manually fix Import Address Table | Вручную восстановить таблицу импортов |
+| Dump PE | Dump unpacked PE to file | Дамп распакованного PE в файл |
+| Stop | Stop unpacking process | Остановить распаковку |
+
+**Settings / Настройки (CheckBoxes):**
+
+| CheckBox | Default | EN | RU |
+|---|---|---|---|
+| Auto-fix IAT after OEP | ON | Automatically reconstruct IAT when OEP is reached | Автоматически восстановить IAT при достижении OEP |
+| Auto-dump PE after IAT fix | ON | Automatically dump PE after IAT reconstruction | Автоматически дамп PE после восстановления IAT |
+
+### String Decryptor / Расшифровщик строк
+
+**Configuration / Конфигурация:**
+
+| Control / Элемент | EN | RU |
+|---|---|---|
+| Function address (TextBox) | Decrypt function address: `0x140001000`, `module.exe+0x1234`, `mod!FuncName` | Адрес функции дешифровки |
+| Result location (ComboBox) | Where decrypted string is returned: RAX, RCX, RDX, R8, [RSP+offset], Fixed address | Где находится расшифрованная строка |
+| Extra param (TextBox) | Offset or address for [RSP+offset] / Fixed address modes | Смещение или адрес |
+
+**CheckBoxes:**
+
+| CheckBox | Default | EN | RU |
+|---|---|---|---|
+| Unicode (UTF-16) | OFF | Treat decrypted strings as UTF-16 | Расшифрованные строки как UTF-16 |
+| Auto-continue after capture | ON | Automatically continue execution after capturing string | Автоматически продолжить после захвата строки |
+
+**Buttons / Кнопки:**
+
+| Button / Кнопка | EN | RU |
+|---|---|---|
+| Start | Start string tracing (set BP on decrypt function) | Начать трассировку строк (BP на функцию дешифровки) |
+| Stop | Stop tracing and remove breakpoints | Остановить трассировку и убрать BP |
+| Clear | Clear captured strings | Очистить захваченные строки |
+| Copy All | Copy all decrypted strings to clipboard | Скопировать все строки в буфер |
+
+**Results Grid / Таблица результатов:**
+
+| Column / Колонка | EN | RU |
+|---|---|---|
+| # | Capture index | Номер захвата |
+| Caller | Return address of caller (hex) | Адрес возврата вызывающего (hex) |
+| Symbol | Caller symbol name (if resolved) | Имя символа вызывающего |
+| Ptr | Pointer to decrypted string (hex) | Указатель на расшифрованную строку (hex) |
+| Enc | Encoding (A=ASCII, U=UTF-16) | Кодировка (A=ASCII, U=UTF-16) |
+| Decrypted String | Captured decrypted string value | Захваченная расшифрованная строка |
+
+---
+
