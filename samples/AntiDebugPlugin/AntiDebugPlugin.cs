@@ -41,9 +41,12 @@ public class AntiDebugPlugin : IKernelFlirtPlugin
 
     private void OnBreakState()
     {
+        // Skip ApplyPatches if this break was an API hook (already handled + continued)
+        if (_panel?._lastBreakWasApiHook == true)
+            return;
+
         if (_panel?.AutoApply == true && _api is { IsBreakState: true })
         {
-            // Invoke synchronously so patches are applied before user interacts
             Application.Current.Dispatcher.Invoke(() => _panel.ApplyPatches());
         }
     }
@@ -130,6 +133,8 @@ public class AntiDebugPanel : ScrollViewer
     private ulong _unpackedPeBase = 0;
     private string _originalModuleName = "unpacked.exe";
     private List<(string Name, uint Rva, uint VirtualSize, uint Characteristics)> _unpackedSections = new();
+
+    internal volatile bool _lastBreakWasApiHook; // suppress ApplyPatches for API hook hits
 
     // Breakpoint-based API hooks state
     private readonly Dictionary<ulong, ApiHookInfo> _apiHooks = new();
@@ -444,7 +449,11 @@ public class AntiDebugPanel : ScrollViewer
     {
         // Check API hooks first (these should auto-continue)
         if (_apiHooksInstalled && HandleApiHookEvent(evt))
+        {
+            _lastBreakWasApiHook = true;
             return true;
+        }
+        _lastBreakWasApiHook = false;
 
         if (!_unpackerActive) return false;
 
