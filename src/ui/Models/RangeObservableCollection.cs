@@ -35,6 +35,27 @@ public class RangeObservableCollection<T> : ObservableCollection<T>
         OnPropertyChanged(new PropertyChangedEventArgs("Item[]"));
     }
 
+    /// <summary>Add item without firing CollectionChanged (for incremental disasm loading).</summary>
+    public void AddSilent(T item) { _suppress = true; Items.Add(item); _suppress = false; }
+
+    /// <summary>Insert items at index without firing CollectionChanged.</summary>
+    public void InsertRangeSilent(int index, IList<T> items)
+    {
+        _suppress = true;
+        for (int i = 0; i < items.Count; i++)
+            Items.Insert(index + i, items[i]);
+        _suppress = false;
+    }
+
+    /// <summary>Remove a range without firing CollectionChanged.</summary>
+    public void RemoveRangeSilent(int index, int count)
+    {
+        _suppress = true;
+        for (int i = 0; i < count; i++)
+            Items.RemoveAt(index);
+        _suppress = false;
+    }
+
     protected override void OnCollectionChanged(NotifyCollectionChangedEventArgs e)
     {
         if (!_suppress)

@@ -23,6 +23,16 @@ public partial class MainWindow : Window
         if (VM.ThemeColors.Count > 0)
             ApplyThemeColors(VM.ThemeColors);
         VM.Instructions.CollectionChanged += (_, _) => RefreshDisasmView();
+        VM.DisasmAppend += (instrs, trimTop) =>
+        {
+            DisasmControl.AppendInstructions(instrs);
+            if (trimTop > 0) DisasmControl.TrimTop(trimTop);
+        };
+        VM.DisasmPrepend += (instrs, trimBottom) =>
+        {
+            DisasmControl.PrependInstructions(instrs);
+            if (trimBottom > 0) DisasmControl.TrimBottom(trimBottom);
+        };
         VM.BreakpointMarkersChanged += () =>
         {
             ImportsGrid.Items.Refresh();

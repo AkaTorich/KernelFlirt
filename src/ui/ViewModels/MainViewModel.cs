@@ -3257,16 +3257,107 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (!IsConnected || TargetPid == 0) return;
         var addr = DisasmAddress;
         var pid = TargetPid;
-        var data = await Task.Run(() => _driver.ReadMemory(pid, addr, 4096));
+        var data = await Task.Run(() => _driver.ReadMemory(pid, addr, 8192));
         if (data == null) return;
 
         PatchBpBytesForDisasm(data, addr);
-        var instrs = _disasm.Disassemble(data, addr);
+        var instrs = _disasm.Disassemble(data, addr, 512);
         AnnotateInstructionsWithSymbols(instrs);
         foreach (var instr in instrs)
             instr.HasBreakpoint = Breakpoints.Any(b => b.Address == instr.Address);
         Instructions.ReplaceAll(instrs);
         SyncBreakpointMarkers();
+        _disasmLoadingMore = false;
+    }
+
+    // ── Dynamic disassembly loading ─────────────────────────────────────
+    private bool _disasmLoadingMore;
+    private const int DisasmMaxInstructions = 2000;
+
+    /// <summary>Fired when new instructions should be appended to the disasm view.</summary>
+    public event Action<List<Instruction>, int>? DisasmAppend;   // (newInstrs, trimTopCount)
+    /// <summary>Fired when new instructions should be prepended to the disasm view.</summary>
+    public event Action<List<Instruction>, int>? DisasmPrepend;  // (newInstrs, trimBottomCount)
+
+    public async void DisassembleMoreDown()
+    {
+        if (_disasmLoadingMore || !IsConnected || TargetPid == 0) return;
+        if (Instructions.Count == 0) return;
+        _disasmLoadingMore = true;
+
+        var lastInstr = Instructions[Instructions.Count - 1];
+        ulong nextAddr = lastInstr.Address + (ulong)lastInstr.Size;
+        var pid = TargetPid;
+
+        var data = await Task.Run(() => _driver.ReadMemory(pid, nextAddr, 1024));
+        if (data == null || data.Length == 0) { _disasmLoadingMore = false; return; }
+
+        PatchBpBytesForDisasm(data, nextAddr);
+        var newInstrs = _disasm.Disassemble(data, nextAddr, 64);
+        if (newInstrs.Count == 0) { _disasmLoadingMore = false; return; }
+
+        AnnotateInstructionsWithSymbols(newInstrs);
+        foreach (var instr in newInstrs)
+            instr.HasBreakpoint = Breakpoints.Any(b => b.Address == instr.Address);
+
+        // Add to model without triggering full rebuild
+        foreach (var instr in newInstrs)
+            Instructions.AddSilent(instr);
+
+        int trimTop = 0;
+        if (Instructions.Count > DisasmMaxInstructions)
+        {
+            trimTop = Instructions.Count - DisasmMaxInstructions;
+            Instructions.RemoveRangeSilent(0, trimTop);
+            if (Instructions.Count > 0)
+                DisasmAddress = Instructions[0].Address;
+        }
+
+        DisasmAppend?.Invoke(newInstrs, trimTop);
+        _disasmLoadingMore = false;
+    }
+
+    public async void DisassembleMoreUp()
+    {
+        if (_disasmLoadingMore || !IsConnected || TargetPid == 0) return;
+        if (Instructions.Count == 0) return;
+        _disasmLoadingMore = true;
+
+        ulong firstAddr = Instructions[0].Address;
+        ulong readSize = 1024;
+        ulong readAddr = firstAddr > readSize ? firstAddr - readSize : 0;
+        if (readAddr == 0) { _disasmLoadingMore = false; return; }
+
+        var pid = TargetPid;
+        var data = await Task.Run(() => _driver.ReadMemory(pid, readAddr, (uint)readSize));
+        if (data == null || data.Length == 0) { _disasmLoadingMore = false; return; }
+
+        PatchBpBytesForDisasm(data, readAddr);
+        var allInstrs = _disasm.Disassemble(data, readAddr, 128);
+        var prepend = allInstrs.Where(i => i.Address < firstAddr).ToList();
+        // Take only last 64 to avoid too many at once
+        if (prepend.Count > 64)
+            prepend = prepend.Skip(prepend.Count - 64).ToList();
+        if (prepend.Count == 0) { _disasmLoadingMore = false; return; }
+
+        AnnotateInstructionsWithSymbols(prepend);
+        foreach (var instr in prepend)
+            instr.HasBreakpoint = Breakpoints.Any(b => b.Address == instr.Address);
+
+        Instructions.InsertRangeSilent(0, prepend);
+
+        int trimBottom = 0;
+        if (Instructions.Count > DisasmMaxInstructions)
+        {
+            trimBottom = Instructions.Count - DisasmMaxInstructions;
+            Instructions.RemoveRangeSilent(Instructions.Count - trimBottom, trimBottom);
+        }
+
+        if (Instructions.Count > 0)
+            DisasmAddress = Instructions[0].Address;
+
+        DisasmPrepend?.Invoke(prepend, trimBottom);
+        _disasmLoadingMore = false;
     }
 
     /// <summary>

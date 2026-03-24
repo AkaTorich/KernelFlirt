@@ -74,6 +74,34 @@ public partial class DisasmView : UserControl
     public DisasmView()
     {
         InitializeComponent();
+        ScrollArea.ScrollChanged += OnScrollChanged;
+    }
+
+    private void OnScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        var vm = GetViewModel();
+        if (vm == null) return;
+
+        // Near bottom — load more down
+        if (e.VerticalOffset + e.ViewportHeight >= e.ExtentHeight - 50 && e.ExtentHeight > 0)
+        {
+            vm.DisassembleMoreDown();
+        }
+        // Near top — load more up
+        else if (e.VerticalOffset <= 50 && e.ExtentHeight > 0 && e.VerticalChange < 0)
+        {
+            // Remember scroll position to avoid jumping
+            double oldExtent = e.ExtentHeight;
+            vm.DisassembleMoreUp();
+            // After prepend, adjust scroll to keep same view position
+            Dispatcher.InvokeAsync(() =>
+            {
+                double newExtent = ScrollArea.ExtentHeight;
+                double delta = newExtent - oldExtent;
+                if (delta > 0)
+                    ScrollArea.ScrollToVerticalOffset(ScrollArea.VerticalOffset + delta);
+            }, System.Windows.Threading.DispatcherPriority.Loaded);
+        }
     }
 
     private MainViewModel? GetViewModel()
@@ -81,12 +109,15 @@ public partial class DisasmView : UserControl
         return Window.GetWindow(this)?.DataContext as MainViewModel;
     }
 
+    private ulong? _currentRip;
+
     /// <summary>
     /// Renders a list of instructions with OllyDbg-style syntax highlighting.
     /// </summary>
     public void SetInstructions(ObservableCollection<Instruction> instructions, ulong? currentRip = null)
     {
         _instructions = instructions;
+        _currentRip = currentRip;
         InstructionList.Items.Clear();
         _selectedIndex = -1;
 
@@ -98,6 +129,52 @@ public partial class DisasmView : UserControl
             panel.MouseLeftButtonDown += OnLineClick;
             InstructionList.Items.Add(panel);
         }
+    }
+
+    /// <summary>Append instructions to the bottom of the view (called by scroll-down loading).</summary>
+    public void AppendInstructions(IReadOnlyList<Instruction> newInstrs)
+    {
+        if (_instructions == null) return;
+        int startIdx = InstructionList.Items.Count;
+        for (int i = 0; i < newInstrs.Count; i++)
+        {
+            var panel = CreateInstructionLine(newInstrs[i], _currentRip);
+            panel.Tag = startIdx + i;
+            panel.MouseLeftButtonDown += OnLineClick;
+            InstructionList.Items.Add(panel);
+        }
+    }
+
+    /// <summary>Prepend instructions to the top of the view (called by scroll-up loading).</summary>
+    public void PrependInstructions(IReadOnlyList<Instruction> newInstrs)
+    {
+        if (_instructions == null) return;
+        for (int i = newInstrs.Count - 1; i >= 0; i--)
+        {
+            var panel = CreateInstructionLine(newInstrs[i], _currentRip);
+            panel.Tag = 0;
+            panel.MouseLeftButtonDown += OnLineClick;
+            InstructionList.Items.Insert(0, panel);
+        }
+        // Reindex all tags
+        for (int i = 0; i < InstructionList.Items.Count; i++)
+            if (InstructionList.Items[i] is Border b) b.Tag = i;
+    }
+
+    /// <summary>Remove N items from the top.</summary>
+    public void TrimTop(int count)
+    {
+        for (int i = 0; i < count && InstructionList.Items.Count > 0; i++)
+            InstructionList.Items.RemoveAt(0);
+        for (int i = 0; i < InstructionList.Items.Count; i++)
+            if (InstructionList.Items[i] is Border b) b.Tag = i;
+    }
+
+    /// <summary>Remove N items from the bottom.</summary>
+    public void TrimBottom(int count)
+    {
+        for (int i = 0; i < count && InstructionList.Items.Count > 0; i++)
+            InstructionList.Items.RemoveAt(InstructionList.Items.Count - 1);
     }
 
     private Border CreateInstructionLine(Instruction instr, ulong? currentRip)
