@@ -1,5 +1,39 @@
 # Changelog
 
+## v1.3.0 — 2026-03-24
+
+### New Plugin: MCP Server
+
+- **MCP (Model Context Protocol) Server plugin** — exposes the full debugger API as an MCP SSE server. Any MCP-compatible AI client (Claude Code, Cursor, Windsurf, etc.) can connect and control the debugger remotely.
+- **62 debugger tools** available over MCP — the most comprehensive debugger AI integration available:
+  - **State**: `get_debugger_state`, `read_registers`
+  - **Breakpoints** (5 types): `set_breakpoint`, `set_hardware_breakpoint`, `set_hw_write_watchpoint`, `set_hw_access_watchpoint`, `set_memory_breakpoint`, `remove_breakpoint`, `list_breakpoints`
+  - **Memory**: `read_memory`, `read_pointer`, `read_string`, `read_unicode_string`, `read_unicode_struct`, `write_memory`, `search_memory`, `compare_memory`, `allocate_memory`, `free_memory`, `protect_memory`
+  - **Registers**: `write_rip`, `write_rip_and_rsp`
+  - **Disassembly**: `disassemble`, `decompile`, `navigate_disasm`, `disasm_go_back`
+  - **Symbols**: `resolve_symbol`, `list_strings`, `xrefs_to`
+  - **PE analysis**: `dump_pe_header`, `dump_imports`, `dump_exports`, `dump_peb`, `dump_teb`, `dump_stack`
+  - **Modules**: `list_modules`, `list_kernel_modules`, `refresh_modules`, `add_unpacked_module`, `add_module_sections`
+  - **Process/Threads**: `list_processes`, `list_threads`, `suspend_thread`, `resume_thread`, `get_peb_address`
+  - **Execution**: `continue_execution`, `single_step`, `step_over`, `step_out`, `run_to_address`, `skip_instruction`, `pause_execution`, `wait_for_break`
+  - **Patching**: `nop_instruction`, `patch_jump`
+  - **Anti-debug bypass**: `clear_debug_port`, `clear_thread_hide`, `install_ntqsi_hook`, `remove_ntqsi_hook`, `probe_ntqsi_hook`, `spoof_shared_user_data`
+- **Settings panel** in "MCP Server" tab — status indicator (green/gray), port configuration with persistence, start/stop buttons, copyable `.mcp.json` snippet, real-time activity log with timestamps.
+- **Server instructions** embedded in MCP — tells AI clients to prefer `decompile` over `disassemble` and outlines the recommended analysis workflow.
+- **WPF Dispatcher marshaling** — all UI-thread and execution-control API calls are dispatched via `Dispatcher.Invoke`, ensuring correct behavior when called from MCP's HttpListener threads.
+- **RIP-tracking `wait_for_break`** — records RIP before resume and detects state changes by RIP delta, not phase transitions. Works correctly even when breakpoints hit instantly (<1ms).
+
+### AI Assistant Plugin
+
+- **14 new tools** added (now 62 total, matching MCP): `write_rip_and_rsp`, `add_module_sections`, `dump_stack`, `dump_peb`, `dump_teb`, `dump_pe_header`, `dump_imports`, `dump_exports`, `xrefs_to`, `nop_instruction`, `patch_jump`, `list_strings`, `compare_memory`, `read_unicode_struct`.
+- **`wait_for_break` fix** — same RIP-tracking approach as MCP, fixing hangs when breakpoints trigger faster than the poll interval.
+- **Updated default system prompt** — analysis workflow guidance: decompile-first, read_string for references, read_pointer for vtables, resolve_symbol before decompiling sub-functions.
+
+### Themes
+
+- **MCP Server tab colors** added to all 9 themes (green/teal tones — network/server style).
+- **MCP Settings panel** fully themed via `SetResourceReference` — `PluginBgBrush`, `PluginFgBrush`, `PluginFgDimBrush`, `PluginAccentBrush`, `PluginControlBgBrush`, `PluginButtonBgBrush`, `PluginBorderBrush`. Automatically adapts to theme changes.
+
 ## v1.2.0 — 2026-03-21
 
 ### AI Assistant Plugin
