@@ -197,7 +197,8 @@ $pluginProjects = @(
     "samples\ThemidaPlugin\ThemidaPlugin.csproj",
     "samples\ApiMonitorPlugin\ApiMonitorPlugin.csproj",
     "samples\StringDecryptorPlugin\StringDecryptorPlugin.csproj",
-    "samples\AiAssistantPlugin\AiAssistantPlugin.csproj"
+    "samples\AiAssistantPlugin\AiAssistantPlugin.csproj",
+    "samples\McpServerPlugin\McpServerPlugin.csproj"
 )
 foreach ($pluginRelPath in $pluginProjects) {
     $pluginProj = Join-Path $Root $pluginRelPath
@@ -406,6 +407,7 @@ Write-Host "  bin\Loader\      KfLoader.exe"
 Write-Host "  bin\Relay\       KfRelay.exe"
 Write-Host "  bin\TestDriver\  KfTestDriver.sys"
 Write-Host "  bin\UI\          KernelFlirt.exe"
+Write-Host "  bin\UI\plugins\  McpServerPlugin.dll  (MCP server on http://localhost:13371/sse)"
 Write-Host "  bin\Samples\     antidebug_test.exe, xor_strings.exe, rc4_strings.exe"
 Write-Host ""
 Write-Host "Usage:" -ForegroundColor Yellow
