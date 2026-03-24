@@ -16,6 +16,28 @@ public class McpDebuggerTools
 
     public McpDebuggerTools(IDebuggerApi api) => _api = api;
 
+    // ── UI-thread helpers ─────────────────────────────────────────────────────
+    // The debugger API properties (IsBreakState, etc.) and execution commands
+    // (Continue, Step*) are only valid on the WPF UI thread.  MCP calls arrive
+    // on HttpListener threads, so we must marshal through the Dispatcher.
+
+    private void OnUi(Action action)
+    {
+        var d = System.Windows.Application.Current?.Dispatcher;
+        if (d != null && !d.CheckAccess())
+            d.Invoke(action);
+        else
+            action();
+    }
+
+    private T OnUi<T>(Func<T> func)
+    {
+        var d = System.Windows.Application.Current?.Dispatcher;
+        if (d != null && !d.CheckAccess())
+            return d.Invoke(func);
+        return func();
+    }
+
     // ── Tool definitions ─────────────────────────────────────────────────────
 
     public object[] GetToolDefinitions() =>
@@ -737,13 +759,13 @@ public class McpDebuggerTools
     private string ExecNavigateDisasm(JsonElement a)
     {
         var addr = ParseHex(a.GetProperty("address").GetString()!);
-        _api.UI.NavigateDisassembly(addr);
+        OnUi(() => _api.UI.NavigateDisassembly(addr));
         return $"Navigated to 0x{addr:X}";
     }
 
     private string ExecDisasmGoBack()
     {
-        _api.UI.DisasmGoBack();
+        OnUi(() => _api.UI.DisasmGoBack());
         return "Navigated back";
     }
 
@@ -751,20 +773,20 @@ public class McpDebuggerTools
     {
         if (!_api.IsBreakState) return "Error: process must be in break state";
         var addr = ParseHex(a.GetProperty("address").GetString()!);
-        _api.UI.DecompileFunction(addr);
+        OnUi(() => _api.UI.DecompileFunction(addr));
 
         var sw   = System.Diagnostics.Stopwatch.StartNew();
-        var last = _api.UI.GetDecompiledCode();
+        var last = OnUi(() => _api.UI.GetDecompiledCode());
         while (sw.ElapsedMilliseconds < 30_000)
         {
             Thread.Sleep(200);
-            var code = _api.UI.GetDecompiledCode();
+            var code = OnUi(() => _api.UI.GetDecompiledCode());
             if (!string.IsNullOrEmpty(code) && code != last && !code.Contains("Decompiling..."))
                 return code.Length > 3000 ? code[..3000] + "\n// ... (truncated)" : code;
         }
-        var final = _api.UI.GetDecompiledCode();
-        if (!string.IsNullOrEmpty(final) && !final.Contains("Decompiling..."))
-            return final.Length > 3000 ? final[..3000] + "\n// ... (truncated)" : final;
+        var final_ = OnUi(() => _api.UI.GetDecompiledCode());
+        if (!string.IsNullOrEmpty(final_) && !final_.Contains("Decompiling..."))
+            return final_.Length > 3000 ? final_[..3000] + "\n// ... (truncated)" : final_;
         return "Decompilation timed out — RetDec may not be installed";
     }
 
@@ -857,86 +879,103 @@ public class McpDebuggerTools
 
     // ── Execution control ────────────────────────────────────────────────────
 
+    private void SnapshotRip()
+    {
+        var regs = _api.Memory.ReadRegisters(_api.TargetPid, _api.SelectedThreadId);
+        _ripBeforeResume = regs?.FirstOrDefault(r => r.Name is "RIP" or "EIP")?.Value ?? 0;
+    }
+
     private string ExecContinue()
     {
-        if (!_api.IsBreakState) return "Error: process is not in break state";
-        _api.Continue();
+        if (!OnUi(() => _api.IsBreakState)) return "Error: process is not in break state";
+        SnapshotRip();
+        OnUi(() => _api.Continue());
         return "Resumed (F9). Call wait_for_break before reading state.";
     }
 
     private string ExecSingleStep()
     {
-        if (!_api.IsBreakState) return "Error: process is not in break state";
-        _api.SingleStep();
+        if (!OnUi(() => _api.IsBreakState)) return "Error: process is not in break state";
+        OnUi(() => _api.SingleStep());
         return "Step Into (F7) executed";
     }
 
     private string ExecStepOver()
     {
-        if (!_api.IsBreakState) return "Error: process is not in break state";
-        _api.StepOver();
+        if (!OnUi(() => _api.IsBreakState)) return "Error: process is not in break state";
+        OnUi(() => _api.StepOver());
         return "Step Over (F8) executed";
     }
 
     private string ExecStepOut()
     {
-        if (!_api.IsBreakState) return "Error: process is not in break state";
-        _api.StepOut();
+        if (!OnUi(() => _api.IsBreakState)) return "Error: process is not in break state";
+        OnUi(() => _api.StepOut());
         return "Step Out (Ctrl+F9) executed";
     }
 
     private string ExecRunToAddress(JsonElement a)
     {
-        if (!_api.IsBreakState) return "Error: process is not in break state";
+        if (!OnUi(() => _api.IsBreakState)) return "Error: process is not in break state";
         var addr = ParseHex(a.GetProperty("address").GetString()!);
-        _api.RunToCursor(addr);
+        SnapshotRip();
+        OnUi(() => _api.RunToCursor(addr));
         return $"Running to 0x{addr:X}{Sym(_api.Symbols.ResolveAddress(addr))} (F4). Call wait_for_break after.";
     }
 
     private string ExecSkipInstruction()
     {
-        if (!_api.IsBreakState) return "Error: process is not in break state";
-        _api.SkipInstruction();
+        if (!OnUi(() => _api.IsBreakState)) return "Error: process is not in break state";
+        OnUi(() => _api.SkipInstruction());
         return "Instruction skipped (Ctrl+F8)";
     }
 
     private string ExecPause()
     {
-        if (_api.IsBreakState) return "Process is already paused";
-        _api.Pause();
+        if (OnUi(() => _api.IsBreakState)) return "Process is already paused";
+        OnUi(() => _api.Pause());
         return "Pause (F12) sent";
     }
+
+    // Shared: last RIP before continue/run was issued, used by wait_for_break
+    private ulong _ripBeforeResume;
 
     private string ExecWaitForBreak(JsonElement a)
     {
         int timeout = 10_000;
         if (a.TryGetProperty("timeout_ms", out var tp)) timeout = tp.GetInt32();
 
-        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var sw        = System.Diagnostics.Stopwatch.StartNew();
+        var startRip  = _ripBeforeResume;
 
-        // Phase 1 — wait for process to LEAVE break state
-        if (_api.IsBreakState)
-        {
-            while (sw.ElapsedMilliseconds < 2000)
-            {
-                if (!_api.IsBreakState) break;
-                Thread.Sleep(20);
-            }
-            if (_api.IsBreakState)
-                return "Process did not leave break state — was Continue called?";
-        }
-
-        // Phase 2 — wait for process to ENTER break state
+        // Poll until: (a) we're in break state AND (b) RIP changed from pre-resume value.
+        // This handles the case where the process resumes and breaks again so fast
+        // that we never observe IsBreakState == false.
         while (sw.ElapsedMilliseconds < timeout)
         {
-            if (_api.IsBreakState)
+            bool inBreak = OnUi(() => _api.IsBreakState);
+            if (inBreak)
             {
                 var regs = _api.Memory.ReadRegisters(_api.TargetPid, _api.SelectedThreadId);
                 var rip  = regs?.FirstOrDefault(r => r.Name is "RIP" or "EIP")?.Value ?? 0;
-                var sym  = rip != 0 ? _api.Symbols.ResolveAddress(rip) : null;
-                return $"Break at RIP=0x{rip:X}{Sym(sym)} after {sw.ElapsedMilliseconds}ms";
+
+                if (rip != startRip || sw.ElapsedMilliseconds > 500)
+                {
+                    // RIP changed → execution happened; or enough time passed → report current state
+                    var sym = rip != 0 ? _api.Symbols.ResolveAddress(rip) : null;
+                    return $"Break at RIP=0x{rip:X}{Sym(sym)} after {sw.ElapsedMilliseconds}ms";
+                }
             }
-            Thread.Sleep(20);
+            Thread.Sleep(30);
+        }
+
+        // Final check
+        if (OnUi(() => _api.IsBreakState))
+        {
+            var regs = _api.Memory.ReadRegisters(_api.TargetPid, _api.SelectedThreadId);
+            var rip  = regs?.FirstOrDefault(r => r.Name is "RIP" or "EIP")?.Value ?? 0;
+            var sym  = rip != 0 ? _api.Symbols.ResolveAddress(rip) : null;
+            return $"Break at RIP=0x{rip:X}{Sym(sym)} after {sw.ElapsedMilliseconds}ms";
         }
 
         return $"Timeout after {timeout}ms — process still running. Use pause_execution to force break.";

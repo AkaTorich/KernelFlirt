@@ -267,6 +267,94 @@ public class DebuggerTools
         MakeTool("refresh_modules",
             "Force a refresh of the module list and sections tab in the UI",
             new { type = "object", properties = new { } }),
+
+        MakeTool("write_rip_and_rsp",
+            "Redirect execution by changing both RIP and RSP atomically (useful for IAT unpack / hijack)",
+            new { type = "object", properties = new {
+                rip = new { type = "string", description = "New RIP value (hex)" },
+                rsp = new { type = "string", description = "New RSP value (hex)" }
+            }, required = new[] { "rip", "rsp" } }),
+
+        MakeTool("add_module_sections",
+            "Manually provide section table for a module when PE header is destroyed by a packer",
+            new { type = "object", properties = new {
+                module_name = new { type = "string", description = "Module name (must already be in module list)" },
+                sections    = new { type = "string", description = "JSON array: [{\"name\":\".text\",\"va\":\"0x1000\",\"vsize\":4096,\"chr\":0x60000020}, ...]" }
+            }, required = new[] { "module_name", "sections" } }),
+
+        // ── High-level analysis ─────────────────────────────────────────
+        MakeTool("dump_stack",
+            "Read the current stack (from RSP) and display each QWORD with symbol resolution",
+            new { type = "object", properties = new {
+                count = new { type = "integer", description = "Number of QWORD entries (default 16, max 64)" }
+            } }),
+
+        MakeTool("dump_peb",
+            "Parse and display key PEB fields: ImageBase, Ldr, BeingDebugged, NtGlobalFlag, ProcessParameters, Heap, OS",
+            new { type = "object", properties = new { } }),
+
+        MakeTool("dump_teb",
+            "Parse and display key TEB fields: StackBase, StackLimit, PEB, LastError, ThreadId",
+            new { type = "object", properties = new { } }),
+
+        MakeTool("dump_pe_header",
+            "Parse DOS/PE headers and section table at a base address. Shows EntryPoint, sections, data directories.",
+            new { type = "object", properties = new {
+                address = new { type = "string", description = "Hex base address of PE (e.g. module base)" }
+            }, required = new[] { "address" } }),
+
+        MakeTool("dump_imports",
+            "Parse the Import Address Table (IAT) of a PE. Shows each imported DLL and its functions.",
+            new { type = "object", properties = new {
+                address = new { type = "string", description = "Hex base address of the PE" }
+            }, required = new[] { "address" } }),
+
+        MakeTool("dump_exports",
+            "Parse the Export Directory of a PE/DLL. Shows all exported function names, ordinals, and RVAs.",
+            new { type = "object", properties = new {
+                address = new { type = "string", description = "Hex base address of the PE" }
+            }, required = new[] { "address" } }),
+
+        MakeTool("xrefs_to",
+            "Scan .text section for CALL/JMP/LEA references to a target address (max 100 results)",
+            new { type = "object", properties = new {
+                address = new { type = "string", description = "Hex target address to find references to" }
+            }, required = new[] { "address" } }),
+
+        MakeTool("nop_instruction",
+            "NOP-out the instruction at address. Reads instruction length and replaces with 0x90 bytes.",
+            new { type = "object", properties = new {
+                address = new { type = "string", description = "Hex address of the instruction to NOP" }
+            }, required = new[] { "address" } }),
+
+        MakeTool("patch_jump",
+            "Force a conditional jump to always-jump or never-jump. 'always' = JMP, 'never' = NOPs.",
+            new { type = "object", properties = new {
+                address = new { type = "string", description = "Hex address of the conditional jump" },
+                mode    = new { type = "string", description = "'always' = force jump, 'never' = NOP" }
+            }, required = new[] { "address", "mode" } }),
+
+        MakeTool("list_strings",
+            "Scan a memory range for printable ASCII and Unicode strings (like the 'strings' utility)",
+            new { type = "object", properties = new {
+                address    = new { type = "string",  description = "Hex start address (default: main module .rdata)" },
+                size       = new { type = "integer", description = "Range size in bytes (default: .rdata size, max 1 MB)" },
+                min_length = new { type = "integer", description = "Minimum string length (default 4)" }
+            } }),
+
+        MakeTool("compare_memory",
+            "Compare two memory regions byte-by-byte and show differences",
+            new { type = "object", properties = new {
+                addr1 = new { type = "string",  description = "Hex address of first region" },
+                addr2 = new { type = "string",  description = "Hex address of second region" },
+                size  = new { type = "integer", description = "Number of bytes to compare (max 4096)" }
+            }, required = new[] { "addr1", "addr2", "size" } }),
+
+        MakeTool("read_unicode_struct",
+            "Read a UNICODE_STRING structure (Length + MaxLength + Buffer pointer) and return the string",
+            new { type = "object", properties = new {
+                address = new { type = "string", description = "Hex address of the UNICODE_STRING struct" }
+            }, required = new[] { "address" } }),
     ];
 
     /// <summary>
@@ -348,6 +436,22 @@ public class DebuggerTools
                 // UI
                 "add_unpacked_module"      => ExecAddUnpackedModule(root),
                 "refresh_modules"          => ExecRefreshModules(),
+                "write_rip_and_rsp"        => ExecWriteRipAndRsp(root),
+                "add_module_sections"      => ExecAddModuleSections(root),
+
+                // High-level analysis
+                "dump_stack"               => ExecDumpStack(root),
+                "dump_peb"                 => ExecDumpPeb(),
+                "dump_teb"                 => ExecDumpTeb(),
+                "dump_pe_header"           => ExecDumpPeHeader(root),
+                "dump_imports"             => ExecDumpImports(root),
+                "dump_exports"             => ExecDumpExports(root),
+                "xrefs_to"                 => ExecXrefsTo(root),
+                "nop_instruction"          => ExecNopInstruction(root),
+                "patch_jump"               => ExecPatchJump(root),
+                "list_strings"             => ExecListStrings(root),
+                "compare_memory"           => ExecCompareMemory(root),
+                "read_unicode_struct"      => ExecReadUnicodeStruct(root),
 
                 _ => $"Unknown tool: {toolName}"
             };
@@ -843,9 +947,18 @@ public class DebuggerTools
 
     // ── Execution control ────────────────────────────────────────────────────
 
+    private ulong _ripBeforeResume;
+
+    private void SnapshotRip()
+    {
+        var regs = _api.Memory.ReadRegisters(_api.TargetPid, _api.SelectedThreadId);
+        _ripBeforeResume = regs?.FirstOrDefault(r => r.Name is "RIP" or "EIP")?.Value ?? 0;
+    }
+
     private string ExecContinue()
     {
         if (!_api.IsBreakState) return "Error: Process is not in break state";
+        SnapshotRip();
         _api.Continue();
         return "Process resumed (Run/F9). Call wait_for_break before reading memory/registers.";
     }
@@ -875,6 +988,7 @@ public class DebuggerTools
     {
         if (!_api.IsBreakState) return "Error: Process is not in break state";
         var addr = ParseAddress(args.GetProperty("address").GetString()!);
+        SnapshotRip();
         _api.RunToCursor(addr);
         var sym    = _api.Symbols.ResolveAddress(addr);
         var symStr = sym != null ? $" ({sym})" : "";
@@ -901,32 +1015,33 @@ public class DebuggerTools
         if (args.TryGetProperty("timeout_ms", out var toProp))
             timeoutMs = toProp.GetInt32();
 
-        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var sw       = System.Diagnostics.Stopwatch.StartNew();
+        var startRip = _ripBeforeResume;
 
-        // Phase 1: Wait for process to LEAVE break state (Continue is async on UI thread)
-        if (_api.IsBreakState)
-        {
-            while (sw.ElapsedMilliseconds < 2000)
-            {
-                if (!_api.IsBreakState) break;
-                Thread.Sleep(20);
-            }
-            if (_api.IsBreakState)
-                return "Process did not leave break state — Continue may not have been called";
-        }
-
-        // Phase 2: Wait for process to ENTER break state (hit BP / complete step)
         while (sw.ElapsedMilliseconds < timeoutMs)
         {
             if (_api.IsBreakState)
             {
                 var regs = _api.Memory.ReadRegisters(_api.TargetPid, _api.SelectedThreadId);
                 var rip  = regs?.FirstOrDefault(r => r.Name is "RIP" or "EIP")?.Value ?? 0;
-                var sym  = rip != 0 ? _api.Symbols.ResolveAddress(rip) : null;
-                var symStr = sym != null ? $" ({sym})" : "";
-                return $"Break at RIP=0x{rip:X}{symStr} after {sw.ElapsedMilliseconds}ms";
+
+                if (rip != startRip || sw.ElapsedMilliseconds > 500)
+                {
+                    var sym    = rip != 0 ? _api.Symbols.ResolveAddress(rip) : null;
+                    var symStr = sym != null ? $" ({sym})" : "";
+                    return $"Break at RIP=0x{rip:X}{symStr} after {sw.ElapsedMilliseconds}ms";
+                }
             }
-            Thread.Sleep(20);
+            Thread.Sleep(30);
+        }
+
+        if (_api.IsBreakState)
+        {
+            var regs = _api.Memory.ReadRegisters(_api.TargetPid, _api.SelectedThreadId);
+            var rip  = regs?.FirstOrDefault(r => r.Name is "RIP" or "EIP")?.Value ?? 0;
+            var sym  = rip != 0 ? _api.Symbols.ResolveAddress(rip) : null;
+            var symStr = sym != null ? $" ({sym})" : "";
+            return $"Break at RIP=0x{rip:X}{symStr} after {sw.ElapsedMilliseconds}ms";
         }
 
         return $"Timeout after {timeoutMs}ms — process is still running. Use pause_execution to force stop.";
@@ -989,6 +1104,592 @@ public class DebuggerTools
     {
         _api.UI.RefreshModulesAndSections();
         return "Module list refreshed";
+    }
+
+    // ── Extended commands ──────────────────────────────────────────────────
+
+    private string ExecWriteRipAndRsp(JsonElement args)
+    {
+        if (!_api.IsBreakState) return "Error: Process must be in break state";
+        var rip = ParseAddress(args.GetProperty("rip").GetString()!);
+        var rsp = ParseAddress(args.GetProperty("rsp").GetString()!);
+        var ok  = _api.Memory.WriteRipAndRsp(_api.SelectedThreadId, rip, rsp);
+        var sym = _api.Symbols.ResolveAddress(rip);
+        var symStr = sym != null ? $" ({sym})" : "";
+        return ok ? $"RIP=0x{rip:X}{symStr}, RSP=0x{rsp:X}" : "Failed to set RIP/RSP";
+    }
+
+    private string ExecAddModuleSections(JsonElement args)
+    {
+        var modName  = args.GetProperty("module_name").GetString()!;
+        var secJson  = args.GetProperty("sections").GetString()!;
+        var sections = JsonSerializer.Deserialize<JsonElement[]>(secJson)!;
+        var list     = new List<PluginSectionInfo>();
+        foreach (var s in sections)
+        {
+            list.Add(new PluginSectionInfo
+            {
+                Name            = s.GetProperty("name").GetString()!,
+                VirtualAddress  = (uint)ParseAddress(s.GetProperty("va").GetString()!),
+                VirtualSize     = (uint)s.GetProperty("vsize").GetInt64(),
+                Characteristics = (uint)s.GetProperty("chr").GetInt64()
+            });
+        }
+        _api.UI.AddModuleSections(modName, list);
+        return $"Added {list.Count} sections to '{modName}'";
+    }
+
+    private string ExecDumpStack(JsonElement args)
+    {
+        if (!_api.IsBreakState) return "Error: Process must be in break state";
+        int count = 16;
+        if (args.TryGetProperty("count", out var c)) count = Math.Min(c.GetInt32(), 64);
+        var ptrSize = _api.Is32Bit ? 4u : 8u;
+
+        var regs = _api.Memory.ReadRegisters(_api.TargetPid, _api.SelectedThreadId);
+        var rsp  = regs?.FirstOrDefault(r => r.Name is "RSP" or "ESP")?.Value ?? 0;
+        if (rsp == 0) return "Failed to read RSP";
+
+        var data = _api.Memory.ReadMemory(_api.TargetPid, rsp, (uint)(count * ptrSize));
+        if (data == null) return $"Failed to read stack at 0x{rsp:X}";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"Stack dump from RSP=0x{rsp:X}:");
+        for (int i = 0; i < count && i * (int)ptrSize < data.Length; i++)
+        {
+            ulong val = ptrSize == 8
+                ? BitConverter.ToUInt64(data, i * 8)
+                : BitConverter.ToUInt32(data, i * 4);
+            var sym    = _api.Symbols.ResolveAddress(val);
+            var symStr = sym != null ? $" ({sym})" : "";
+            var tag    = i == 0 ? " <<< RSP" : "";
+            sb.AppendLine($"  [RSP+0x{i * ptrSize:X2}]  0x{val:X16}{symStr}{tag}");
+        }
+        return sb.ToString();
+    }
+
+    private string ExecDumpPeb()
+    {
+        if (!_api.IsBreakState) return "Error: Process must be in break state";
+        var (peb64, _) = _api.Process.GetPebAddress(_api.TargetPid);
+        if (peb64 == 0) return "Failed to get PEB address";
+
+        var data = _api.Memory.ReadMemory(_api.TargetPid, peb64, 0x400);
+        if (data == null) return $"Failed to read PEB at 0x{peb64:X}";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"PEB @ 0x{peb64:X}");
+
+        byte beingDebugged = data[2];
+        ulong imageBase = BitConverter.ToUInt64(data, 0x10);
+        ulong ldr       = BitConverter.ToUInt64(data, 0x18);
+        ulong procParms = BitConverter.ToUInt64(data, 0x20);
+        ulong heap      = BitConverter.ToUInt64(data, 0x30);
+        uint  ntGlobal  = BitConverter.ToUInt32(data, 0xBC);
+        uint  numProc   = BitConverter.ToUInt32(data, 0xB8);
+        uint  osMajor   = BitConverter.ToUInt32(data, 0x118);
+        uint  osMinor   = BitConverter.ToUInt32(data, 0x11C);
+
+        sb.AppendLine($"  BeingDebugged    : {beingDebugged}");
+        sb.AppendLine($"  ImageBaseAddress : 0x{imageBase:X}");
+        sb.AppendLine($"  Ldr              : 0x{ldr:X}");
+        sb.AppendLine($"  ProcessParameters: 0x{procParms:X}");
+        sb.AppendLine($"  ProcessHeap      : 0x{heap:X}");
+        sb.AppendLine($"  NtGlobalFlag     : 0x{ntGlobal:X}{(ntGlobal == 0 ? " (clean)" : "")}");
+        sb.AppendLine($"  NumberOfProcessors: {numProc}");
+        sb.AppendLine($"  OSVersion        : {osMajor}.{osMinor}");
+
+        if (procParms != 0)
+        {
+            var pp = _api.Memory.ReadMemory(_api.TargetPid, procParms, 0x100);
+            if (pp != null && pp.Length >= 0x80)
+            {
+                ushort imgLen = BitConverter.ToUInt16(pp, 0x60);
+                ulong  imgBuf = BitConverter.ToUInt64(pp, 0x68);
+                ushort cmdLen = BitConverter.ToUInt16(pp, 0x70);
+                ulong  cmdBuf = BitConverter.ToUInt64(pp, 0x78);
+                if (imgBuf != 0 && imgLen > 0)
+                {
+                    var s = _api.Memory.ReadMemory(_api.TargetPid, imgBuf, imgLen);
+                    if (s != null) sb.AppendLine($"  ImagePathName    : {Encoding.Unicode.GetString(s)}");
+                }
+                if (cmdBuf != 0 && cmdLen > 0)
+                {
+                    var s = _api.Memory.ReadMemory(_api.TargetPid, cmdBuf, Math.Min(cmdLen, (ushort)512));
+                    if (s != null) sb.AppendLine($"  CommandLine      : {Encoding.Unicode.GetString(s)}");
+                }
+            }
+        }
+        return sb.ToString();
+    }
+
+    private string ExecDumpTeb()
+    {
+        if (!_api.IsBreakState) return "Error: Process must be in break state";
+        var regs = _api.Memory.ReadRegisters(_api.TargetPid, _api.SelectedThreadId);
+        // TEB is at gs:[0x30] on x64 — we read it from the GS_BASE register or known offset
+        // Simpler: read the self-pointer at TEB+0x30
+        // For x64: TEB address can be obtained by reading gs:[0x30]
+        // We'll use a different approach: read GS base from segment registers if available,
+        // or calculate from known TEB structure
+        var gsBase = regs?.FirstOrDefault(r => r.Name == "GS_BASE")?.Value ?? 0;
+        // If no GS_BASE register, try reading TEB from the PEB thread data
+        if (gsBase == 0)
+        {
+            // Fallback: read TEB self-pointer via NtCurrentTeb pattern
+            // The TEB self-pointer is at offset 0x30 from TEB base
+            // We can get it from the thread info
+            return "Error: Could not determine TEB address (GS_BASE not available)";
+        }
+
+        var data = _api.Memory.ReadMemory(_api.TargetPid, gsBase, 0x100);
+        if (data == null) return $"Failed to read TEB at 0x{gsBase:X}";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"TEB @ 0x{gsBase:X}");
+        ulong stackBase  = BitConverter.ToUInt64(data, 0x08);
+        ulong stackLimit = BitConverter.ToUInt64(data, 0x10);
+        ulong self       = BitConverter.ToUInt64(data, 0x30);
+        ulong peb        = BitConverter.ToUInt64(data, 0x60);
+        uint  lastErr    = BitConverter.ToUInt32(data, 0x68);
+        uint  tid        = BitConverter.ToUInt32(data, 0x48);
+        uint  pid        = BitConverter.ToUInt32(data, 0x40);
+        ushort flags     = BitConverter.ToUInt16(data, 0xEF + 1); // SameTebFlags at 0x17EE for Win10+
+
+        sb.AppendLine($"  Self            : 0x{self:X}");
+        sb.AppendLine($"  ProcessId       : {pid}");
+        sb.AppendLine($"  ThreadId        : {tid}");
+        sb.AppendLine($"  StackBase       : 0x{stackBase:X}");
+        sb.AppendLine($"  StackLimit      : 0x{stackLimit:X}");
+        sb.AppendLine($"  Stack size      : 0x{stackBase - stackLimit:X} ({(stackBase - stackLimit) / 1024} KB)");
+        sb.AppendLine($"  PEB             : 0x{peb:X}");
+        sb.AppendLine($"  LastErrorValue  : 0x{lastErr:X} ({lastErr})");
+        return sb.ToString();
+    }
+
+    private string ExecDumpPeHeader(JsonElement args)
+    {
+        var baseAddr = ParseAddress(args.GetProperty("address").GetString()!);
+        var data = _api.Memory.ReadMemory(_api.TargetPid, baseAddr, 0x1000);
+        if (data == null || data.Length < 0x40) return $"Failed to read PE at 0x{baseAddr:X}";
+        if (data[0] != 'M' || data[1] != 'Z') return $"Not a valid PE — no MZ signature at 0x{baseAddr:X}";
+
+        uint peOff = BitConverter.ToUInt32(data, 0x3C);
+        if (peOff + 0x18 > data.Length) return "PE offset out of range";
+
+        ushort magic = BitConverter.ToUInt16(data, (int)peOff + 0x18);
+        bool pe32p   = magic == 0x20B;
+        int optOff   = (int)peOff + 0x18;
+
+        uint ep       = BitConverter.ToUInt32(data, optOff + 0x10);
+        uint imgSize  = BitConverter.ToUInt32(data, optOff + 0x38);
+        ushort numSec = BitConverter.ToUInt16(data, (int)peOff + 6);
+        ushort optSize = BitConverter.ToUInt16(data, (int)peOff + 0x14);
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"PE @ 0x{baseAddr:X}");
+        sb.AppendLine($"  Magic           : 0x{magic:X} ({(pe32p ? "PE32+ (x64)" : "PE32 (x86)")})");
+        sb.AppendLine($"  EntryPoint RVA  : 0x{ep:X} → 0x{baseAddr + ep:X}");
+        sb.AppendLine($"  ImageSize       : 0x{imgSize:X}");
+        sb.AppendLine($"  Sections        : {numSec}");
+
+        // Data directories
+        int ddOff = optOff + (pe32p ? 0x70 : 0x60);
+        int ddCount = Math.Min(BitConverter.ToInt32(data, optOff + (pe32p ? 0x6C : 0x5C)), 16);
+        string[] ddNames = ["Export","Import","Resource","Exception","Security","BaseReloc",
+                            "Debug","Architecture","GlobalPtr","TLS","LoadConfig","BoundImport",
+                            "IAT","DelayImport","CLR","Reserved"];
+        sb.AppendLine("  Data Directories:");
+        for (int i = 0; i < ddCount && ddOff + i * 8 + 8 <= data.Length; i++)
+        {
+            uint rva  = BitConverter.ToUInt32(data, ddOff + i * 8);
+            uint size = BitConverter.ToUInt32(data, ddOff + i * 8 + 4);
+            if (rva != 0)
+                sb.AppendLine($"    [{i,2}] {(i < ddNames.Length ? ddNames[i] : "?"),-14}  RVA=0x{rva:X8}  Size=0x{size:X}");
+        }
+
+        // Section table
+        int secOff = (int)peOff + 0x18 + optSize;
+        sb.AppendLine("  Sections:");
+        for (int i = 0; i < numSec && secOff + i * 40 + 40 <= data.Length; i++)
+        {
+            int o    = secOff + i * 40;
+            var name = Encoding.ASCII.GetString(data, o, 8).TrimEnd('\0');
+            uint vs  = BitConverter.ToUInt32(data, o + 8);
+            uint va  = BitConverter.ToUInt32(data, o + 12);
+            uint rs  = BitConverter.ToUInt32(data, o + 16);
+            uint chr = BitConverter.ToUInt32(data, o + 36);
+            string flags = ((chr & 0x20000000) != 0 ? "X" : "") +
+                           ((chr & 0x40000000) != 0 ? "R" : "") +
+                           ((chr & 0x80000000) != 0 ? "W" : "");
+            sb.AppendLine($"    {name,-10} VA=0x{va:X8}  VSize=0x{vs:X8}  RSize=0x{rs:X8}  {flags}");
+        }
+        return sb.ToString();
+    }
+
+    private string ExecDumpImports(JsonElement args)
+    {
+        var baseAddr = ParseAddress(args.GetProperty("address").GetString()!);
+        var hdr = _api.Memory.ReadMemory(_api.TargetPid, baseAddr, 0x1000);
+        if (hdr == null || hdr.Length < 0x40 || hdr[0] != 'M' || hdr[1] != 'Z')
+            return $"Not a valid PE at 0x{baseAddr:X}";
+
+        uint peOff   = BitConverter.ToUInt32(hdr, 0x3C);
+        ushort magic = BitConverter.ToUInt16(hdr, (int)peOff + 0x18);
+        bool pe32p   = magic == 0x20B;
+        int ddOff    = (int)peOff + 0x18 + (pe32p ? 0x70 : 0x60);
+        uint impRva  = BitConverter.ToUInt32(hdr, ddOff + 8);  // Import DD is index 1
+        uint impSize = BitConverter.ToUInt32(hdr, ddOff + 12);
+        if (impRva == 0) return "No import directory";
+
+        uint iatRva = BitConverter.ToUInt32(hdr, ddOff + 12 * 8);  // IAT DD is index 12
+
+        var impData = _api.Memory.ReadMemory(_api.TargetPid, baseAddr + impRva, Math.Max(impSize, 4096u));
+        if (impData == null) return "Failed to read import directory";
+
+        var sb = new StringBuilder();
+        sb.AppendLine("Import Directory:");
+        int ptrSize = pe32p ? 8 : 4;
+
+        for (int desc = 0; desc + 20 <= impData.Length; desc += 20)
+        {
+            uint iltRva  = BitConverter.ToUInt32(impData, desc);
+            uint nameRva = BitConverter.ToUInt32(impData, desc + 12);
+            uint iatRvaE = BitConverter.ToUInt32(impData, desc + 16);
+            if (nameRva == 0) break;
+
+            var nameBytes = _api.Memory.ReadMemory(_api.TargetPid, baseAddr + nameRva, 128);
+            var dllName = nameBytes != null
+                ? Encoding.ASCII.GetString(nameBytes, 0, Array.IndexOf(nameBytes, (byte)0) is int idx && idx >= 0 ? idx : nameBytes.Length)
+                : "???";
+
+            sb.AppendLine($"\n  {dllName}  (IAT=0x{iatRvaE:X}, ILT=0x{iltRva:X})");
+
+            // Read IAT entries
+            var iat = _api.Memory.ReadMemory(_api.TargetPid, baseAddr + iatRvaE, 512);
+            if (iat == null) continue;
+
+            for (int i = 0; i * ptrSize + ptrSize <= iat.Length; i++)
+            {
+                ulong entry = pe32p
+                    ? BitConverter.ToUInt64(iat, i * 8)
+                    : BitConverter.ToUInt32(iat, i * 4);
+                if (entry == 0) break;
+
+                var sym = _api.Symbols.ResolveAddress(entry);
+                sb.AppendLine($"    [{i,3}] 0x{entry:X} {sym ?? ""}");
+            }
+        }
+        return sb.ToString();
+    }
+
+    private string ExecDumpExports(JsonElement args)
+    {
+        var baseAddr = ParseAddress(args.GetProperty("address").GetString()!);
+        var hdr = _api.Memory.ReadMemory(_api.TargetPid, baseAddr, 0x1000);
+        if (hdr == null || hdr.Length < 0x40 || hdr[0] != 'M' || hdr[1] != 'Z')
+            return $"Not a valid PE at 0x{baseAddr:X}";
+
+        uint peOff   = BitConverter.ToUInt32(hdr, 0x3C);
+        ushort magic = BitConverter.ToUInt16(hdr, (int)peOff + 0x18);
+        bool pe32p   = magic == 0x20B;
+        int ddOff    = (int)peOff + 0x18 + (pe32p ? 0x70 : 0x60);
+        uint expRva  = BitConverter.ToUInt32(hdr, ddOff);
+        uint expSize = BitConverter.ToUInt32(hdr, ddOff + 4);
+        if (expRva == 0) return "No export directory";
+
+        var expData = _api.Memory.ReadMemory(_api.TargetPid, baseAddr + expRva, Math.Max(expSize, 4096u));
+        if (expData == null || expData.Length < 40) return "Failed to read export directory";
+
+        uint numFuncs   = BitConverter.ToUInt32(expData, 20);
+        uint numNames   = BitConverter.ToUInt32(expData, 24);
+        uint funcsRva   = BitConverter.ToUInt32(expData, 28);
+        uint namesRva   = BitConverter.ToUInt32(expData, 32);
+        uint ordinalsRva = BitConverter.ToUInt32(expData, 36);
+        uint ordBase    = BitConverter.ToUInt32(expData, 16);
+
+        var funcs = _api.Memory.ReadMemory(_api.TargetPid, baseAddr + funcsRva, numFuncs * 4);
+        var names = _api.Memory.ReadMemory(_api.TargetPid, baseAddr + namesRva, numNames * 4);
+        var ords  = _api.Memory.ReadMemory(_api.TargetPid, baseAddr + ordinalsRva, numNames * 2);
+        if (funcs == null || names == null || ords == null) return "Failed to read export tables";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"Exports ({numNames} named, {numFuncs} total, ordinal base {ordBase}):");
+        int shown = 0;
+        for (int i = 0; i < (int)numNames && shown < 500; i++)
+        {
+            uint nameRva = BitConverter.ToUInt32(names, i * 4);
+            ushort ord   = BitConverter.ToUInt16(ords, i * 2);
+            uint funcRva = BitConverter.ToUInt32(funcs, ord * 4);
+
+            var nameBytes = _api.Memory.ReadMemory(_api.TargetPid, baseAddr + nameRva, 128);
+            var funcName  = nameBytes != null
+                ? Encoding.ASCII.GetString(nameBytes, 0, Array.IndexOf(nameBytes, (byte)0) is int idx && idx >= 0 ? idx : nameBytes.Length)
+                : "???";
+            sb.AppendLine($"  [{ord + ordBase,5}]  0x{funcRva:X8}  → 0x{baseAddr + funcRva:X}  {funcName}");
+            shown++;
+        }
+        return sb.ToString();
+    }
+
+    private string ExecXrefsTo(JsonElement args)
+    {
+        var target   = ParseAddress(args.GetProperty("address").GetString()!);
+        var modules  = _api.Symbols.GetModules();
+        var mainMod  = modules?.FirstOrDefault();
+        if (mainMod == null) return "No modules loaded";
+
+        var textBase = mainMod.BaseAddress + 0x1000;
+        var hdr = _api.Memory.ReadMemory(_api.TargetPid, mainMod.BaseAddress, 0x400);
+        uint textSize = 0;
+        if (hdr != null && hdr.Length >= 0x200)
+        {
+            uint peOff = BitConverter.ToUInt32(hdr, 0x3C);
+            ushort optSize = BitConverter.ToUInt16(hdr, (int)peOff + 0x14);
+            int secOff = (int)peOff + 0x18 + optSize;
+            if (secOff + 40 <= hdr.Length)
+            {
+                textBase = mainMod.BaseAddress + BitConverter.ToUInt32(hdr, secOff + 12);
+                textSize = BitConverter.ToUInt32(hdr, secOff + 8);
+            }
+        }
+        if (textSize == 0) textSize = 0x10000;
+
+        var code = _api.Memory.ReadMemory(_api.TargetPid, textBase, textSize);
+        if (code == null) return $"Failed to read .text at 0x{textBase:X}";
+
+        var bitness    = _api.Is32Bit ? 32 : 64;
+        var codeReader = new ByteArrayCodeReader(code);
+        var decoder    = Iced.Intel.Decoder.Create(bitness, codeReader);
+        decoder.IP     = textBase;
+
+        var results = new List<(ulong addr, string type)>();
+        while (decoder.IP < textBase + textSize && results.Count < 100)
+        {
+            var instr = decoder.Decode();
+            if (instr.IsInvalid) break;
+
+            ulong instrTarget = 0;
+            string type = "";
+            if (instr.FlowControl is FlowControl.Call or FlowControl.UnconditionalBranch or FlowControl.ConditionalBranch)
+            {
+                if (instr.Op0Kind == OpKind.NearBranch64 || instr.Op0Kind == OpKind.NearBranch32 || instr.Op0Kind == OpKind.NearBranch16)
+                {
+                    instrTarget = instr.NearBranchTarget;
+                    type = instr.FlowControl == FlowControl.Call ? "CALL" : "JMP";
+                }
+            }
+            else if (instr.Mnemonic == Mnemonic.Lea && instr.MemoryBase == Register.RIP)
+            {
+                instrTarget = instr.MemoryDisplacement64;
+                type = "LEA";
+            }
+
+            if (instrTarget == target)
+                results.Add((instr.IP, type));
+        }
+
+        if (results.Count == 0) return $"No references to 0x{target:X} found in .text";
+
+        var sb = new StringBuilder();
+        var sym = _api.Symbols.ResolveAddress(target);
+        sb.AppendLine($"Cross-references to 0x{target:X}{(sym != null ? $" ({sym})" : "")} ({results.Count} found):");
+        foreach (var (addr, type) in results)
+        {
+            var s = _api.Symbols.ResolveAddress(addr);
+            sb.AppendLine($"  0x{addr:X16}  {type}  {(s != null ? $"({s})" : "")}");
+        }
+        return sb.ToString();
+    }
+
+    private string ExecNopInstruction(JsonElement args)
+    {
+        if (!_api.IsBreakState) return "Error: Process must be in break state";
+        var addr = ParseAddress(args.GetProperty("address").GetString()!);
+
+        var code = _api.Memory.ReadMemory(_api.TargetPid, addr, 15);
+        if (code == null) return $"Failed to read at 0x{addr:X}";
+
+        var bitness = _api.Is32Bit ? 32 : 64;
+        var decoder = Iced.Intel.Decoder.Create(bitness, new ByteArrayCodeReader(code));
+        decoder.IP  = addr;
+        var instr   = decoder.Decode();
+        if (instr.IsInvalid) return $"Invalid instruction at 0x{addr:X}";
+
+        var nops = new byte[instr.Length];
+        Array.Fill(nops, (byte)0x90);
+        var ok = _api.Memory.WriteMemory(_api.TargetPid, addr, nops);
+
+        var formatter = new NasmFormatter();
+        var output    = new StringOutput();
+        formatter.Format(instr, output);
+        return ok
+            ? $"NOPed {instr.Length} bytes at 0x{addr:X}: {output.ToStringAndReset()} → {instr.Length}x NOP"
+            : $"Failed to write NOPs at 0x{addr:X}";
+    }
+
+    private string ExecPatchJump(JsonElement args)
+    {
+        if (!_api.IsBreakState) return "Error: Process must be in break state";
+        var addr = ParseAddress(args.GetProperty("address").GetString()!);
+        var mode = args.GetProperty("mode").GetString()!.ToLowerInvariant();
+        if (mode is not ("always" or "never")) return "Error: mode must be 'always' or 'never'";
+
+        var code = _api.Memory.ReadMemory(_api.TargetPid, addr, 15);
+        if (code == null) return $"Failed to read at 0x{addr:X}";
+
+        var bitness = _api.Is32Bit ? 32 : 64;
+        var decoder = Iced.Intel.Decoder.Create(bitness, new ByteArrayCodeReader(code));
+        decoder.IP  = addr;
+        var instr   = decoder.Decode();
+
+        if (instr.FlowControl != FlowControl.ConditionalBranch)
+            return $"Instruction at 0x{addr:X} is not a conditional jump";
+
+        byte[] patch;
+        if (mode == "never")
+        {
+            patch = new byte[instr.Length];
+            Array.Fill(patch, (byte)0x90);
+        }
+        else
+        {
+            if (instr.Length == 2)
+                patch = new byte[] { 0xEB, code[1] }; // short JMP
+            else
+            {
+                patch = new byte[instr.Length];
+                Array.Fill(patch, (byte)0x90);
+                patch[0] = 0xE9;
+                Buffer.BlockCopy(code, instr.Length - 4, patch, 1, 4); // reuse rel32
+            }
+        }
+
+        var ok = _api.Memory.WriteMemory(_api.TargetPid, addr, patch);
+        return ok
+            ? $"Patched at 0x{addr:X}: {(mode == "always" ? "forced JMP" : "NOPed")} ({instr.Length} bytes)"
+            : $"Failed to patch at 0x{addr:X}";
+    }
+
+    private string ExecListStrings(JsonElement args)
+    {
+        ulong startAddr = 0;
+        uint  size      = 0;
+        int   minLen    = 4;
+
+        if (args.TryGetProperty("min_length", out var ml)) minLen = ml.GetInt32();
+        if (args.TryGetProperty("address", out var ap)) startAddr = ParseAddress(ap.GetString()!);
+        if (args.TryGetProperty("size", out var sp)) size = (uint)sp.GetInt64();
+
+        if (startAddr == 0 || size == 0)
+        {
+            var modules = _api.Symbols.GetModules();
+            var main    = modules?.FirstOrDefault();
+            if (main == null) return "No modules loaded";
+            var hdr     = _api.Memory.ReadMemory(_api.TargetPid, main.BaseAddress, 0x400);
+            if (hdr != null && hdr.Length >= 0x200)
+            {
+                uint peOff = BitConverter.ToUInt32(hdr, 0x3C);
+                ushort optSz = BitConverter.ToUInt16(hdr, (int)peOff + 0x14);
+                int secOff = (int)peOff + 0x18 + optSz;
+                ushort numSec = BitConverter.ToUInt16(hdr, (int)peOff + 6);
+                for (int i = 0; i < numSec && secOff + i * 40 + 40 <= hdr.Length; i++)
+                {
+                    int o = secOff + i * 40;
+                    var name = Encoding.ASCII.GetString(hdr, o, 8).TrimEnd('\0');
+                    if (name == ".rdata")
+                    {
+                        startAddr = main.BaseAddress + BitConverter.ToUInt32(hdr, o + 12);
+                        size = BitConverter.ToUInt32(hdr, o + 8);
+                        break;
+                    }
+                }
+            }
+            if (startAddr == 0) { startAddr = main.BaseAddress + 0x1000; size = 0x10000; }
+        }
+
+        size = Math.Min(size, 1024 * 1024);
+        var data = _api.Memory.ReadMemory(_api.TargetPid, startAddr, size);
+        if (data == null) return $"Failed to read memory at 0x{startAddr:X}";
+
+        var sb = new StringBuilder();
+        int found = 0;
+
+        // ASCII
+        int run = 0; int runStart = 0;
+        for (int i = 0; i <= data.Length && found < 500; i++)
+        {
+            bool printable = i < data.Length && data[i] is >= 0x20 and < 0x7F;
+            if (printable) { if (run == 0) runStart = i; run++; }
+            else
+            {
+                if (run >= minLen && i < data.Length && data[i] == 0)
+                { sb.AppendLine($"  0x{startAddr + (ulong)runStart:X}  A  \"{Encoding.ASCII.GetString(data, runStart, run)}\""); found++; }
+                run = 0;
+            }
+        }
+
+        // Unicode (UTF-16LE)
+        for (int i = 0; i + 1 < data.Length && found < 500; i += 2)
+        {
+            int wRun = 0; int wStart = i;
+            while (i + 1 < data.Length)
+            {
+                ushort ch = BitConverter.ToUInt16(data, i);
+                if (ch >= 0x20 && ch < 0x7F) { wRun++; i += 2; }
+                else break;
+            }
+            if (wRun >= minLen && i + 1 < data.Length && BitConverter.ToUInt16(data, i) == 0)
+            { sb.AppendLine($"  0x{startAddr + (ulong)wStart:X}  W  \"{Encoding.Unicode.GetString(data, wStart, wRun * 2)}\""); found++; }
+        }
+
+        sb.Insert(0, $"Strings in 0x{startAddr:X}+0x{size:X} ({found} found, A=ASCII W=Wide):\n");
+        return sb.ToString();
+    }
+
+    private string ExecCompareMemory(JsonElement args)
+    {
+        var addr1 = ParseAddress(args.GetProperty("addr1").GetString()!);
+        var addr2 = ParseAddress(args.GetProperty("addr2").GetString()!);
+        var size  = Math.Min((uint)args.GetProperty("size").GetInt64(), 4096u);
+
+        var data1 = _api.Memory.ReadMemory(_api.TargetPid, addr1, size);
+        var data2 = _api.Memory.ReadMemory(_api.TargetPid, addr2, size);
+        if (data1 == null) return $"Failed to read at 0x{addr1:X}";
+        if (data2 == null) return $"Failed to read at 0x{addr2:X}";
+
+        int len = Math.Min(data1.Length, data2.Length);
+        var diffs = new List<(int off, byte a, byte b)>();
+        for (int i = 0; i < len && diffs.Count < 200; i++)
+            if (data1[i] != data2[i]) diffs.Add((i, data1[i], data2[i]));
+
+        if (diffs.Count == 0) return $"Regions are identical ({len} bytes)";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"Found {diffs.Count} difference(s) in {len} bytes:");
+        sb.AppendLine($"  {"Offset",-12} {"Addr1",-20} {"Addr2",-20} {"Val1",-6} {"Val2"}");
+        foreach (var (off, a, b) in diffs)
+            sb.AppendLine($"  +0x{off:X6}   0x{addr1 + (ulong)off:X16}  0x{addr2 + (ulong)off:X16}  0x{a:X2}   0x{b:X2}");
+        return sb.ToString();
+    }
+
+    private string ExecReadUnicodeStruct(JsonElement args)
+    {
+        var addr = ParseAddress(args.GetProperty("address").GetString()!);
+        var data = _api.Memory.ReadMemory(_api.TargetPid, addr, 16);
+        if (data == null) return $"Failed to read at 0x{addr:X}";
+
+        ushort len    = BitConverter.ToUInt16(data, 0);
+        ushort maxLen = BitConverter.ToUInt16(data, 2);
+        ulong  buf    = BitConverter.ToUInt64(data, _api.Is32Bit ? 4 : 8);
+
+        if (buf == 0 || len == 0) return $"UNICODE_STRING at 0x{addr:X}: Length={len}, Buffer=NULL";
+
+        var strData = _api.Memory.ReadMemory(_api.TargetPid, buf, len);
+        if (strData == null) return $"UNICODE_STRING at 0x{addr:X}: Length={len}, Buffer=0x{buf:X} (unreadable)";
+
+        var str = Encoding.Unicode.GetString(strData);
+        return $"UNICODE_STRING at 0x{addr:X}: \"{str}\" (Length={len}, MaxLength={maxLen}, Buffer=0x{buf:X})";
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
