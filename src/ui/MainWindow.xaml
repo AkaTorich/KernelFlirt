@@ -6,6 +6,7 @@
         xmlns:ctrl="clr-namespace:KernelFlirt.UI.Controls"
         xmlns:ae="http://icsharpcode.net/sharpdevelop/avalonedit"
         xmlns:models="clr-namespace:KernelFlirt.UI.Models"
+        Icon="icon.ico"
         Title="KernelFlirt - Kernel Debugger"
         Width="1400" Height="900"
         WindowStartupLocation="CenterScreen"

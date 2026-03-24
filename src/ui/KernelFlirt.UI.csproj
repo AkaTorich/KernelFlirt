@@ -6,7 +6,7 @@
     <UseWPF>true</UseWPF>
     <RootNamespace>KernelFlirt.UI</RootNamespace>
     <AssemblyName>KernelFlirt</AssemblyName>
-    <ApplicationIcon />
+    <ApplicationIcon>icon.ico</ApplicationIcon>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -25,6 +25,10 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Themes\CDecompiler.xshd" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="icon.ico" />
   </ItemGroup>
 
 
