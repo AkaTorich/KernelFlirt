@@ -1098,6 +1098,12 @@ public partial class MainWindow : Window
             ["PluginGridAltRow"]  = "PluginGridAltRowBrush",
             ["PluginGroupHeader"] = "PluginGroupHeaderBrush",
             ["PluginGroupBg"]     = "PluginGroupBgBrush",
+            // ScrollBar
+            ["ScrollBarBg"]           = "ScrollBarBgBrush",
+            ["ScrollBarThumb"]        = "ScrollBarThumbBrush",
+            ["ScrollBarThumbHover"]   = "ScrollBarThumbHoverBrush",
+            ["ScrollBarThumbPressed"] = "ScrollBarThumbPressedBrush",
+            ["ScrollBarArrow"]        = "ScrollBarArrowBrush",
         };
 
         int applied = 0;
