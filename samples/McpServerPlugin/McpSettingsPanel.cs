@@ -54,6 +54,9 @@ public class McpSettingsPanel : Grid
 
         Margin = new Thickness(8);
 
+        // ── Theme bindings ──────────────────────────────────────────────────────
+        SetResourceReference(BackgroundProperty, "PluginBgBrush");
+
         // ── Row 0: status ─────────────────────────────────────────────────────
         var headerPanel = new StackPanel
         {
@@ -77,15 +80,16 @@ public class McpSettingsPanel : Grid
             VerticalAlignment  = VerticalAlignment.Center,
             Margin             = new Thickness(0, 0, 12, 0)
         };
+        _statusLabel.SetResourceReference(TextBlock.ForegroundProperty, "PluginFgBrush");
 
         _urlLabel = new TextBlock
         {
             Text              = BuildUrl(_port),
-            Foreground        = Brushes.Gray,
             VerticalAlignment = VerticalAlignment.Center,
             FontFamily        = new FontFamily("Consolas"),
             FontSize          = 11
         };
+        _urlLabel.SetResourceReference(TextBlock.ForegroundProperty, "PluginFgDimBrush");
 
         headerPanel.Children.Add(_statusDot);
         headerPanel.Children.Add(_statusLabel);
@@ -100,12 +104,14 @@ public class McpSettingsPanel : Grid
             Margin      = new Thickness(0, 0, 0, 6)
         };
 
-        configPanel.Children.Add(new TextBlock
+        var portLabel = new TextBlock
         {
             Text              = "Port:",
             VerticalAlignment = VerticalAlignment.Center,
             Margin            = new Thickness(0, 0, 6, 0)
-        });
+        };
+        portLabel.SetResourceReference(TextBlock.ForegroundProperty, "PluginFgBrush");
+        configPanel.Children.Add(portLabel);
 
         _portBox = new TextBox
         {
@@ -115,6 +121,9 @@ public class McpSettingsPanel : Grid
             Margin            = new Thickness(0, 0, 8, 0),
             Padding           = new Thickness(3, 2, 3, 2)
         };
+        _portBox.SetResourceReference(TextBox.BackgroundProperty, "PluginControlBgBrush");
+        _portBox.SetResourceReference(TextBox.ForegroundProperty, "PluginFgBrush");
+        _portBox.SetResourceReference(TextBox.BorderBrushProperty, "PluginBorderBrush");
 
         _startBtn = MakeButton("▶  Start", "#2E7D32", OnStart);
         _stopBtn  = MakeButton("■  Stop",  "#B71C1C", OnStop);
@@ -133,13 +142,13 @@ public class McpSettingsPanel : Grid
             Text              = $"\"kf-debugger\": {{ \"url\": \"{BuildUrl(_port)}\" }}",
             FontFamily        = new FontFamily("Consolas"),
             FontSize          = 11,
-            Foreground        = Brushes.DarkCyan,
             Background        = Brushes.Transparent,
             BorderThickness   = new Thickness(0),
             Margin            = new Thickness(0, 0, 0, 6),
             IsTabStop         = false,
             ToolTip           = "Paste this into your .mcp.json → mcpServers section"
         };
+        hintBox.SetResourceReference(TextBox.ForegroundProperty, "PluginAccentBrush");
         SetRow(hintBox, 2);
         Children.Add(hintBox);
 
@@ -151,12 +160,16 @@ public class McpSettingsPanel : Grid
         // ── Row 4: activity log ───────────────────────────────────────────────
         var logHeader = new DockPanel { Margin = new Thickness(0, 0, 0, 4) };
         var logTitle  = new TextBlock { Text = "Activity log", FontWeight = FontWeights.SemiBold };
+        logTitle.SetResourceReference(TextBlock.ForegroundProperty, "PluginFgBrush");
         var clearBtn  = new Button
         {
             Content             = "Clear",
             Padding             = new Thickness(6, 1, 6, 1),
             HorizontalAlignment = HorizontalAlignment.Right
         };
+        clearBtn.SetResourceReference(Button.BackgroundProperty, "PluginButtonBgBrush");
+        clearBtn.SetResourceReference(Button.ForegroundProperty, "PluginFgBrush");
+        clearBtn.SetResourceReference(Button.BorderBrushProperty, "PluginBorderBrush");
         clearBtn.Click += (_, _) => _logBox!.Clear();
         DockPanel.SetDock(clearBtn, Dock.Right);
         logHeader.Children.Add(clearBtn);
@@ -172,6 +185,9 @@ public class McpSettingsPanel : Grid
             HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
             Padding         = new Thickness(4)
         };
+        _logBox.SetResourceReference(TextBox.BackgroundProperty, "PluginControlBgBrush");
+        _logBox.SetResourceReference(TextBox.ForegroundProperty, "PluginFgBrush");
+        _logBox.SetResourceReference(TextBox.BorderBrushProperty, "PluginBorderBrush");
 
         var logStack = new DockPanel();
         DockPanel.SetDock(logHeader, Dock.Top);
