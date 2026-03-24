@@ -1,0 +1,14 @@
+Signature Detector Plugin — Third-Party Attribution
+====================================================
+
+userdb.txt — PEiD Signature Database
+  Source:    PEiD community (BobSoft, various contributors)
+  Mirror:    https://github.com/wolfram77web/app-peid
+  License:   Public domain / community-contributed (no formal license)
+  Usage:     Byte-pattern signatures for identifying packers, compilers,
+             and protectors in PE executables.
+
+This file is a community-maintained database originally distributed with
+PEiD (freeware by Jibz). Signatures were contributed by the reverse
+engineering community and have been freely redistributed across numerous
+tools and projects (Detect It Easy, ExeInfo PE, ProtectionID, etc.).

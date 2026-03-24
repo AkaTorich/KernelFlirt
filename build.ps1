@@ -198,7 +198,8 @@ $pluginProjects = @(
     "samples\ApiMonitorPlugin\ApiMonitorPlugin.csproj",
     "samples\StringDecryptorPlugin\StringDecryptorPlugin.csproj",
     "samples\AiAssistantPlugin\AiAssistantPlugin.csproj",
-    "samples\McpServerPlugin\McpServerPlugin.csproj"
+    "samples\McpServerPlugin\McpServerPlugin.csproj",
+    "samples\SignatureDetector\SignatureDetector.csproj"
 )
 foreach ($pluginRelPath in $pluginProjects) {
     $pluginProj = Join-Path $Root $pluginRelPath
@@ -229,6 +230,15 @@ foreach ($pluginRelPath in $pluginProjects) {
                     } catch {
                         Write-Host "  -> bin\UI\plugins\$($dep.Name) (LOCKED, skipped)" -ForegroundColor Yellow
                     }
+                }
+            }
+            # Copy data files (e.g. userdb.txt for SignatureDetector)
+            foreach ($dataExt in @("*.txt", "*.dat")) {
+                foreach ($dataFile in Get-ChildItem $pluginOutDir -Filter $dataExt -ErrorAction SilentlyContinue) {
+                    try {
+                        Copy-Item $dataFile.FullName $pluginsDir -Force -ErrorAction Stop
+                        Write-Host "  -> bin\UI\plugins\$($dataFile.Name)" -ForegroundColor DarkGray
+                    } catch { }
                 }
             }
         }
@@ -408,6 +418,7 @@ Write-Host "  bin\Relay\       KfRelay.exe"
 Write-Host "  bin\TestDriver\  KfTestDriver.sys"
 Write-Host "  bin\UI\          KernelFlirt.exe"
 Write-Host "  bin\UI\plugins\  McpServerPlugin.dll  (MCP server on http://localhost:13371/sse)"
+Write-Host "  bin\UI\plugins\  SignatureDetector.dll + userdb.txt (4445 PEiD signatures)"
 Write-Host "  bin\Samples\     antidebug_test.exe, xor_strings.exe, rc4_strings.exe"
 Write-Host ""
 Write-Host "Usage:" -ForegroundColor Yellow
