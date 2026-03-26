@@ -1067,7 +1067,9 @@ static void ChannelLoop(SOCKET client, HANDLE hDevice, const char *tag)
         }
     }
 
-    Sleep(500);
+    /* Give thread pool workers time to finish after socket disconnect.
+       Workers will fail on SendAll (socket closed) and exit quickly. */
+    Sleep(1000);
     DeleteCriticalSection(&sendLock);
 }
 
@@ -1223,7 +1225,17 @@ int main(int argc, char *argv[])
         printf("[-] CMD channel disconnected\n");
         closesocket(cmdSock);
 
-        WaitForSingleObject(dbgThread, 3000);
+        /* Cancel any blocking IOCTL (e.g. WAIT_DEBUG_EVENT) on the DBG channel.
+           CancelIoEx cancels all pending I/O on the device handle (covers thread pool workers).
+           CancelSynchronousIo cancels blocking I/O on the DBG thread itself. */
+        if (g_hDeviceDbg != INVALID_HANDLE_VALUE)
+            CancelIoEx(g_hDeviceDbg, NULL);
+        CancelSynchronousIo(dbgThread);
+
+        if (WaitForSingleObject(dbgThread, 5000) == WAIT_TIMEOUT) {
+            printf("[!] DBG thread did not exit in 5s — forcing termination\n");
+            TerminateThread(dbgThread, 1);
+        }
         CloseHandle(dbgThread);
 
         /* Reset driver state: remove all BPs, hooks, unblock threads */
