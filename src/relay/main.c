@@ -943,6 +943,8 @@ typedef struct _REQUEST_ITEM {
     HANDLE      hDevice;
     const char *tag;
     CRITICAL_SECTION *pSendLock;
+    volatile LONG    *pActiveWorkers;
+    volatile LONG    *pShutdown;
 
     DWORD       ioctlCode;
     DWORD       inputSize;
@@ -994,22 +996,25 @@ static DWORD WINAPI RequestWorker(LPVOID param)
             win32Error = GetLastError();
     }
 
-    /* Serialize the response on the socket */
-    EnterCriticalSection(req->pSendLock);
-    {
-        DWORD successFlag = success ? 1 : 0;
-        DWORD outLen = success ? bytesReturned : 0;
+    /* Serialize the response on the socket — skip if channel is shutting down */
+    if (!*req->pShutdown) {
+        EnterCriticalSection(req->pSendLock);
+        {
+            DWORD successFlag = success ? 1 : 0;
+            DWORD outLen = success ? bytesReturned : 0;
 
-        SendAll(req->client, &successFlag, 4);
-        SendAll(req->client, &win32Error, 4);
-        SendAll(req->client, &outLen, 4);
-        if (outLen > 0)
-            SendAll(req->client, outputBuf, outLen);
+            SendAll(req->client, &successFlag, 4);
+            SendAll(req->client, &win32Error, 4);
+            SendAll(req->client, &outLen, 4);
+            if (outLen > 0)
+                SendAll(req->client, outputBuf, outLen);
+        }
+        LeaveCriticalSection(req->pSendLock);
     }
-    LeaveCriticalSection(req->pSendLock);
 
     free(req->inputBuf);
     free(outputBuf);
+    InterlockedDecrement(req->pActiveWorkers);
     free(req);
     return 0;
 }
@@ -1022,6 +1027,8 @@ static DWORD WINAPI RequestWorker(LPVOID param)
 static void ChannelLoop(SOCKET client, HANDLE hDevice, const char *tag)
 {
     CRITICAL_SECTION sendLock;
+    volatile LONG activeWorkers = 0;
+    volatile LONG shutdown = 0;
     InitializeCriticalSection(&sendLock);
 
     for (;;) {
@@ -1051,25 +1058,36 @@ static void ChannelLoop(SOCKET client, HANDLE hDevice, const char *tag)
             free(inputBuf);
             break;
         }
-        req->client    = client;
-        req->hDevice   = hDevice;
-        req->tag       = tag;
-        req->pSendLock = &sendLock;
-        req->ioctlCode = ioctlCode;
-        req->inputSize = inputSize;
-        req->inputBuf  = inputBuf;
+        req->client        = client;
+        req->hDevice       = hDevice;
+        req->tag           = tag;
+        req->pSendLock     = &sendLock;
+        req->pActiveWorkers = &activeWorkers;
+        req->pShutdown     = &shutdown;
+        req->ioctlCode     = ioctlCode;
+        req->inputSize     = inputSize;
+        req->inputBuf      = inputBuf;
 
+        InterlockedIncrement(&activeWorkers);
         if (!QueueUserWorkItem(RequestWorker, req, WT_EXECUTEDEFAULT)) {
             printf("[%s] QueueUserWorkItem failed: %lu\n", tag, GetLastError());
+            InterlockedDecrement(&activeWorkers);
             free(inputBuf);
             free(req);
             break;
         }
     }
 
-    /* Give thread pool workers time to finish after socket disconnect.
-       Workers will fail on SendAll (socket closed) and exit quickly. */
-    Sleep(1000);
+    /* Signal workers to skip SendAll (socket is about to close) */
+    InterlockedExchange(&shutdown, 1);
+
+    /* Wait for all thread pool workers to finish (up to 5s) */
+    for (int i = 0; i < 50 && activeWorkers > 0; i++)
+        Sleep(100);
+
+    if (activeWorkers > 0)
+        printf("[%s] Warning: %ld worker(s) still active after 5s\n", tag, activeWorkers);
+
     DeleteCriticalSection(&sendLock);
 }
 
@@ -1108,6 +1126,17 @@ static SOCKET AcceptOne(SOCKET listenSock, const char *label)
     return s;
 }
 
+static LONG WINAPI CrashHandler(EXCEPTION_POINTERS *ep)
+{
+    printf("[!] CRASH: code=0x%08lX addr=%p\n",
+           ep->ExceptionRecord->ExceptionCode,
+           ep->ExceptionRecord->ExceptionAddress);
+    printf("[!] Relay will NOT exit — restarting session loop\n");
+    fflush(stdout);
+    /* Return CONTINUE to let SEH in main loop handle it */
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
 int main(int argc, char *argv[])
 {
     WSADATA wsa;
@@ -1116,6 +1145,7 @@ int main(int argc, char *argv[])
     USHORT port = KF_RELAY_PORT;
     const char *bindAddr = "0.0.0.0";
 
+    SetUnhandledExceptionFilter(CrashHandler);
     printf("KernelFlirt TCP Relay v3.0 (kernel driver mode)\n");
 
     /* Parse args */
@@ -1187,7 +1217,11 @@ int main(int argc, char *argv[])
 
         printf("[*] Waiting for CMD channel (connection 1/2)...\n");
         cmdSock = AcceptOne(listenSock, "cmd");
-        if (cmdSock == INVALID_SOCKET) continue;
+        if (cmdSock == INVALID_SOCKET) {
+            /* If listen socket is broken, wait a bit and try to recover */
+            Sleep(1000);
+            continue;
+        }
 
         printf("[*] Waiting for DBG channel (connection 2/2)...\n");
         dbgSock = AcceptOne(listenSock, "dbg");
@@ -1211,6 +1245,8 @@ int main(int argc, char *argv[])
 
         printf("[+] Both channels connected — session active\n");
 
+        __try {
+
         dbgThread = CreateThread(NULL, 0, DbgChannelThread, (LPVOID)(ULONG_PTR)dbgSock, 0, NULL);
         if (!dbgThread) {
             printf("[!] CreateThread failed: %lu\n", GetLastError());
@@ -1232,11 +1268,13 @@ int main(int argc, char *argv[])
             CancelIoEx(g_hDeviceDbg, NULL);
         CancelSynchronousIo(dbgThread);
 
-        if (WaitForSingleObject(dbgThread, 5000) == WAIT_TIMEOUT) {
-            printf("[!] DBG thread did not exit in 5s — forcing termination\n");
-            TerminateThread(dbgThread, 1);
+        /* Wait longer — TerminateThread is unsafe (corrupts heap/locks, causes crashes).
+           If the thread is still stuck after 10s, just leak it and move on. */
+        if (WaitForSingleObject(dbgThread, 10000) == WAIT_TIMEOUT) {
+            printf("[!] DBG thread did not exit in 10s — leaking thread handle\n");
+        } else {
+            CloseHandle(dbgThread);
         }
-        CloseHandle(dbgThread);
 
         /* Reset driver state: remove all BPs, hooks, unblock threads */
         ResetDriver();
@@ -1250,6 +1288,15 @@ int main(int argc, char *argv[])
         }
 
         printf("[-] Session ended (driver reset)\n");
+
+        } __except(EXCEPTION_EXECUTE_HANDLER) {
+            printf("[!] Session crashed (exception 0x%08lX) — recovering\n",
+                   GetExceptionCode());
+            /* Best-effort cleanup */
+            CloseDriver();
+            if (!OpenDriver())
+                printf("[!] Driver unavailable after crash — will retry\n");
+        }
     }
 
     closesocket(listenSock);

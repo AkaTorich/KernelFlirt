@@ -106,6 +106,7 @@ static PKDEBUG_ROUTINE  g_OrigKiDebugRoutine = NULL;
 
 static BOOLEAN          g_HookInstalled   = FALSE;
 static ULONG            g_TargetPid       = 0;
+static BOOLEAN          g_ProcessNotifyRegistered = FALSE;
 
 /* Diagnostic counters (no DbgPrint in handler — it may reset KdDebuggerEnabled!) */
 static volatile LONG    g_HookCallCount        = 0;
@@ -1342,6 +1343,31 @@ static void KfCancelWaitIrp(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 /* Public API                                                          */
 /* ------------------------------------------------------------------ */
 
+/* Forward declaration (defined later in this file) */
+void KfDebugHookDeactivate(void);
+
+/* ── Process exit notification ─────────────────────────────────────── */
+
+static void KfProcessNotifyRoutine(
+    _In_ HANDLE  ParentId,
+    _In_ HANDLE  ProcessId,
+    _In_ BOOLEAN Create
+)
+{
+    UNREFERENCED_PARAMETER(ParentId);
+
+    if (Create)
+        return;  /* Only interested in process exit */
+
+    /* If the exiting process is our target, deactivate the hook
+       so pending WAIT_DEBUG_EVENT IRP gets cancelled and nothing hangs. */
+    if (g_TargetPid != 0 && (ULONG)(ULONG_PTR)ProcessId == g_TargetPid) {
+        DbgPrint("[KernelFlirt] Target process %u exited — deactivating debug hook\n",
+                 g_TargetPid);
+        KfDebugHookDeactivate();
+    }
+}
+
 NTSTATUS KfDebugHookInit(void)
 {
     KeInitializeSpinLock(&g_DbgLock);
@@ -1356,6 +1382,17 @@ NTSTATUS KfDebugHookInit(void)
     RtlZeroMemory(g_StepPast, sizeof(g_StepPast));
     RtlZeroMemory(&g_DebugEvent, sizeof(g_DebugEvent));
     RtlZeroMemory(g_Transparent, sizeof(g_Transparent));
+
+    /* Register process exit notification so we can clean up when target dies */
+    if (!g_ProcessNotifyRegistered) {
+        NTSTATUS nStatus = PsSetCreateProcessNotifyRoutine(KfProcessNotifyRoutine, FALSE);
+        if (NT_SUCCESS(nStatus)) {
+            g_ProcessNotifyRegistered = TRUE;
+            DbgPrint("[KernelFlirt] Process notify callback registered\n");
+        } else {
+            DbgPrint("[KernelFlirt] PsSetCreateProcessNotifyRoutine failed: 0x%08X\n", nStatus);
+        }
+    }
 
     return STATUS_SUCCESS;
 }
@@ -1721,6 +1758,13 @@ void KfRemoveDebugHook(void)
 void KfDebugHookCleanup(void)
 {
     KIRQL oldIrql;
+
+    /* Unregister process notify before anything else */
+    if (g_ProcessNotifyRegistered) {
+        PsSetCreateProcessNotifyRoutine(KfProcessNotifyRoutine, TRUE);
+        g_ProcessNotifyRegistered = FALSE;
+        DbgPrint("[KernelFlirt] Process notify callback unregistered\n");
+    }
 
     KfRemoveDebugHook();
 
