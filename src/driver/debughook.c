@@ -852,8 +852,16 @@ static void KfReportAndBlock(
 
     if (g_WaitIrp != NULL) {
         irpToComplete = g_WaitIrp;
-        g_WaitIrp = NULL;
-        IoSetCancelRoutine(irpToComplete, NULL);
+        /*
+         * Clear cancel routine WHILE holding spinlock.
+         * If it returns NULL, cancel routine already owns the IRP.
+         */
+        if (IoSetCancelRoutine(irpToComplete, NULL) != NULL) {
+            g_WaitIrp = NULL;
+        } else {
+            /* Cancel routine will complete it — don't touch */
+            irpToComplete = NULL;
+        }
         g_EventPending = FALSE;
     } else {
         g_EventPending = TRUE;
@@ -1758,6 +1766,7 @@ void KfRemoveDebugHook(void)
 void KfDebugHookCleanup(void)
 {
     KIRQL oldIrql;
+    PIRP irp = NULL;
 
     /* Unregister process notify before anything else */
     if (g_ProcessNotifyRegistered) {
@@ -1770,46 +1779,59 @@ void KfDebugHookCleanup(void)
 
     KeAcquireSpinLock(&g_DbgLock, &oldIrql);
     if (g_WaitIrp) {
-        PIRP irp = g_WaitIrp;
-        g_WaitIrp = NULL;
-        KeReleaseSpinLock(&g_DbgLock, oldIrql);
+        irp = g_WaitIrp;
+        if (IoSetCancelRoutine(irp, NULL) != NULL) {
+            g_WaitIrp = NULL;
+        } else {
+            irp = NULL; /* Cancel routine owns it */
+        }
+    }
+    KeReleaseSpinLock(&g_DbgLock, oldIrql);
 
-        IoSetCancelRoutine(irp, NULL);
+    if (irp) {
         irp->IoStatus.Status      = STATUS_CANCELLED;
         irp->IoStatus.Information = 0;
         IoCompleteRequest(irp, IO_NO_INCREMENT);
-    } else {
-        KeReleaseSpinLock(&g_DbgLock, oldIrql);
     }
 }
 
 void KfDebugHookDeactivate(void)
 {
     KIRQL oldIrql;
+    PIRP irp = NULL;
 
     /* Set PID to invalid — hook returns FALSE for everything */
     g_TargetPid = 0xFFFFFFFF;
     DbgPrint("[KernelFlirt] Hook deactivated (PID=0xFFFFFFFF)\n");
 
-    /* Wake any blocked thread */
+    /* Wake any blocked thread + cancel pending WAIT IRP atomically */
     KeAcquireSpinLock(&g_DbgLock, &oldIrql);
+
     if (g_ThreadBlocked)
         KeSetEvent(&g_ContinueEvent, 0, FALSE);
+
+    if (g_WaitIrp) {
+        irp = g_WaitIrp;
+        /*
+         * Clear cancel routine WHILE holding spinlock.
+         * If IoSetCancelRoutine returns NULL, cancel routine is already
+         * running or completed — it will handle completion, not us.
+         */
+        if (IoSetCancelRoutine(irp, NULL) != NULL) {
+            g_WaitIrp = NULL;
+        } else {
+            /* Cancel routine owns this IRP — don't touch it */
+            irp = NULL;
+        }
+    }
+
     KeReleaseSpinLock(&g_DbgLock, oldIrql);
 
-    /* Cancel pending WAIT IRP */
-    KeAcquireSpinLock(&g_DbgLock, &oldIrql);
-    if (g_WaitIrp) {
-        PIRP irp = g_WaitIrp;
-        g_WaitIrp = NULL;
-        KeReleaseSpinLock(&g_DbgLock, oldIrql);
-
-        IoSetCancelRoutine(irp, NULL);
+    if (irp) {
         irp->IoStatus.Status      = STATUS_CANCELLED;
         irp->IoStatus.Information = 0;
         IoCompleteRequest(irp, IO_NO_INCREMENT);
-    } else {
-        KeReleaseSpinLock(&g_DbgLock, oldIrql);
+        DbgPrint("[KernelFlirt] Pending WAIT IRP cancelled\n");
     }
 }
 
