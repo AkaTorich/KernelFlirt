@@ -41,6 +41,9 @@ public class PluginManager
 
     public IReadOnlyList<LoadedPlugin> Plugins => _plugins;
 
+    /// <summary>Called before each plugin.Initialize() so UI can track which plugin owns which tabs/menus.</summary>
+    public Action<string>? OnPluginInitializing { get; set; }
+
     public PluginManager(Action<string> log)
     {
         _log = log;
@@ -78,6 +81,7 @@ public class PluginManager
                     {
                         var adapter = apiFactory();
                         var plugin = (IKernelFlirtPlugin)Activator.CreateInstance(type)!;
+                        OnPluginInitializing?.Invoke(plugin.Name);
                         plugin.Initialize(adapter);
                         _plugins.Add(new LoadedPlugin
                         {
@@ -103,13 +107,39 @@ public class PluginManager
         _log($"[Plugins] {_plugins.Count} plugin(s) loaded");
     }
 
+    /// <summary>Called by MainWindow to let us hide/show plugin tabs.</summary>
+    public Action<string, bool>? SetTabVisible { get; set; }
+
     public void SetPluginEnabled(LoadedPlugin plugin, bool enabled)
     {
         plugin.Enabled = enabled;
         if (plugin.Adapter != null)
             plugin.Adapter.Enabled = enabled;
+
+        // Hide/show tab in UI
+        SetTabVisible?.Invoke(plugin.Plugin.Name, enabled);
+
+        // Persist via SaveSettings callback (writes to kf_settings.txt)
+        OnSettingsChanged?.Invoke();
+
         _log($"[Plugins] {plugin.Plugin.Name}: {(enabled ? "enabled" : "disabled")}");
     }
+
+    /// <summary>Apply saved disabled state after all plugins are loaded.</summary>
+    public void ApplyPersistedState(string disabledCsv)
+    {
+        if (string.IsNullOrWhiteSpace(disabledCsv)) return;
+        var disabled = new HashSet<string>(
+            disabledCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        foreach (var p in _plugins)
+        {
+            if (disabled.Contains(p.Plugin.Name))
+                SetPluginEnabled(p, false);
+        }
+    }
+
+    /// <summary>Raised when plugin enabled state changes — host should call SaveSettings.</summary>
+    public Action? OnSettingsChanged { get; set; }
 
     public void UnloadAll()
     {

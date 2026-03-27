@@ -15,6 +15,9 @@ public partial class MainWindow : Window
 {
     private MainViewModel VM => (MainViewModel)DataContext;
     private readonly List<ContentControl> _pluginWrappers = [];
+    private readonly Dictionary<string, List<TabItem>> _pluginTabs = [];
+    private readonly Dictionary<string, List<MenuItem>> _pluginMenuItems = [];
+    private string? _currentPluginName;
 
     public MainWindow()
     {
@@ -51,12 +54,19 @@ public partial class MainWindow : Window
                 UpdateDecompilerText();
         };
 
-        // Plugin UI integration
+        // Plugin UI integration — track which plugin is being initialized
         VM.AddPluginMenuItem = (header, callback) =>
         {
             var item = new MenuItem { Header = header };
             item.Click += (_, _) => callback();
             PluginsMenu.Items.Add(item);
+            // Track menu item by current plugin name
+            if (_currentPluginName != null)
+            {
+                if (!_pluginMenuItems.ContainsKey(_currentPluginName))
+                    _pluginMenuItems[_currentPluginName] = [];
+                _pluginMenuItems[_currentPluginName].Add(item);
+            }
         };
         VM.AddPluginToolPanel = (title, content) =>
         {
@@ -65,7 +75,37 @@ public partial class MainWindow : Window
             _pluginWrappers.Add(wrapper);
             var tab = new TabItem { Header = title, Content = wrapper };
             MainTabControl.Items.Insert(MainTabControl.Items.Count - 1, tab); // Before Log tab
+            // Track tab by current plugin name
+            if (_currentPluginName != null)
+            {
+                if (!_pluginTabs.ContainsKey(_currentPluginName))
+                    _pluginTabs[_currentPluginName] = [];
+                _pluginTabs[_currentPluginName].Add(tab);
+            }
         };
+
+        // Callback to set current plugin name before each plugin.Initialize()
+        VM.OnPluginInitializing = name => _currentPluginName = name;
+
+        // Wire up tab/menu show/hide for plugin enable/disable
+        VM.PluginManager.SetTabVisible = (pluginName, visible) =>
+        {
+            if (_pluginTabs.TryGetValue(pluginName, out var tabs))
+            {
+                foreach (var tab in tabs)
+                {
+                    tab.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+                    if (!visible && MainTabControl.SelectedItem == tab)
+                        MainTabControl.SelectedIndex = 0;
+                }
+            }
+            if (_pluginMenuItems.TryGetValue(pluginName, out var items))
+            {
+                foreach (var mi in items)
+                    mi.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+            }
+        };
+
         VM.LoadPlugins();
 
         // Re-apply tab colors now that plugin tabs exist

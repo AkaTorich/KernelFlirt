@@ -138,14 +138,14 @@
         <!-- Toolbar -->
         <Border DockPanel.Dock="Top" Background="{DynamicResource ToolbarBgBrush}" Padding="4,2">
             <WrapPanel>
-                <Button Content="Open" Command="{Binding OpenProcessCommand}"
-                        ToolTip="Select process to attach" />
-                <Button Content="Debug" Command="{Binding OpenAndDebugCommand}"
-                        ToolTip="Open remote .exe and debug from start" />
+                <Button Content="⊕" Command="{Binding OpenProcessCommand}"
+                        ToolTip="Attach to process" FontSize="14" Padding="6,2" />
+                <Button Content="📂" Command="{Binding OpenAndDebugCommand}"
+                        ToolTip="Open and debug .exe" FontSize="13" Padding="6,2" />
                 <Button Command="{Binding ConnectKernelCommand}"
                         ToolTip="Connect to kernel driver"
                         Visibility="{Binding IsConnected, Converter={StaticResource InverseBoolVisConv}}"
-                        Content="Connect" />
+                        Content="🔌" FontSize="13" Padding="6,2" />
                 <Button Command="{Binding DisconnectKernelCommand}"
                         ToolTip="Disconnect from kernel driver"
                         Visibility="{Binding IsConnected, Converter={StaticResource BoolVisConv}}"
@@ -156,9 +156,20 @@
                 <TextBlock Text="PID:" VerticalAlignment="Center" Margin="4,0" />
                 <TextBox x:Name="PidBox" Width="80" VerticalAlignment="Center"
                          Text="{Binding TargetPid, UpdateSourceTrigger=PropertyChanged}" />
-                <Button Content="Attach" Command="{Binding AttachProcessCommand}"
-                        ToolTip="Attach to process by PID" />
-                <Button Content="Detach" Command="{Binding DetachProcessCommand}" />
+                <Button Command="{Binding ToggleAttachCommand}">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                            <Setter Property="Content" Value="Attach" />
+                            <Setter Property="ToolTip" Value="Attach to process by PID" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsDebugHookActive}" Value="True">
+                                    <Setter Property="Content" Value="Detach" />
+                                    <Setter Property="ToolTip" Value="Detach from process" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
 
                 <Rectangle Width="1" Fill="{DynamicResource BorderBrush}" Margin="8,2" />
 

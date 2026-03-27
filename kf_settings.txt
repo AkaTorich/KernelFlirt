@@ -1,5 +1,6 @@
 SymbolPath=srv*C:\Symbols*https://msdl.microsoft.com/download/symbols
 LastConnect=10.100.102.6
+DisabledPlugins=AI Assistant,Anti-Anti-Debug,API Monitor,MCP Server,Sample Plugin,Signature Detector,String Decryptor,Themida Unpacker
 Color.Bg=#1A1A2E
 Color.BgLight=#22223A
 Color.BgPanel=#1E1E34

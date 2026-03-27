@@ -27,6 +27,17 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+# Ensure dotnet and common tools are in PATH
+$extraPaths = @(
+    "$env:ProgramFiles\dotnet",
+    "$env:SystemRoot\System32"
+)
+foreach ($p in $extraPaths) {
+    if ((Test-Path $p) -and $env:PATH -notlike "*$p*") {
+        $env:PATH += ";$p"
+    }
+}
+
 $Root = $PSScriptRoot
 $BinDir    = Join-Path $Root "bin"
 $BinUI     = Join-Path $BinDir "UI"

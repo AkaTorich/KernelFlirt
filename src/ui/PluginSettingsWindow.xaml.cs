@@ -45,12 +45,9 @@ public partial class PluginSettingsWindow : Window
 
     private void OnPluginToggled(object sender, RoutedEventArgs e)
     {
-        if (PluginList.ItemsSource is not List<PluginViewModel> items) return;
-        foreach (var vm in items)
-        {
-            if (vm.Enabled != vm.LoadedPlugin.Enabled)
-                _pluginManager.SetPluginEnabled(vm.LoadedPlugin, vm.Enabled);
-        }
+        if (sender is not System.Windows.Controls.CheckBox cb) return;
+        if (cb.DataContext is not PluginViewModel vm) return;
+        _pluginManager.SetPluginEnabled(vm.LoadedPlugin, cb.IsChecked == true);
     }
 
     private void OnCloseClick(object sender, RoutedEventArgs e) => Close();

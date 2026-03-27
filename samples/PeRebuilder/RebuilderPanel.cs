@@ -63,6 +63,12 @@ public sealed class RebuilderPanel : Grid
         // ── Row 1: Action buttons ─────────────────────────────────────────
         var buttonsPanel = new WrapPanel { Margin = new Thickness(0, 0, 0, 4) };
 
+        var autoBtn = MakeButton("Auto Rebuild");
+        autoBtn.Click += OnAutoRebuild;
+        buttonsPanel.Children.Add(autoBtn);
+
+        buttonsPanel.Children.Add(new Separator { Width = 10, Visibility = System.Windows.Visibility.Hidden });
+
         var scanBtn = MakeButton("Scan IAT");
         scanBtn.Click += OnScanIat;
         buttonsPanel.Children.Add(scanBtn);
@@ -207,6 +213,189 @@ public sealed class RebuilderPanel : Grid
     }
 
     // ── Event handlers ────────────────────────────────────────────────────
+
+    private void OnAutoRebuild(object sender, RoutedEventArgs e)
+    {
+        if (!_api.IsConnected || !_api.IsBreakState)
+        {
+            Log("Not in break state — pause the target first");
+            return;
+        }
+
+        SetStatus("Auto Rebuild: detecting...");
+
+        // Step 1: RIP → OEP + ImageBase
+        var regs = _api.Memory.ReadRegisters(_api.TargetPid, _api.SelectedThreadId);
+        if (regs == null || regs.Count == 0) { Log("Failed to read registers"); return; }
+
+        ulong rip = regs.FirstOrDefault(r => r.Name == "RIP")?.Value
+                  ?? regs.FirstOrDefault(r => r.Name == "EIP")?.Value ?? 0;
+        if (rip == 0) { Log("Could not find RIP/EIP"); return; }
+
+        _oepBox.Text = $"0x{rip:X}";
+        Log($"OEP = 0x{rip:X}");
+
+        ulong imageBase = 0;
+        string moduleName = "unknown";
+        var modules = _api.Symbols.GetModules();
+        if (modules != null)
+        {
+            foreach (var m in modules)
+            {
+                if (rip >= m.BaseAddress && rip < m.BaseAddress + m.Size)
+                {
+                    imageBase = m.BaseAddress;
+                    moduleName = m.Name;
+                    break;
+                }
+            }
+        }
+
+        if (imageBase == 0)
+        {
+            Log("RIP is not inside any known module — trying PE scan backwards");
+            imageBase = ScanBackForPe(rip);
+        }
+
+        if (imageBase == 0) { Log("ERROR: Could not determine ImageBase"); return; }
+
+        _imageBaseBox.Text = $"0x{imageBase:X}";
+        Log($"ImageBase = 0x{imageBase:X} ({moduleName})");
+
+        // Step 2: Initialize resolver
+        EnsureResolver();
+
+        // Step 3: Auto-detect IAT
+        _reconstructor = new ImportReconstructor(_api, _resolver!);
+        Log("Scanning for IAT...");
+
+        bool iatFound = _reconstructor.AutoDetectIat(rip);
+        if (!iatFound)
+        {
+            // Fallback: scan PE import directory for original IAT location
+            iatFound = TryIatFromImportDirectory(imageBase);
+        }
+
+        if (iatFound)
+        {
+            _iatBaseBox.Text = $"0x{_reconstructor!.IatBase:X}";
+            _iatSizeBox.Text = $"0x{_reconstructor.IatSize:X}";
+            int entries = _reconstructor.IatSize / (_api.Is32Bit ? 4 : 8);
+            Log($"IAT found: 0x{_reconstructor.IatBase:X}, {entries} entries");
+
+            // Step 4: Resolve imports
+            int resolved = _reconstructor.ScanAndResolve();
+            int valid = _reconstructor.Imports.Count(i => i.Valid);
+            Log($"Resolved {valid}/{_reconstructor.Imports.Count} imports");
+
+            // Build tree
+            _importsTree.Items.Clear();
+            var groups = _reconstructor.GroupByDll();
+            foreach (var (dll, funcs) in groups)
+            {
+                var dllNode = new TreeViewItem { Header = $"{dll} ({funcs.Count})", IsExpanded = false };
+                dllNode.SetResourceReference(TreeViewItem.ForegroundProperty, "PluginAccentBrush");
+                foreach (var f in funcs)
+                {
+                    var funcNode = new TreeViewItem
+                    {
+                        Header = f.ByOrdinal
+                            ? $"  #{f.Ordinal}  @ 0x{f.IatAddress:X}"
+                            : $"  {f.FuncName}  @ 0x{f.IatAddress:X}"
+                    };
+                    funcNode.SetResourceReference(TreeViewItem.ForegroundProperty, "PluginFgBrush");
+                    dllNode.Items.Add(funcNode);
+                }
+                _importsTree.Items.Add(dllNode);
+            }
+        }
+        else
+        {
+            Log("IAT not found — will dump without import fix");
+        }
+
+        // Step 5: Dump
+        _dumper = new PeDumper(_api, Log);
+        var imports = iatFound ? _reconstructor!.GroupByDll() : null;
+        byte[]? pe = _dumper.Dump(imageBase, rip, imports);
+        if (pe == null) { SetStatus("Auto Rebuild failed — see log"); return; }
+
+        // Step 6: Save
+        var dlg = new Microsoft.Win32.SaveFileDialog
+        {
+            Filter = "PE files (*.exe;*.dll)|*.exe;*.dll|All files|*.*",
+            FileName = $"{moduleName}_dumped.exe"
+        };
+        if (dlg.ShowDialog() == true)
+        {
+            System.IO.File.WriteAllBytes(dlg.FileName, pe);
+            Log($"Saved: {dlg.FileName} ({pe.Length / 1024} KB)");
+            SetStatus($"Done — {dlg.FileName}");
+            _api.Log.Info($"[PeRebuilder] Auto rebuild → {dlg.FileName} ({pe.Length / 1024} KB)");
+        }
+        else
+        {
+            SetStatus("Auto Rebuild complete (not saved)");
+        }
+    }
+
+    /// <summary>Scan backwards from address to find MZ+PE header.</summary>
+    private ulong ScanBackForPe(ulong addr)
+    {
+        ulong page = addr & ~0xFFFUL;
+        for (int i = 0; i < 2048; i++)
+        {
+            try
+            {
+                byte[]? hdr = _api.Memory.ReadMemory(_api.TargetPid, page, 4u);
+                if (hdr != null && hdr.Length >= 4 && hdr[0] == 0x4D && hdr[1] == 0x5A)
+                {
+                    byte[]? pe = _api.Memory.ReadMemory(_api.TargetPid, page, 0x200u);
+                    if (pe != null && pe.Length >= 0x40)
+                    {
+                        int lfanew = BitConverter.ToInt32(pe, 0x3C);
+                        if (lfanew > 0 && lfanew < 0x1000)
+                        {
+                            byte[]? sig = _api.Memory.ReadMemory(_api.TargetPid, page + (ulong)lfanew, 4u);
+                            if (sig != null && sig.Length >= 4 && sig[0] == 'P' && sig[1] == 'E')
+                                return page;
+                        }
+                    }
+                }
+            }
+            catch { }
+            page -= 0x1000;
+        }
+        return 0;
+    }
+
+    /// <summary>Try reading IAT location from PE import directory.</summary>
+    private bool TryIatFromImportDirectory(ulong imageBase)
+    {
+        try
+        {
+            byte[]? hdr = _api.Memory.ReadMemory(_api.TargetPid, imageBase, 0x1000u);
+            if (hdr == null || hdr.Length < 0x200 || hdr[0] != 0x4D) return false;
+
+            int lfanew = BitConverter.ToInt32(hdr, 0x3C);
+            ushort magic = BitConverter.ToUInt16(hdr, lfanew + 0x18);
+            bool pe64 = magic == 0x20B;
+            int ddBase = lfanew + 0x18 + (pe64 ? 0x70 : 0x60);
+
+            // IAT directory (entry 12)
+            if (ddBase + 12 * 8 + 8 > hdr.Length) return false;
+            uint iatRva  = BitConverter.ToUInt32(hdr, ddBase + 12 * 8);
+            uint iatSize = BitConverter.ToUInt32(hdr, ddBase + 12 * 8 + 4);
+
+            if (iatRva == 0 || iatSize == 0) return false;
+
+            _reconstructor!.IatBase = imageBase + iatRva;
+            _reconstructor.IatSize = (int)iatSize;
+            Log($"IAT from PE header: RVA=0x{iatRva:X}, Size=0x{iatSize:X}");
+            return true;
+        }
+        catch { return false; }
+    }
 
     private void OnGetRip(object sender, RoutedEventArgs e)
     {

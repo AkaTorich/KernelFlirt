@@ -85,6 +85,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private byte[] _hexData = [];
     [ObservableProperty] private string _decompiledCode = "";
     [ObservableProperty] private bool _isDecompiling;
+    private string _disabledPlugins = "";
 
     private static readonly string SettingsFile =
         Path.Combine(AppContext.BaseDirectory, "kf_settings.txt");
@@ -92,6 +93,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     // Plugin UI integration - set by MainWindow
     public Action<string, Action>? AddPluginMenuItem { get; set; }
     public Action<string, object>? AddPluginToolPanel { get; set; }
+    public Action<string>? OnPluginInitializing { get; set; }
 
     public MainViewModel()
     {
@@ -143,7 +145,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _pluginManager.PauseAction = () =>
             Application.Current.Dispatcher.InvokeAsync(async () => await Pause());
 
+        _pluginManager.OnSettingsChanged = () =>
+            Application.Current.Dispatcher.Invoke(() => SaveSettings());
+        _pluginManager.OnPluginInitializing = name =>
+            Application.Current.Dispatcher.Invoke(() => OnPluginInitializing?.Invoke(name));
+
         _pluginManager.LoadPlugins(pluginsDir, AdapterFactory);
+
+        // Apply persisted disabled state (hides tabs + disables events)
+        _pluginManager.ApplyPersistedState(_disabledPlugins);
     }
 
     /// <summary>
@@ -191,6 +201,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     _symbols.SymbolPath = line["SymbolPath=".Length..];
                 else if (line.StartsWith("LastConnect=", StringComparison.Ordinal))
                     _lastConnectAddress = line["LastConnect=".Length..];
+                else if (line.StartsWith("DisabledPlugins=", StringComparison.Ordinal))
+                    _disabledPlugins = line["DisabledPlugins=".Length..];
                 else if (line.StartsWith("Color.", StringComparison.Ordinal))
                 {
                     var eq = line.IndexOf('=');
@@ -213,6 +225,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
             var sb = new System.Text.StringBuilder();
             sb.AppendLine($"SymbolPath={_symbols.SymbolPath}");
             sb.AppendLine($"LastConnect={_lastConnectAddress}");
+            var disabled = string.Join(",", _pluginManager.Plugins
+                .Where(p => !p.Enabled).Select(p => p.Plugin.Name));
+            if (!string.IsNullOrEmpty(disabled))
+                sb.AppendLine($"DisabledPlugins={disabled}");
             foreach (var (key, val) in ThemeColors)
                 sb.AppendLine($"Color.{key}={val}");
             File.WriteAllText(SettingsFile, sb.ToString());
@@ -991,6 +1007,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
         IsRunning = false;
         StatusText = $"DriverEntry - {serviceName} PID {TargetPid} TID {SelectedThreadId}";
         Log($"Stopped at DriverEntry of {sysPath}");
+    }
+
+    [RelayCommand]
+    private async Task ToggleAttachAsync()
+    {
+        if (IsDebugHookActive)
+            await DetachProcess();
+        else if (IsConnected && TargetPid != 0)
+            await DoAttachAsync();
     }
 
     [RelayCommand]
