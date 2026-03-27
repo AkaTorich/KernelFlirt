@@ -1,5 +1,50 @@
 # Changelog
 
+## v1.4.0 — 2026-03-27
+
+### New Plugin: PE Rebuilder
+
+- **PE Rebuilder / Import Reconstructor plugin** — Scylla-style PE dumper with IAT reconstruction. Dumps process PE from memory, fixes headers, rebuilds import directory.
+- **Auto Rebuild** — one-click workflow: detects OEP from RIP, finds ImageBase, auto-scans IAT, resolves all imports, dumps PE with fixed imports and save dialog. No manual input required.
+- **IAT auto-detection** — disassembles from OEP, finds `call [mem]`/`jmp [mem]` patterns, walks backward/forward to determine IAT boundaries. Falls back to PE import directory (entry 12) if heuristic fails.
+- **ExportResolver** — parses export tables of all loaded modules, follows JMP trampolines (up to 5 hops: `E9 rel32`, `FF 25`, `48 FF 25`, `mov rax,imm64; jmp rax`), builds forward resolution map (e.g. `ntdll.RtlAllocateHeap` → `kernel32.HeapAlloc`) from 12 key DLLs.
+- **PE scan backwards** — if RIP is not in any known module (e.g. unpacked code), scans memory backwards page-by-page looking for MZ+PE signature.
+- **Import tree view** — displays reconstructed imports grouped by DLL with function names and IAT addresses.
+- **Header fixes** — corrects OEP RVA, disables ASLR, fixes section raw data pointers, adds `.import` section with full IMAGE_IMPORT_DESCRIPTOR array + Hint/Name table.
+- **All UI colors via theme system** — `SetResourceReference` for every control, no hardcoded colors.
+
+### New Plugin: Signature Detector
+
+- **PEiD-compatible signature detector** — scans process memory against 4445 packer/compiler signatures from the SANS/PEiD community database (`userdb.txt`).
+- **Scan Main Module / Scan All Modules** — entry-point-only and full-scan modes.
+- **NOTICE.txt** — attribution for community-contributed signature database.
+
+### Plugin System Fixes
+
+- **Plugin enable/disable now works correctly** — fixed checkbox binding (`UpdateSourceTrigger=PropertyChanged` + `Click` event instead of `Checked`/`Unchecked`), direct `cb.IsChecked` read from sender.
+- **Tabs and menu items hide/show on disable** — tracks plugin name → tabs/menus mapping via `OnPluginInitializing` callback. Resolves mismatch between `plugin.Name` and `AddToolPanel` title (e.g. "Anti-Anti-Debug" vs "Anti-Debug").
+- **Plugin state persisted in `kf_settings.txt`** — `DisabledPlugins=name1,name2` line, restored on startup via `ApplyPersistedState`. No separate `plugins_state.json`.
+- **Plugin Settings window** enlarged to 620×450.
+
+### Disassembler
+
+- **Dynamic scroll loading** — disassembly view loads instructions on demand when scrolling up/down instead of reading a fixed 4096-byte block. Keeps ~1000 instructions in view, trims opposite end to avoid memory bloat.
+
+### UI
+
+- **Toolbar icons** — Open (⊕), Debug (📂), Connect (🔌) buttons replaced text labels with emoji glyphs.
+- **Unified Attach/Detach button** — single button toggles between "Attach" and "Detach" based on `IsDebugHookActive` state via `DataTrigger`.
+
+### Relay
+
+- **Crash fix on disconnect** — added `CancelIoEx` + `CancelSynchronousIo` on DBG channel handle before closing, preventing crash when thread pool workers are inside blocking `DeviceIoControl` (e.g. `WAIT_DEBUG_EVENT`). Increased wait timeout 3s→5s with `TerminateThread` fallback.
+
+### Build
+
+- **`build.ps1` PATH fix** — auto-adds `%ProgramFiles%\dotnet` and `%SystemRoot%\System32` to `$env:PATH` at script start.
+- **PE Rebuilder** added to plugin build list.
+- **Signature Detector** added to plugin build list.
+
 ## v1.3.0 — 2026-03-24
 
 ### New Plugin: MCP Server
