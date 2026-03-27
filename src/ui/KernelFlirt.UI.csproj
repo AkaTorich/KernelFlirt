@@ -21,6 +21,7 @@
     <PackageReference Include="AvalonEdit" Version="6.3.0.90" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
     <PackageReference Include="Gee.External.Capstone" Version="2.3.0" />
+    <PackageReference Include="Iced" Version="1.21.0" />
   </ItemGroup>
 
   <ItemGroup>

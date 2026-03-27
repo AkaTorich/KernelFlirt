@@ -2939,6 +2939,108 @@ public partial class MainViewModel : ObservableObject, IDisposable
     }
 
     /* ================================================================== */
+    /*  Inline assembler / patching                                        */
+    /* ================================================================== */
+
+    [RelayCommand]
+    private async Task AssembleAtCursor()
+    {
+        try
+        {
+            if (!IsConnected || TargetPid == 0) { Log("Assemble: not connected"); return; }
+            ulong addr = SelectedDisasmAddress != 0 ? SelectedDisasmAddress : DisasmAddress;
+            if (addr == 0) { Log("Assemble: no address selected"); return; }
+
+            var instr = Instructions.FirstOrDefault(i => i.Address == addr);
+            if (instr == null) { Log($"Assemble: instruction not found at {FormatAddr(addr)}"); return; }
+
+            var dlg = new AssembleDialog(instr, Is32Bit) { Owner = Application.Current.MainWindow };
+            if (dlg.ShowDialog() != true || dlg.ResultBytes == null) return;
+
+            var pid = TargetPid;
+            var newBytes = dlg.ResultBytes;
+
+            var origBytes = await Task.Run(() => _driver.ReadMemory(pid, addr, (uint)newBytes.Length));
+            if (origBytes == null) { Log("Assemble: failed to read original bytes"); return; }
+
+            var ok = await Task.Run(() => _driver.WriteMemory(pid, addr, newBytes));
+            if (ok)
+            {
+                TrackPatch(addr, origBytes, newBytes);
+                Log($"Assembled at {FormatAddr(addr)}: {BitConverter.ToString(newBytes).Replace("-", " ")}");
+                RefreshDisassembly();
+            }
+            else
+                Log($"Assemble: WriteMemory failed at {FormatAddr(addr)}");
+        }
+        catch (Exception ex)
+        {
+            Log($"Assemble error: {ex.Message}");
+        }
+    }
+
+    [RelayCommand]
+    private async Task NopInstruction()
+    {
+        if (!IsConnected || TargetPid == 0) return;
+        ulong addr = SelectedDisasmAddress != 0 ? SelectedDisasmAddress : DisasmAddress;
+        if (addr == 0) return;
+
+        var instr = Instructions.FirstOrDefault(i => i.Address == addr);
+        if (instr == null) return;
+
+        var pid = TargetPid;
+        int size = instr.Size;
+
+        var origBytes = await Task.Run(() => _driver.ReadMemory(pid, addr, (uint)size));
+        if (origBytes == null) return;
+
+        var nops = new byte[size];
+        Array.Fill(nops, (byte)0x90);
+
+        var ok = await Task.Run(() => _driver.WriteMemory(pid, addr, nops));
+        if (ok)
+        {
+            TrackPatch(addr, origBytes, nops);
+            Log($"NOP'd {size} byte(s) at {FormatAddr(addr)}");
+            RefreshDisassembly();
+        }
+    }
+
+    [RelayCommand]
+    private async Task FillWithNops()
+    {
+        if (!IsConnected || TargetPid == 0) return;
+        ulong addr = SelectedDisasmAddress != 0 ? SelectedDisasmAddress : DisasmAddress;
+        if (addr == 0) return;
+
+        var dlg = new InputDialog("Fill with NOPs", "Byte count to fill with NOPs:")
+        { Owner = Application.Current.MainWindow };
+        if (dlg.ShowDialog() != true) return;
+
+        if (!int.TryParse(dlg.InputText.Trim(), out int count) || count <= 0 || count > 4096)
+        {
+            Log("Fill NOPs: invalid size (1..4096)");
+            return;
+        }
+
+        var pid = TargetPid;
+        var origBytes = await Task.Run(() => _driver.ReadMemory(pid, addr, (uint)count));
+        if (origBytes == null) return;
+
+        var nops = new byte[count];
+        Array.Fill(nops, (byte)0x90);
+
+        var ok = await Task.Run(() => _driver.WriteMemory(pid, addr, nops));
+        if (ok)
+        {
+            TrackPatch(addr, origBytes, nops);
+            Log($"Filled {count} NOP(s) at {FormatAddr(addr)}");
+            RefreshDisassembly();
+        }
+    }
+
+    /* ================================================================== */
     /*  Patches tracking                                                   */
     /* ================================================================== */
 

@@ -39,6 +39,10 @@
                             <MenuItem Header="Search Binary..." Click="OnContextSearchBinary" />
                             <MenuItem Header="Search Strings..." Click="OnContextSearchStrings" />
                             <Separator />
+                            <MenuItem Header="Assemble... (Space)" Click="OnContextAssemble" InputGestureText="Space" />
+                            <MenuItem Header="NOP Instruction" Click="OnContextNopInstruction" />
+                            <MenuItem Header="Fill with NOPs..." Click="OnContextFillNops" />
+                            <Separator />
                             <MenuItem Header="Decompile Function" Click="OnContextDecompile" />
                         </ContextMenu>
                     </ItemsControl.ContextMenu>

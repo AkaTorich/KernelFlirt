@@ -75,6 +75,17 @@ public partial class DisasmView : UserControl
     {
         InitializeComponent();
         ScrollArea.ScrollChanged += OnScrollChanged;
+        KeyDown += OnKeyDown;
+        Focusable = true;
+    }
+
+    private void OnKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Space && _selectedIndex >= 0)
+        {
+            GetViewModel()?.AssembleAtCursorCommand.Execute(null);
+            e.Handled = true;
+        }
     }
 
     private void OnScrollChanged(object sender, ScrollChangedEventArgs e)
@@ -127,6 +138,7 @@ public partial class DisasmView : UserControl
             var panel = CreateInstructionLine(instr, currentRip);
             panel.Tag = i;
             panel.MouseLeftButtonDown += OnLineClick;
+            panel.MouseRightButtonDown += OnLineClick;
             InstructionList.Items.Add(panel);
         }
     }
@@ -141,6 +153,7 @@ public partial class DisasmView : UserControl
             var panel = CreateInstructionLine(newInstrs[i], _currentRip);
             panel.Tag = startIdx + i;
             panel.MouseLeftButtonDown += OnLineClick;
+            panel.MouseRightButtonDown += OnLineClick;
             InstructionList.Items.Add(panel);
         }
     }
@@ -154,6 +167,7 @@ public partial class DisasmView : UserControl
             var panel = CreateInstructionLine(newInstrs[i], _currentRip);
             panel.Tag = 0;
             panel.MouseLeftButtonDown += OnLineClick;
+            panel.MouseRightButtonDown += OnLineClick;
             InstructionList.Items.Insert(0, panel);
         }
         // Reindex all tags
@@ -550,6 +564,21 @@ public partial class DisasmView : UserControl
     private void OnContextDecompile(object sender, RoutedEventArgs e)
     {
         GetViewModel()?.DecompileAtCursorCommand.Execute(null);
+    }
+
+    private void OnContextAssemble(object sender, RoutedEventArgs e)
+    {
+        GetViewModel()?.AssembleAtCursorCommand.Execute(null);
+    }
+
+    private void OnContextNopInstruction(object sender, RoutedEventArgs e)
+    {
+        GetViewModel()?.NopInstructionCommand.Execute(null);
+    }
+
+    private void OnContextFillNops(object sender, RoutedEventArgs e)
+    {
+        GetViewModel()?.FillWithNopsCommand.Execute(null);
     }
 
     private void OnContextGoBack(object sender, RoutedEventArgs e)
