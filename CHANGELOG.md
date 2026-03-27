@@ -12,7 +12,7 @@
 
 ### Driver Stability
 
-- **Fixed IRP double-complete BSOD** — `IoSetCancelRoutine` return value now checked under spinlock in `KfDebugHookDeactivate`, `KfDebugHookCleanup`, and `KfReportAndBlock`. If cancel routine already owns the IRP, we skip completion. Standard DDK safe-cancel pattern.
+- **Fixed BSOD on detach/disconnect** — IRP double-complete race condition caused `DRIVER_IRQL_NOT_LESS_OR_EQUAL` or system hang. `IoSetCancelRoutine` return value now checked under spinlock in `KfDebugHookDeactivate`, `KfDebugHookCleanup`, and `KfReportAndBlock`. If cancel routine already owns the IRP, we skip completion. Standard DDK safe-cancel pattern.
 - **Fixed stepping not working after re-open** — `KfDebugHookDeactivate` and `KfSetTargetPid` now reset full session state (`g_EventPending`, `g_TraceActive`, `g_ContinueMode`, `g_ContinueReady`, `g_ContinueEvent`). Previously stale state from previous session caused step events to be lost.
 - **KdDebuggerEnabled re-assertion** — `KfSetTargetPid` and `KfInstallDebugHook` (early return path) now call `KfReassertDebugFlags()` after all `DbgPrint` calls, not before. `DbgPrint` resets `KdDebuggerEnabled=FALSE` via KD transport when no kernel debugger is attached.
 - **Process exit notification** — `PsSetCreateProcessNotifyRoutine` callback auto-deactivates debug hook when target process exits, cancelling pending WAIT IRP.
