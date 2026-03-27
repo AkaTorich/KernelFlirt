@@ -181,10 +181,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         IsBreakState = false;
         IsRunning = true;
-        StartDebugListener();
 
-        await Task.Run(() => _driver.ContinueDebugEvent(DriverComm.CONTINUE_STEP_INTO));
+        var waitTask = Task.Run(() => _driver.WaitDebugEvent());
+        _driver.ContinueDebugEvent(DriverComm.CONTINUE_STEP_INTO);
         _hitSwBp = null;
+
+        var stepEvt = await waitTask;
+        if (stepEvt != null)
+            OnDebugEvent(stepEvt);
     }
 
     private string _lastConnectAddress = "";
@@ -1496,10 +1500,40 @@ public partial class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
-        // Native 64-bit: use debug hook mechanism
-        StartDebugListener();
-        await Task.Run(() => _driver.ContinueDebugEvent(DriverComm.CONTINUE_STEP_INTO));
+        // Native 64-bit: use debug hook mechanism.
+        var statsBefore = _driver.GetHookStats();
+        Log($"Step: hookCalls={statsBefore?.hookCalls} targetCalls={statsBefore?.targetCalls} " +
+            $"blocked={statsBefore?.threadBlocked} kdEnabled={statsBefore?.kdEnabled}");
+
+        Log("Step: sending WAIT + Continue(STEP_INTO)...");
+        var waitTask = Task.Run(() => _driver.WaitDebugEvent());
+        var contOk = _driver.ContinueDebugEvent(DriverComm.CONTINUE_STEP_INTO);
+        Log($"Step: Continue sent, ok={contOk}");
         _hitSwBp = null;
+
+        // Wait with timeout — if no event in 5s, something is wrong
+        var completed = await Task.WhenAny(waitTask, Task.Delay(5000));
+        if (completed == waitTask)
+        {
+            var stepEvt = await waitTask;
+            if (stepEvt != null)
+            {
+                Log($"Step: event received at {stepEvt.Address:X16}");
+                OnDebugEvent(stepEvt);
+            }
+            else
+                Log("Step: WaitDebugEvent returned null");
+        }
+        else
+        {
+            var statsAfter = _driver.GetHookStats();
+            Log($"Step: TIMEOUT 5s! hookCalls={statsAfter?.hookCalls} targetCalls={statsAfter?.targetCalls} " +
+                $"blocked={statsAfter?.threadBlocked} mode={statsAfter?.continueMode} " +
+                $"lastCode=0x{statsAfter?.lastTargetCode:X} lastAddr=0x{statsAfter?.lastTargetAddr:X}");
+            IsBreakState = true;
+            IsRunning = false;
+            StatusText = "Step timed out";
+        }
     }
 
     /* ================================================================== */
@@ -3137,10 +3171,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 if (evt == null)
                 {
                     nullCount++;
-                    if (nullCount <= 3)
-                        Application.Current?.Dispatcher.InvokeAsync(() =>
-                            Log($"DebugListener: WaitDebugEvent returned null (#{nullCount})"));
-                    continue;
+                    Application.Current?.Dispatcher.InvokeAsync(() =>
+                        Log($"DebugListener: WaitDebugEvent returned null (#{nullCount})"));
+                    // Exit immediately on null — do NOT send another WAIT.
+                    // Sending another WAIT after the IRP was cancelled creates a
+                    // stale pending IRP that corrupts the DBG TCP stream.
+                    return;
                 }
 
                 // Run plugin filters on THIS background thread — UI is not touched.
@@ -3221,8 +3257,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private void StopDebugListener()
     {
         _listenerCts?.Cancel();
-        // Wait for the listener task to finish (RESET should have cancelled the pending IRP,
-        // so WaitDebugEvent will return null and the task will exit).
+
+        // Force-interrupt the DBG channel TCP read so the listener unblocks.
+        _driver.InterruptDbgChannel();
+
         if (_listenerTask != null)
         {
             try { _listenerTask.Wait(3000); } catch { /* timeout or cancelled — ok */ }
@@ -3230,6 +3268,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _listenerCts?.Dispose();
         _listenerCts = null;
         _listenerTask = null;
+
+        _driver.ResetDbgTimeout();
     }
 
     private async void OnDebugEvent(DebugEvent evt)

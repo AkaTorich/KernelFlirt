@@ -1436,8 +1436,13 @@ NTSTATUS KfInstallDebugHook(void)
     PULONG pSelect;
     PUCHAR otherTarget = NULL;
 
-    if (g_HookInstalled)
+    if (g_HookInstalled) {
+        /* Hook already installed — just re-assert KdDebuggerEnabled flags.
+         * DbgPrint FIRST, then re-assert LAST (DbgPrint resets the flag!). */
+        DbgPrint("[KernelFlirt] Hook already active — re-asserting KdDebuggerEnabled\n");
+        KfReassertDebugFlags();
         return STATUS_SUCCESS;
+    }
 
     DbgPrint("[KernelFlirt] === InstallDebugHook START ===\n");
 
@@ -1804,11 +1809,19 @@ void KfDebugHookDeactivate(void)
     g_TargetPid = 0xFFFFFFFF;
     DbgPrint("[KernelFlirt] Hook deactivated (PID=0xFFFFFFFF)\n");
 
-    /* Wake any blocked thread + cancel pending WAIT IRP atomically */
+    /* Wake any blocked thread + cancel pending WAIT IRP + reset session state */
     KeAcquireSpinLock(&g_DbgLock, &oldIrql);
 
-    if (g_ThreadBlocked)
+    if (g_ThreadBlocked) {
+        /* Signal continue so blocked handler thread can exit */
+        g_ContinueMode = KF_CONTINUE_RUN;
+        InterlockedExchange(&g_ContinueReady, 1);
         KeSetEvent(&g_ContinueEvent, 0, FALSE);
+    }
+
+    /* Reset session state for next debug session */
+    g_EventPending = FALSE;
+    g_TraceActive  = FALSE;
 
     if (g_WaitIrp) {
         irp = g_WaitIrp;
@@ -1837,8 +1850,26 @@ void KfDebugHookDeactivate(void)
 
 void KfSetTargetPid(ULONG pid)
 {
+    KIRQL oldIrql;
+
     g_TargetPid = pid;
-    DbgPrint("[KernelFlirt] Target PID = %u\n", pid);
+
+    /* Reset session state when switching to a new target */
+    KeAcquireSpinLock(&g_DbgLock, &oldIrql);
+    g_EventPending    = FALSE;
+    g_TraceActive     = FALSE;
+    g_ContinueMode    = KF_CONTINUE_RUN;
+    InterlockedExchange(&g_ContinueReady, 0);
+    KeClearEvent(&g_ContinueEvent);
+    KeReleaseSpinLock(&g_DbgLock, oldIrql);
+
+    DbgPrint("[KernelFlirt] Target PID = %u (session state reset)\n", pid);
+
+    /* Re-assert KdDebuggerEnabled AFTER all DbgPrint calls.
+     * DbgPrint uses KD transport which resets KdDebuggerEnabled=FALSE
+     * when no kernel debugger is attached — must re-assert LAST. */
+    if (pid != 0xFFFFFFFF && g_HookInstalled)
+        KfReassertDebugFlags();
 }
 
 BOOLEAN KfIsDebugHookActive(void)

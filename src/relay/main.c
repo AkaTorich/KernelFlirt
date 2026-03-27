@@ -49,6 +49,11 @@
 static HANDLE g_hDeviceCmd = INVALID_HANDLE_VALUE;  /* CMD channel handle */
 static HANDLE g_hDeviceDbg = INVALID_HANDLE_VALUE;  /* DBG channel handle */
 
+/* Track last created process so we can report exit code */
+static HANDLE g_hChildProcess = NULL;
+static DWORD  g_dwChildPid    = 0;
+static DWORD WINAPI ChildExitWatcher(LPVOID param);
+
 static HANDLE OpenOneHandle(const char *label)
 {
     HANDLE h = CreateFileA(
@@ -230,6 +235,22 @@ static BOOL HandleListDirectory(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, D
     return TRUE;
 }
 
+/* Background thread: waits for child process to exit and prints exit code */
+static DWORD WINAPI ChildExitWatcher(LPVOID param)
+{
+    (void)param;
+    HANDLE h = g_hChildProcess;
+    DWORD pid = g_dwChildPid;
+    if (!h) return 0;
+
+    WaitForSingleObject(h, INFINITE);
+
+    DWORD exitCode = 0;
+    GetExitCodeProcess(h, &exitCode);
+    printf("[dbg] Process %lu exited with code: %lu (0x%lX)\n", pid, exitCode, exitCode);
+    return 0;
+}
+
 static BOOL HandleCreateProcess(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, DWORD *pOutSize)
 {
     if (!inputBuf || inputSize < 4) return FALSE;
@@ -283,8 +304,18 @@ static BOOL HandleCreateProcess(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, D
         }
     }
 
-    CloseHandle(pi.hProcess);
+    /* Close previous child handle if any */
+    if (g_hChildProcess) {
+        CloseHandle(g_hChildProcess);
+        g_hChildProcess = NULL;
+    }
+    /* Keep process handle to monitor exit */
+    g_hChildProcess = pi.hProcess;
+    g_dwChildPid    = pi.dwProcessId;
     CloseHandle(pi.hThread);
+
+    /* Background thread to watch for process exit */
+    CreateThread(NULL, 0, ChildExitWatcher, NULL, 0, NULL);
 
     KF_CREATE_PROCESS_OUT *out = (KF_CREATE_PROCESS_OUT *)calloc(1, sizeof(KF_CREATE_PROCESS_OUT));
     if (!out) return FALSE;
@@ -1091,13 +1122,72 @@ static void ChannelLoop(SOCKET client, HANDLE hDevice, const char *tag)
     DeleteCriticalSection(&sendLock);
 }
 
-/* Thread procedure for the DBG channel */
+/*
+ * DBG channel: SYNCHRONOUS loop — one request at a time, no thread pool.
+ * This prevents stale workers from holding pending IOCTLs or corrupting
+ * the response stream.  WAIT_DEBUG_EVENT blocks here until the driver
+ * completes the IRP (or cancels it), then the response goes back on TCP.
+ */
 static DWORD WINAPI DbgChannelThread(LPVOID param)
 {
     SOCKET dbgSock = (SOCKET)(ULONG_PTR)param;
-    printf("[dbg] Debug channel thread started\n");
+    printf("[dbg] Debug channel thread started (synchronous mode)\n");
 
-    ChannelLoop(dbgSock, g_hDeviceDbg, "dbg");
+    for (;;) {
+        DWORD ioctlCode, inputSize;
+        BYTE *inputBuf = NULL;
+
+        if (!RecvAll(dbgSock, &ioctlCode, 4)) break;
+        if (!RecvAll(dbgSock, &inputSize, 4)) break;
+
+        if (inputSize > KF_MAX_BUFFER) {
+            printf("[dbg] Input too large: %lu\n", inputSize);
+            break;
+        }
+
+        if (inputSize > 0) {
+            inputBuf = (BYTE *)malloc(inputSize);
+            if (!inputBuf) break;
+            if (!RecvAll(dbgSock, inputBuf, inputSize)) {
+                free(inputBuf);
+                break;
+            }
+        }
+
+        /* Execute IOCTL synchronously — blocks for WAIT_DEBUG_EVENT */
+        DWORD outputSize = KF_MAX_BUFFER;
+        BYTE *outputBuf = (BYTE *)malloc(outputSize);
+        if (!outputBuf) { free(inputBuf); break; }
+
+        DWORD bytesReturned = 0;
+        BOOL success = DeviceIoControl(
+            g_hDeviceDbg,
+            ioctlCode,
+            inputBuf, inputSize,
+            outputBuf, outputSize,
+            &bytesReturned, NULL);
+
+        DWORD win32Error = success ? 0 : GetLastError();
+
+        /* Send response directly — no sendLock needed (single-threaded) */
+        {
+            DWORD successFlag = success ? 1 : 0;
+            DWORD outLen = success ? bytesReturned : 0;
+
+            if (!SendAll(dbgSock, &successFlag, 4) ||
+                !SendAll(dbgSock, &win32Error, 4) ||
+                !SendAll(dbgSock, &outLen, 4) ||
+                (outLen > 0 && !SendAll(dbgSock, outputBuf, outLen)))
+            {
+                free(inputBuf);
+                free(outputBuf);
+                break;
+            }
+        }
+
+        free(inputBuf);
+        free(outputBuf);
+    }
 
     printf("[dbg] Debug channel disconnected\n");
     closesocket(dbgSock);

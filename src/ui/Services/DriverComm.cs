@@ -367,6 +367,47 @@ public class DriverComm : IDisposable
     public string? RemoteHost { get; private set; }
     public int RemotePort { get; private set; }
 
+    /// <summary>
+    /// Set a short read timeout on the DBG channel so a blocked WaitDebugEvent
+    /// will throw and release _dbgRemoteLock.  Call ResetDbgTimeout() after.
+    /// </summary>
+    public void InterruptDbgChannel()
+    {
+        try { if (_dbgNetStream != null) _dbgNetStream.ReadTimeout = 500; } catch { }
+    }
+
+    /// <summary>Restore infinite read timeout on DBG channel.</summary>
+    public void ResetDbgTimeout()
+    {
+        try { if (_dbgNetStream != null) _dbgNetStream.ReadTimeout = Timeout.Infinite; } catch { }
+    }
+
+    /// <summary>
+    /// Drain any stale responses from the DBG TCP receive buffer.
+    /// Call after StopDebugListener + ResetDriver to flush orphaned WAIT responses.
+    /// </summary>
+    public void FlushDbgChannel()
+    {
+        if (_dbgNetStream == null) return;
+        lock (_dbgRemoteLock)
+        {
+            try
+            {
+                _dbgNetStream.ReadTimeout = 200;
+                var trash = new byte[4096];
+                while (_dbgNetStream.DataAvailable)
+                    _dbgNetStream.Read(trash, 0, trash.Length);
+                // Also try one timed read in case DataAvailable is stale
+                try { _dbgNetStream.Read(trash, 0, trash.Length); } catch { }
+            }
+            catch { /* timeout or error — expected */ }
+            finally
+            {
+                _dbgNetStream.ReadTimeout = Timeout.Infinite;
+            }
+        }
+    }
+
     /// <summary>Connect to local driver via DeviceIoControl.</summary>
     public bool Connect()
     {
@@ -411,7 +452,7 @@ public class DriverComm : IDisposable
             _dbgTcpClient.NoDelay = true;
             _dbgTcpClient.Connect(host, port);
             _dbgNetStream = _dbgTcpClient.GetStream();
-            // No read timeout on DBG channel — WaitDebugEvent is expected to block
+            _dbgNetStream.ReadTimeout = Timeout.Infinite; // WaitDebugEvent blocks until event
 
             return true;
         }
