@@ -1,5 +1,37 @@
 # Changelog
 
+## v1.5.0 — 2026-03-27
+
+### Inline Assembler
+
+- **Assemble dialog** (Space or context menu → Assemble) — type assembly text (`mov eax, 1`, `xor eax, eax`, `jmp 0x401000`) or hex bytes (`B8 01 00 00 00`), see live preview of encoded bytes with automatic NOP padding when the new instruction is shorter than the original.
+- **NOP Instruction** (context menu) — replaces the selected instruction with NOPs (fills entire instruction size).
+- **Fill with NOPs** (context menu) — fills N bytes at the selected address with `0x90`.
+- **x86/x64 assembler** built on Iced.Intel — supports 80+ instruction types: `mov`, `add`, `sub`, `xor`, `and`, `or`, `cmp`, `test`, `lea`, `push`, `pop`, `inc`, `dec`, `jmp`, `call`, all conditional jumps (`je`/`jne`/`jg`/`jl`/...), `shl`/`shr`, `movzx`/`movsx`, `cmovxx`, `bsf`/`bsr`, memory operands (`[rax+8]`, `dword [ebp-4]`), and more.
+- **Patch tracking** — all patches recorded in Patches list with original bytes for undo. Patches included in PE Rebuilder dumps.
+
+### Driver Stability
+
+- **Fixed IRP double-complete BSOD** — `IoSetCancelRoutine` return value now checked under spinlock in `KfDebugHookDeactivate`, `KfDebugHookCleanup`, and `KfReportAndBlock`. If cancel routine already owns the IRP, we skip completion. Standard DDK safe-cancel pattern.
+- **Fixed stepping not working after re-open** — `KfDebugHookDeactivate` and `KfSetTargetPid` now reset full session state (`g_EventPending`, `g_TraceActive`, `g_ContinueMode`, `g_ContinueReady`, `g_ContinueEvent`). Previously stale state from previous session caused step events to be lost.
+- **KdDebuggerEnabled re-assertion** — `KfSetTargetPid` and `KfInstallDebugHook` (early return path) now call `KfReassertDebugFlags()` after all `DbgPrint` calls, not before. `DbgPrint` resets `KdDebuggerEnabled=FALSE` via KD transport when no kernel debugger is attached.
+- **Process exit notification** — `PsSetCreateProcessNotifyRoutine` callback auto-deactivates debug hook when target process exits, cancelling pending WAIT IRP.
+
+### Relay
+
+- **Synchronous DBG channel** — replaced thread pool dispatch (`QueueUserWorkItem`) with direct synchronous `DeviceIoControl` loop for the DBG channel. Eliminates stale workers holding pending IOCTLs and corrupting the TCP response stream.
+- **Process exit reporting** — `[dbg] Process XXXX exited with code: N (0xN)` printed when debugged process terminates.
+
+### Step/Run Reliability
+
+- **Direct WAIT+Continue for stepping** — `StepIn` and `PluginSingleStep` no longer use `StartDebugListener`. Instead, `WaitDebugEvent` (DBG channel) and `ContinueDebugEvent` (CMD channel) are sent in parallel, with 5-second timeout and diagnostic stats on failure.
+- **DebugListener exits on first null** — prevents ghost WAIT IRPs that desynchronize the DBG TCP stream between sessions. Previously the listener looped and sent additional WAITs after process exit, creating stale pending IRPs in the driver.
+- **DBG channel interrupt** — `StopDebugListener` sets a short `ReadTimeout` on the DBG stream to force-unblock any pending TCP read, then restores infinite timeout.
+
+### Disassembler
+
+- **Right-click selects instruction** — `MouseRightButtonDown` now sets `SelectedDisasmAddress` so context menu actions work without prior left-click.
+
 ## v1.4.0 — 2026-03-27
 
 ### New Plugin: PE Rebuilder
