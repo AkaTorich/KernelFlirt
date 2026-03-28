@@ -445,6 +445,42 @@ public partial class MainWindow : Window
             VM.FollowInDisasmCommand.Execute(reg.Value);
     }
 
+    private void OnRegisterDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (RegistersGrid.SelectedItem is Register reg)
+            VM.EditRegister(reg);
+    }
+
+    private void OnRegisterModify(object sender, RoutedEventArgs e)
+    {
+        if (RegistersGrid.SelectedItem is Register reg)
+            VM.EditRegister(reg);
+    }
+
+    private void OnRegisterToggleFlag(object sender, RoutedEventArgs e)
+    {
+        if (RegistersGrid.SelectedItem is Register reg)
+            VM.ToggleFlag(reg);
+    }
+
+    private void OnRegisterZero(object sender, RoutedEventArgs e)
+    {
+        if (RegistersGrid.SelectedItem is Register reg)
+            VM.ZeroRegister(reg);
+    }
+
+    private void OnRegisterIncrement(object sender, RoutedEventArgs e)
+    {
+        if (RegistersGrid.SelectedItem is Register reg)
+            VM.IncrementRegister(reg);
+    }
+
+    private void OnRegisterDecrement(object sender, RoutedEventArgs e)
+    {
+        if (RegistersGrid.SelectedItem is Register reg)
+            VM.DecrementRegister(reg);
+    }
+
     /* ================================================================== */
     /*  Stack context menu                                                 */
     /* ================================================================== */

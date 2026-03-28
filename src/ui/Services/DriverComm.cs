@@ -868,6 +868,58 @@ public class DriverComm : IDisposable
         return ok;
     }
 
+    /// <summary>
+    /// Read-modify-write: reads all registers, sets the named register to newValue, writes back.
+    /// </summary>
+    public bool WriteRegisterByName(uint pid, uint tid, string regName, ulong newValue)
+    {
+        // Read current state
+        var readInput = new KF_THREAD_TARGET { ProcessId = pid, ThreadId = tid };
+        var (rok, rdata) = SendIoctl(IOCTL_KF_READ_REGISTERS, StructToBytes(readInput), Marshal.SizeOf<KF_REGISTERS>());
+        if (!rok || rdata == null) return false;
+
+        var regs = BytesToStruct<KF_REGISTERS>(rdata);
+
+        // Modify the requested register
+        switch (regName)
+        {
+            case "RAX": case "EAX": regs.Rax = newValue; break;
+            case "RBX": case "EBX": regs.Rbx = newValue; break;
+            case "RCX": case "ECX": regs.Rcx = newValue; break;
+            case "RDX": case "EDX": regs.Rdx = newValue; break;
+            case "RSI": case "ESI": regs.Rsi = newValue; break;
+            case "RDI": case "EDI": regs.Rdi = newValue; break;
+            case "RBP": case "EBP": regs.Rbp = newValue; break;
+            case "RSP": case "ESP": regs.Rsp = newValue; break;
+            case "R8":  regs.R8  = newValue; break;
+            case "R9":  regs.R9  = newValue; break;
+            case "R10": regs.R10 = newValue; break;
+            case "R11": regs.R11 = newValue; break;
+            case "R12": regs.R12 = newValue; break;
+            case "R13": regs.R13 = newValue; break;
+            case "R14": regs.R14 = newValue; break;
+            case "R15": regs.R15 = newValue; break;
+            case "RIP": case "EIP": regs.Rip = newValue; break;
+            case "RFLAGS": case "EFLAGS": regs.Rflags = newValue; break;
+            case "DR0": regs.Dr0 = newValue; break;
+            case "DR1": regs.Dr1 = newValue; break;
+            case "DR2": regs.Dr2 = newValue; break;
+            case "DR3": regs.Dr3 = newValue; break;
+            case "DR6": regs.Dr6 = newValue; break;
+            case "DR7": regs.Dr7 = newValue; break;
+            default: return false;
+        }
+
+        // Write back
+        var writeInput = new KF_WRITE_REGISTERS_IN
+        {
+            Target = new KF_THREAD_TARGET { ProcessId = pid, ThreadId = tid },
+            Registers = regs
+        };
+        var (wok, _) = SendIoctl(IOCTL_KF_WRITE_REGISTERS, StructToBytes(writeInput), 0);
+        return wok;
+    }
+
     public bool WriteRip(uint pid, uint tid, ulong newRip)
     {
         // Use dedicated WRITE_RIP IOCTL that modifies ONLY RIP in trap frame.

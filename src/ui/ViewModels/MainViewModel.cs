@@ -2577,6 +2577,103 @@ public partial class MainViewModel : ObservableObject, IDisposable
     }
 
     /* ================================================================== */
+    /*  Register editing                                                   */
+    /* ================================================================== */
+
+    /// <summary>
+    /// Modify a general-purpose register, RIP, or RFLAGS/EFLAGS by name.
+    /// Uses read-modify-write via the full WRITE_REGISTERS IOCTL.
+    /// </summary>
+    public void EditRegister(Register reg)
+    {
+        if (!IsConnected || TargetPid == 0 || !IsBreakState) return;
+        if (reg.IsFlag) { ToggleFlag(reg); return; }
+
+        string currentHex = reg.Is32Bit ? $"{reg.Value:X8}" : $"{reg.Value:X16}";
+        string input = PromptInput("Modify Register", $"New value for {reg.Name} (hex):", currentHex);
+        if (string.IsNullOrWhiteSpace(input)) return;
+
+        input = input.Trim();
+        if (input.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            input = input[2..];
+
+        if (!ulong.TryParse(input, System.Globalization.NumberStyles.HexNumber, null, out ulong newValue))
+        {
+            MessageBox.Show("Invalid hex value.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        WriteRegisterValue(reg.Name, newValue);
+    }
+
+    /// <summary>
+    /// Toggle a single CPU flag (CF, ZF, SF, etc.) by flipping the corresponding bit in RFLAGS.
+    /// </summary>
+    public void ToggleFlag(Register flag)
+    {
+        if (!IsConnected || TargetPid == 0 || !IsBreakState) return;
+        if (!flag.IsFlag) return;
+
+        int bitIndex = flag.Name switch
+        {
+            "CF" => 0, "PF" => 2, "AF" => 4, "ZF" => 6,
+            "SF" => 7, "TF" => 8, "IF" => 9, "DF" => 10, "OF" => 11,
+            _ => -1
+        };
+        if (bitIndex < 0) return;
+
+        var rflagsReg = Registers.FirstOrDefault(r => r.Name == "RFLAGS" || r.Name == "EFLAGS");
+        if (rflagsReg == null) return;
+
+        ulong newRflags = rflagsReg.Value ^ (1UL << bitIndex);
+        WriteRegisterValue(rflagsReg.Name, newRflags);
+    }
+
+    /// <summary>
+    /// Zero out a register.
+    /// </summary>
+    public void ZeroRegister(Register reg)
+    {
+        if (!IsConnected || TargetPid == 0 || !IsBreakState) return;
+        if (reg.IsFlag) return;
+        WriteRegisterValue(reg.Name, 0);
+    }
+
+    /// <summary>
+    /// Increment a register by 1.
+    /// </summary>
+    public void IncrementRegister(Register reg)
+    {
+        if (!IsConnected || TargetPid == 0 || !IsBreakState) return;
+        if (reg.IsFlag) return;
+        WriteRegisterValue(reg.Name, reg.Value + 1);
+    }
+
+    /// <summary>
+    /// Decrement a register by 1.
+    /// </summary>
+    public void DecrementRegister(Register reg)
+    {
+        if (!IsConnected || TargetPid == 0 || !IsBreakState) return;
+        if (reg.IsFlag) return;
+        WriteRegisterValue(reg.Name, reg.Value - 1);
+    }
+
+    private void WriteRegisterValue(string regName, ulong newValue)
+    {
+        var pid = TargetPid;
+        var tid = SelectedThreadId;
+
+        if (!_driver.WriteRegisterByName(pid, tid, regName, newValue))
+        {
+            MessageBox.Show("Failed to write register.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        RefreshRegisters();
+    }
+
+    /* ================================================================== */
     /*  Search (OllyDbg: Ctrl+F — binary pattern / string search)          */
     /* ================================================================== */
 

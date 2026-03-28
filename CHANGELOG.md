@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.5.1 — 2026-03-28
+
+### Register Editing
+
+- **Modify register value** — double-click any register (or right-click → Modify Value) to enter a new hex value. Works for all general-purpose registers (RAX–R15 / EAX–ESP), RIP/EIP, RFLAGS/EFLAGS, and debug registers (DR0–DR7).
+- **Toggle CPU flags** — double-click or right-click → Toggle Flag on individual flags (CF, PF, AF, ZF, SF, TF, IF, DF, OF) to flip them in RFLAGS/EFLAGS.
+- **Zero / Increment / Decrement** — context menu shortcuts to zero out a register or adjust it by ±1.
+- **Read-modify-write via WRITE_REGISTERS IOCTL** — new `WriteRegisterByName` in DriverComm reads the full register set, patches the target field, and writes back atomically. Editing is only available in break state.
+
+### Driver Stability
+
+- **Fixed BSOD when VM left overnight with debugged process open** — system would blue-screen if the target VM was left running overnight with a process attached in the debugger.
+
 ## v1.5.0 — 2026-03-27
 
 ### Inline Assembler

@@ -246,9 +246,16 @@
                             </Border>
                             <DataGrid x:Name="RegistersGrid" ItemsSource="{Binding Registers}" IsReadOnly="True"
                                       AutoGenerateColumns="False" HeadersVisibility="None"
-                                      BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
+                                      BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                      MouseDoubleClick="OnRegisterDoubleClick">
                                 <DataGrid.ContextMenu>
                                     <ContextMenu>
+                                        <MenuItem Header="Modify Value…" Click="OnRegisterModify" FontWeight="Bold" />
+                                        <MenuItem Header="Toggle Flag" Click="OnRegisterToggleFlag" />
+                                        <MenuItem Header="Zero Register" Click="OnRegisterZero" />
+                                        <MenuItem Header="Increment (+1)" Click="OnRegisterIncrement" />
+                                        <MenuItem Header="Decrement (-1)" Click="OnRegisterDecrement" />
+                                        <Separator />
                                         <MenuItem Header="Copy All Registers" Command="{Binding CopyRegisterValueCommand}" />
                                         <MenuItem Header="Follow in Dump" Click="OnRegisterFollowInDump" />
                                         <MenuItem Header="Follow in Disassembler" Click="OnRegisterFollowInDisasm" />
