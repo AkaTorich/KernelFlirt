@@ -396,9 +396,9 @@ public class DriverComm : IDisposable
                 _dbgNetStream.ReadTimeout = 200;
                 var trash = new byte[4096];
                 while (_dbgNetStream.DataAvailable)
-                    _dbgNetStream.Read(trash, 0, trash.Length);
+                    _ = _dbgNetStream.Read(trash, 0, trash.Length);
                 // Also try one timed read in case DataAvailable is stale
-                try { _dbgNetStream.Read(trash, 0, trash.Length); } catch { }
+                try { _ = _dbgNetStream.Read(trash, 0, trash.Length); } catch { }
             }
             catch { /* timeout or error — expected */ }
             finally

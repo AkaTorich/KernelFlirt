@@ -19,6 +19,12 @@ DRIVER_DISPATCH   KfCreateClose;
 _Dispatch_type_(IRP_MJ_DEVICE_CONTROL)
 DRIVER_DISPATCH   KfDeviceControl;
 
+_Dispatch_type_(IRP_MJ_POWER)
+DRIVER_DISPATCH   KfPower;
+
+_Dispatch_type_(IRP_MJ_SYSTEM_CONTROL)
+DRIVER_DISPATCH   KfSystemControl;
+
 /* Defined in ioctl.c */
 extern NTSTATUS KfDispatchIoctl(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 
@@ -73,6 +79,8 @@ DriverEntry(
     DriverObject->MajorFunction[IRP_MJ_CREATE]         = KfCreateClose;
     DriverObject->MajorFunction[IRP_MJ_CLOSE]          = KfCreateClose;
     DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = KfDeviceControl;
+    DriverObject->MajorFunction[IRP_MJ_POWER]          = KfPower;
+    DriverObject->MajorFunction[IRP_MJ_SYSTEM_CONTROL] = KfSystemControl;
     DriverObject->DriverUnload                          = KfUnload;
 
     /* Use direct I/O for better performance with large buffers */
@@ -83,6 +91,37 @@ DriverEntry(
     KfDebugHookInit();
 
     DbgPrint("[KernelFlirt] Driver loaded successfully\n");
+    return STATUS_SUCCESS;
+}
+
+/* Power IRP handler — pass down or complete.
+ * Without this, DRIVER_POWER_STATE_FAILURE BSOD occurs
+ * when the system enters sleep/hibernate. */
+NTSTATUS
+KfPower(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _Inout_ PIRP        Irp
+)
+{
+    UNREFERENCED_PARAMETER(DeviceObject);
+    PoStartNextPowerIrp(Irp);
+    Irp->IoStatus.Status = STATUS_SUCCESS;
+    Irp->IoStatus.Information = 0;
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    return STATUS_SUCCESS;
+}
+
+/* WMI/System Control handler — complete with success. */
+NTSTATUS
+KfSystemControl(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _Inout_ PIRP        Irp
+)
+{
+    UNREFERENCED_PARAMETER(DeviceObject);
+    Irp->IoStatus.Status = STATUS_SUCCESS;
+    Irp->IoStatus.Information = 0;
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
     return STATUS_SUCCESS;
 }
 
