@@ -78,5 +78,7 @@ public class RuntimeHit : INotifyPropertyChanged
     public string DangerText => Danger.ToString();
     public string SuspiciousText => IsSuspicious ? "⚠ YES" : "";
 
+#pragma warning disable CS0067
     public event PropertyChangedEventHandler? PropertyChanged;
+#pragma warning restore CS0067
 }

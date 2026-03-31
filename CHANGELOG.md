@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.6.0 — 2026-03-30
+
+### Service Debugging (Debug Service)
+
+- **Fixed: services now start through SCM** — previously `HandleStartService` used `CreateProcess` directly, bypassing the Service Control Manager. `StartServiceCtrlDispatcher` would fail and ServiceMain was never called. Now the relay copies the binary with a `_kfdebug` suffix, patches the entry point to `EB FE` (infinite loop), temporarily swaps `ImagePath` via `ChangeServiceConfig`, and starts through `StartServiceA`. The SCM pipe connection is preserved so `StartServiceCtrlDispatcher` succeeds and ServiceMain is reached.
+- **Two-phase start (prepare + start)** — `START_SERVICE` pseudo-IOCTL only prepares (copy, patch, swap ImagePath). The UI then installs the debug hook targeting the service PID, and uses `START_DRIVER` to call `StartServiceA` in a background thread — same proven pattern as driver loading.
+- **PID discovery via toolhelp** — SCM doesn't populate `dwProcessId` until `StartServiceCtrlDispatcher` is called (which can't happen while spinning at EB FE). `HandleQueryServicePid` now falls back to `CreateToolhelp32Snapshot` + `Process32First/Next` to find the `_kfdebug` process by image name.
+- **Entry point INT3 injection from UI** — after the process spins at EB FE and the debug hook is installed, the UI sets a software breakpoint (`SetBreakpoint`) at the entry point. The driver's `CR0.WP` trick handles read-only `.text` pages. `WaitDebugEvent` catches the INT3.
+- **Original bytes restore via ProtectMemory** — after catching the entry point INT3, the UI changes page protection to RWX, writes the real original bytes (returned by relay in `KF_START_SERVICE_OUT.OriginalBytes[2]`), and restores protection. Previously `WriteMemory` silently failed on RX pages.
+- **CONTINUE_STEP_PAST + event loop** — continuing from the entry point INT3 uses `CONTINUE_STEP_PAST` (mode 1) with a loop to skip spurious single-step events, matching the driver loading flow.
+- **Leftover cleanup** — if a previous run left the `ImagePath` pointing to a `_kfdebug` copy, `HandleStartService` detects and restores the original path before proceeding. A deferred background thread restores `ImagePath` and deletes the copy after the process exits.
+- **svchost rejection** — svchost-hosted services are detected and rejected with a clear error message.
+- **RefreshImports/Sections/Exceptions** — now called when stopped at ServiceMain or StartServiceCtrlDispatcher (previously missing, so imports tab was empty).
+
+### MCP Plugin
+
+- **Removed decompilation timeout** — `ExecDecompile` no longer times out after 30 seconds. The polling loop now waits indefinitely until RetDec finishes, so AI assistants always receive the complete decompiled output.
+
 ## v1.5.1 — 2026-03-28
 
 ### Register Editing
