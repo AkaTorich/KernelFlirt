@@ -60,7 +60,11 @@ public class DebuggerApiAdapter : IDebuggerApi
         Action<string, IReadOnlyList<PluginSectionInfo>> addModuleSections,
         Action<ulong> decompileFunction,
         Func<string> getDecompiledCode,
-        Action disasmGoBack)
+        Action disasmGoBack,
+        Action<ulong, string?> setAnnotation,
+        Func<ulong, string?> getAnnotation,
+        Func<IReadOnlyDictionary<ulong, string>> getAllAnnotations,
+        Action refreshDisasm)
     {
         _pluginManager = pluginManager;
         _getIsConnected = getIsConnected;
@@ -74,7 +78,7 @@ public class DebuggerApiAdapter : IDebuggerApi
         Symbols = new SymbolApiAdapter(symbols, getTargetPid, getModules, getKernelModules);
         Process = new ProcessApiAdapter(driver);
         Log = new LogApiAdapter(log);
-        UI = new UiApiAdapter(navigateDisasm, addMenuItem, addToolPanel, addUnpackedModule, refreshModulesAndSections, addModuleSections, decompileFunction, getDecompiledCode, disasmGoBack);
+        UI = new UiApiAdapter(navigateDisasm, addMenuItem, addToolPanel, addUnpackedModule, refreshModulesAndSections, addModuleSections, decompileFunction, getDecompiledCode, disasmGoBack, setAnnotation, getAnnotation, getAllAnnotations, refreshDisasm);
 
         // Wire events from PluginManager — all gated by Enabled flag
         pluginManager.OnDebugEvent += evt => { if (Enabled) OnDebugEvent?.Invoke(evt); };
@@ -302,6 +306,10 @@ public class UiApiAdapter : IUiApi
     private readonly Action<ulong> _decompileFunction;
     private readonly Func<string> _getDecompiledCode;
     private readonly Action _disasmGoBack;
+    private readonly Action<ulong, string?> _setAnnotation;
+    private readonly Func<ulong, string?> _getAnnotation;
+    private readonly Func<IReadOnlyDictionary<ulong, string>> _getAllAnnotations;
+    private readonly Action _refreshDisasm;
 
     public UiApiAdapter(Action<ulong> navigateDisasm, Action<string, Action> addMenuItem,
         Action<string, object> addToolPanel, Action<ulong, string> addUnpackedModule,
@@ -309,7 +317,11 @@ public class UiApiAdapter : IUiApi
         Action<string, IReadOnlyList<PluginSectionInfo>> addModuleSections,
         Action<ulong> decompileFunction,
         Func<string> getDecompiledCode,
-        Action disasmGoBack)
+        Action disasmGoBack,
+        Action<ulong, string?> setAnnotation,
+        Func<ulong, string?> getAnnotation,
+        Func<IReadOnlyDictionary<ulong, string>> getAllAnnotations,
+        Action refreshDisasm)
     {
         _navigateDisasm = navigateDisasm;
         _addMenuItem = addMenuItem;
@@ -320,6 +332,10 @@ public class UiApiAdapter : IUiApi
         _decompileFunction = decompileFunction;
         _getDecompiledCode = getDecompiledCode;
         _disasmGoBack = disasmGoBack;
+        _setAnnotation = setAnnotation;
+        _getAnnotation = getAnnotation;
+        _getAllAnnotations = getAllAnnotations;
+        _refreshDisasm = refreshDisasm;
     }
 
     public void NavigateDisassembly(ulong address)
@@ -366,4 +382,32 @@ public class UiApiAdapter : IUiApi
     {
         Application.Current.Dispatcher.Invoke(() => _disasmGoBack());
     }
+
+    public void SetAddressAnnotation(ulong address, string? annotation)
+    {
+        Application.Current.Dispatcher.Invoke(() => _setAnnotation(address, annotation));
+    }
+
+    public string? GetAddressAnnotation(ulong address)
+    {
+        return Application.Current.Dispatcher.Invoke(() => _getAnnotation(address));
+    }
+
+    public IReadOnlyDictionary<ulong, string> GetAllAnnotations()
+    {
+        return Application.Current.Dispatcher.Invoke(() => _getAllAnnotations());
+    }
+
+    public void RefreshDisassembly()
+    {
+        Application.Current.Dispatcher.Invoke(() => _refreshDisasm());
+    }
+
+    public event Action<ulong, string>? OnNoteAdded;
+    public event Action<ulong, string>? OnNoteEdited;
+    public event Action<ulong>? OnNoteRemoved;
+
+    public void FireNoteAdded(ulong addr, string note) => OnNoteAdded?.Invoke(addr, note);
+    public void FireNoteEdited(ulong addr, string note) => OnNoteEdited?.Invoke(addr, note);
+    public void FireNoteRemoved(ulong addr) => OnNoteRemoved?.Invoke(addr);
 }

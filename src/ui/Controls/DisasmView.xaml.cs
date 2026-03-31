@@ -230,10 +230,19 @@ public partial class DisasmView : UserControl
         // Mnemonic with per-token highlighting (branch targets show symbol names)
         AddHighlightedMnemonic(textBlock, instr);
 
-        // Symbol comment (like x64dbg/OllyDbg style) — skip if already shown as branch target
-        if (!string.IsNullOrEmpty(instr.Comment) && string.IsNullOrEmpty(instr.BranchTargetSymbol))
+        // Symbol comment (like x64dbg/OllyDbg style)
+        if (!string.IsNullOrEmpty(instr.Comment))
         {
-            textBlock.Inlines.Add(new Run($"  ; {instr.Comment}") { Foreground = CommentColor });
+            string? displayComment = instr.Comment;
+            // If branch target symbol is already shown in operands, strip it from comment
+            // and show only the plugin annotation part (after " | ")
+            if (!string.IsNullOrEmpty(instr.BranchTargetSymbol) && displayComment.Contains(" | "))
+                displayComment = displayComment[(displayComment.IndexOf(" | ") + 3)..];
+            else if (!string.IsNullOrEmpty(instr.BranchTargetSymbol))
+                displayComment = null;
+
+            if (!string.IsNullOrEmpty(displayComment))
+                textBlock.Inlines.Add(new Run($"  ; {displayComment}") { Foreground = CommentColor });
         }
 
         // Background color for breakpoint line or current instruction
@@ -510,6 +519,24 @@ public partial class DisasmView : UserControl
     private void OnContextAddBookmark(object sender, RoutedEventArgs e)
     {
         GetViewModel()?.AddBookmarkCommand.Execute(null);
+    }
+
+    private void OnContextAddNote(object sender, RoutedEventArgs e)
+    {
+        if (SelectedAddress == 0) return;
+        GetViewModel()?.AddNoteAtAddress(SelectedAddress);
+    }
+
+    private void OnContextEditNote(object sender, RoutedEventArgs e)
+    {
+        if (SelectedAddress == 0) return;
+        GetViewModel()?.EditNoteAtAddress(SelectedAddress);
+    }
+
+    private void OnContextRemoveNote(object sender, RoutedEventArgs e)
+    {
+        if (SelectedAddress == 0) return;
+        GetViewModel()?.RemoveNoteAtAddress(SelectedAddress);
     }
 
     private void OnContextFollowInDump(object sender, RoutedEventArgs e)

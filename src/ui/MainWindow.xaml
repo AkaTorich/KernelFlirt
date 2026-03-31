@@ -445,31 +445,7 @@
                 </DataGrid>
             </TabItem>
 
-            <!-- Tab: Bookmarks -->
-            <TabItem Header="Bookmarks">
-                <DataGrid x:Name="BookmarksGrid" ItemsSource="{Binding Bookmarks}" IsReadOnly="True"
-                          AutoGenerateColumns="False" BorderBrush="{DynamicResource BorderBrush}"
-                          MouseDoubleClick="OnBookmarkDoubleClick">
-                    <DataGrid.ContextMenu>
-                        <ContextMenu>
-                            <MenuItem Header="Go to Bookmark" Click="OnBookmarkGoTo" />
-                            <MenuItem Header="Follow in Dump" Click="OnBookmarkFollowDump" />
-                            <MenuItem Header="Remove" Click="OnBookmarkRemove" />
-                        </ContextMenu>
-                    </DataGrid.ContextMenu>
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="Address" Width="160" Binding="{Binding AddressHex}">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Foreground" Value="{DynamicResource AddressBrush}" />
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
-                        <DataGridTextColumn Header="Label" Width="200" Binding="{Binding Label}" />
-                        <DataGridTextColumn Header="Module" Width="*" Binding="{Binding ModuleName}" />
-                    </DataGrid.Columns>
-                </DataGrid>
-            </TabItem>
+            <!-- Bookmarks tab removed — replaced by Bookmarks/Notes plugin -->
 
             <!-- Tab: Patches -->
             <TabItem Header="Patches">

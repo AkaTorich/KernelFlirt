@@ -32,6 +32,64 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private byte _driverOriginalByte;
     private uint _driverEntryRva;
 
+    // Plugin address annotations — shown as "; comment" in disassembly
+    private readonly Dictionary<ulong, string> _addressAnnotations = new();
+    public IReadOnlyDictionary<ulong, string> AddressAnnotations => _addressAnnotations;
+
+    public void SetAddressAnnotation(ulong address, string? annotation)
+    {
+        if (string.IsNullOrEmpty(annotation))
+            _addressAnnotations.Remove(address);
+        else
+            _addressAnnotations[address] = annotation;
+    }
+
+    // Called from disasm context menu
+    public event Action<ulong, string>? OnNoteAdded;
+    public event Action<ulong, string>? OnNoteEdited;
+    public event Action<ulong>? OnNoteRemoved;
+
+    public void AddNoteAtAddress(ulong address)
+    {
+        if (_addressAnnotations.ContainsKey(address))
+        {
+            EditNoteAtAddress(address);
+            return;
+        }
+        string note = PromptInput("Add Note", $"Note for {address:X16}:");
+        if (string.IsNullOrWhiteSpace(note)) return;
+        SetAddressAnnotation(address, note);
+        RefreshDisasmAnnotations();
+        OnNoteAdded?.Invoke(address, note);
+        Log($"Note added at {address:X16}: {note}");
+    }
+
+    public void EditNoteAtAddress(ulong address)
+    {
+        _addressAnnotations.TryGetValue(address, out var existing);
+        if (existing == null) { AddNoteAtAddress(address); return; }
+        string? note = PromptInput("Edit Note", $"Note for {address:X16}:", existing);
+        if (note == null) return;
+        if (string.IsNullOrWhiteSpace(note))
+        {
+            RemoveNoteAtAddress(address);
+            return;
+        }
+        SetAddressAnnotation(address, note);
+        RefreshDisasmAnnotations();
+        OnNoteEdited?.Invoke(address, note);
+        Log($"Note edited at {address:X16}: {note}");
+    }
+
+    public void RemoveNoteAtAddress(ulong address)
+    {
+        if (!_addressAnnotations.ContainsKey(address)) return;
+        SetAddressAnnotation(address, null);
+        RefreshDisasmAnnotations();
+        OnNoteRemoved?.Invoke(address);
+        Log($"Note removed at {address:X16}");
+    }
+
     [ObservableProperty] private bool _isConnected;
     [ObservableProperty] private uint _targetPid;
     [ObservableProperty] private uint _selectedThreadId;
@@ -98,6 +156,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public Action<string, Action>? AddPluginMenuItem { get; set; }
     public Action<string, object>? AddPluginToolPanel { get; set; }
     public Action<string>? OnPluginInitializing { get; set; }
+    public Action? SwitchToDisasmTab { get; set; }
 
     public MainViewModel()
     {
@@ -131,7 +190,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
             (modName, sections) => AddModuleSections(modName, sections),
             addr => DecompileFunction(addr, 0),
             () => DecompiledCode,
-            () => { if (CanDisasmGoBack) DisasmGoBackCommand.Execute(null); });
+            () => { if (CanDisasmGoBack) DisasmGoBackCommand.Execute(null); },
+            (addr, note) => SetAddressAnnotation(addr, note),
+            addr => _addressAnnotations.TryGetValue(addr, out var n) ? n : null,
+            () => (IReadOnlyDictionary<ulong, string>)AddressAnnotations,
+            () => RefreshDisasmAnnotations());
 
         // Wire Continue/SingleStep callbacks so plugins can resume execution
         _pluginManager.ContinueAction = () =>
@@ -155,6 +218,26 @@ public partial class MainViewModel : ObservableObject, IDisposable
             Application.Current.Dispatcher.Invoke(() => OnPluginInitializing?.Invoke(name));
 
         _pluginManager.LoadPlugins(pluginsDir, AdapterFactory);
+
+        // Wire note events from context menu to plugin adapters
+        OnNoteAdded += (addr, note) =>
+        {
+            foreach (var p in _pluginManager.Plugins)
+                if (p.Adapter is { Enabled: true } a && a.UI is UiApiAdapter ua)
+                    ua.FireNoteAdded(addr, note);
+        };
+        OnNoteEdited += (addr, note) =>
+        {
+            foreach (var p in _pluginManager.Plugins)
+                if (p.Adapter is { Enabled: true } a && a.UI is UiApiAdapter ua)
+                    ua.FireNoteEdited(addr, note);
+        };
+        OnNoteRemoved += addr =>
+        {
+            foreach (var p in _pluginManager.Plugins)
+                if (p.Adapter is { Enabled: true } a && a.UI is UiApiAdapter ua)
+                    ua.FireNoteRemoved(addr);
+        };
 
         // Apply persisted disabled state (hides tabs + disables events)
         _pluginManager.ApplyPersistedState(_disabledPlugins);
@@ -2909,6 +2992,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         PushDisasmHistory();
         DisasmAddress = address;
         RefreshDisassembly();
+        SwitchToDisasmTab?.Invoke();
     }
 
     private async void ToggleBreakpointAtAddress(ulong address, BreakpointType type, uint length = 1)
@@ -3641,6 +3725,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
         return ulong.TryParse(s, System.Globalization.NumberStyles.HexNumber, null, out address);
     }
 
+    private void RefreshDisasmAnnotations()
+    {
+        var instrs = Instructions.ToList();
+        AnnotateInstructionsWithSymbols(instrs);
+        foreach (var instr in instrs)
+            instr.HasBreakpoint = Breakpoints.Any(b => b.Address == instr.Address);
+        Instructions.ReplaceAll(instrs);
+    }
+
     /// <summary>
     /// Annotate disassembly instructions with symbol comments for call/jmp targets
     /// and for the instruction's own address (function start).
@@ -3706,6 +3799,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
                         instr.Comment = imp.sym;
                     }
                 }
+            }
+
+            // Plugin address annotations — override/append to symbol comments
+            if (_addressAnnotations.TryGetValue(instr.Address, out var annotation))
+            {
+                instr.Comment = string.IsNullOrEmpty(instr.Comment)
+                    ? annotation
+                    : $"{instr.Comment} | {annotation}";
             }
         }
     }

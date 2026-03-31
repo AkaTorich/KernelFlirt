@@ -55,6 +55,8 @@ public partial class MainWindow : Window
         };
 
         // Plugin UI integration — track which plugin is being initialized
+        VM.SwitchToDisasmTab = () => MainTabControl.SelectedIndex = 0;
+
         VM.AddPluginMenuItem = (header, callback) =>
         {
             var item = new MenuItem { Header = header };
@@ -603,32 +605,7 @@ public partial class MainWindow : Window
     /*  Bookmark context menu                                              */
     /* ================================================================== */
 
-    private void OnBookmarkDoubleClick(object sender, MouseButtonEventArgs e)
-    {
-        if (BookmarksGrid.SelectedItem is Bookmark bm)
-            VM.GoToBookmarkCommand.Execute(bm);
-    }
-
-    private void OnBookmarkGoTo(object sender, RoutedEventArgs e)
-    {
-        if (BookmarksGrid.SelectedItem is Bookmark bm)
-            VM.GoToBookmarkCommand.Execute(bm);
-    }
-
-    private void OnBookmarkFollowDump(object sender, RoutedEventArgs e)
-    {
-        if (BookmarksGrid.SelectedItem is Bookmark bm)
-        {
-            VM.FollowInDumpCommand.Execute(bm.Address);
-            UpdateHexDumpDisplay();
-        }
-    }
-
-    private void OnBookmarkRemove(object sender, RoutedEventArgs e)
-    {
-        if (BookmarksGrid.SelectedItem is Bookmark bm)
-            VM.RemoveBookmarkCommand.Execute(bm);
-    }
+    // Old bookmark handlers removed — replaced by Bookmarks/Notes plugin
 
     /* ================================================================== */
     /*  Patches context menu                                               */

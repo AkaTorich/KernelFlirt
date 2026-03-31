@@ -26,7 +26,10 @@
                             <MenuItem Header="Run to Cursor (F4)" Click="OnContextRunToCursor" InputGestureText="F4" />
                             <MenuItem Header="Skip Instruction (Ctrl+F8)" Click="OnContextSkipInstruction" InputGestureText="Ctrl+F8" />
                             <MenuItem Header="Set RIP Here" Click="OnContextSetRipHere" />
-                            <MenuItem Header="Add Bookmark..." Click="OnContextAddBookmark" />
+                            <Separator />
+                            <MenuItem Header="Add Bookmark/Note..." Click="OnContextAddNote" />
+                            <MenuItem Header="Edit Bookmark/Note..." Click="OnContextEditNote" />
+                            <MenuItem Header="Remove Bookmark/Note" Click="OnContextRemoveNote" />
                             <Separator />
                             <MenuItem Header="Follow in Dump" Click="OnContextFollowInDump" />
                             <MenuItem Header="Follow in Disassembler" Click="OnContextFollowInDisasm" />

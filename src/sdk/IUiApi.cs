@@ -39,4 +39,34 @@ public interface IUiApi
     /// Go back to previous disassembly location (undo NavigateDisassembly).
     /// </summary>
     void DisasmGoBack();
+
+    /// <summary>
+    /// Set a text annotation for an address. Shown as "; comment" in the disassembly view.
+    /// If annotation is null or empty, removes the annotation.
+    /// </summary>
+    void SetAddressAnnotation(ulong address, string? annotation);
+
+    /// <summary>
+    /// Get the annotation for an address, or null if none.
+    /// </summary>
+    string? GetAddressAnnotation(ulong address);
+
+    /// <summary>
+    /// Get all address annotations as a dictionary.
+    /// </summary>
+    IReadOnlyDictionary<ulong, string> GetAllAnnotations();
+
+    /// <summary>
+    /// Refresh the disassembly view to reflect updated annotations.
+    /// </summary>
+    void RefreshDisassembly();
+
+    /// <summary>Fires when user adds a note via disasm context menu.</summary>
+    event Action<ulong, string>? OnNoteAdded;
+
+    /// <summary>Fires when user edits a note via disasm context menu.</summary>
+    event Action<ulong, string>? OnNoteEdited;
+
+    /// <summary>Fires when user removes a note via disasm context menu.</summary>
+    event Action<ulong>? OnNoteRemoved;
 }
