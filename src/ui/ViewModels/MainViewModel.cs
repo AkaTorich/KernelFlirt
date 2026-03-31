@@ -1336,6 +1336,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
                         DisasmAddress = smEvt.Address;
                         var smCode = await Task.Run(() => _driver.ReadMemory(svcPid, smEvt.Address, 4096));
                         if (smCode != null) { PatchBpBytesForDisasm(smCode, smEvt.Address); Instructions.ReplaceAll(_disasm.Disassemble(smCode, smEvt.Address)); }
+
+                        RefreshImports();
+                        RefreshSections();
+                        RefreshExceptions();
                         return;
                     }
                 }
@@ -1351,6 +1355,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         DisasmAddress = dispEvt.Address;
         var dCode = await Task.Run(() => _driver.ReadMemory(svcPid, dispEvt.Address, 4096));
         if (dCode != null) { PatchBpBytesForDisasm(dCode, dispEvt.Address); Instructions.ReplaceAll(_disasm.Disassemble(dCode, dispEvt.Address)); }
+
+        RefreshImports();
+        RefreshSections();
+        RefreshExceptions();
     }
 
     private async Task DoAttachAsync()
