@@ -354,6 +354,27 @@ typedef struct _KF_LOAD_DRIVER_OUT {
 
 /* IOCTL_KF_UNLOAD_DRIVER input: null-terminated ANSI service name */
 
+/* ---- Service control (relay-handled) ---- */
+#define IOCTL_KF_STOP_SERVICE       CTL_CODE(KF_DEVICE_TYPE, 0x90B, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_KF_START_SERVICE      CTL_CODE(KF_DEVICE_TYPE, 0x90C, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_KF_QUERY_SERVICE_PID  CTL_CODE(KF_DEVICE_TYPE, 0x90D, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+/* Input for all three: null-terminated ANSI service name */
+/* IOCTL_KF_QUERY_SERVICE_PID output: */
+typedef struct _KF_SERVICE_PID_OUT {
+    ULONG   ProcessId;
+    ULONG   ServiceState;   /* SERVICE_RUNNING, SERVICE_STOPPED, etc. */
+} KF_SERVICE_PID_OUT, *PKF_SERVICE_PID_OUT;
+
+/* IOCTL_KF_START_SERVICE output (extended — includes EP info for debugger) */
+typedef struct _KF_START_SERVICE_OUT {
+    ULONG   ProcessId;
+    ULONG   ServiceState;
+    ULONG   EntryPointRva;
+    UCHAR   OriginalBytes[2];   /* Original 2 bytes at entry point (patched to EB FE) */
+    UCHAR   Reserved[2];
+} KF_START_SERVICE_OUT, *PKF_START_SERVICE_OUT;
+
 /* IOCTL_KF_PROBE_NTQSI output — probe without hooking */
 typedef struct _KF_PROBE_NTQSI_OUT {
     ULONG64 Address;            /* NtQuerySystemInformation address (0 if not found) */

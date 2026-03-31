@@ -20,9 +20,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+#include <tlhelp32.h>
 #include <winioctl.h>
 #include "../../include/kf_shared.h"
 
@@ -45,6 +47,9 @@
 #define KF_PSEUDO_DELETE_PATH     CTL_CODE(0x00008000, 0x908, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define KF_PSEUDO_CREATE_DIR      CTL_CODE(0x00008000, 0x909, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define KF_PSEUDO_RENAME_PATH     CTL_CODE(0x00008000, 0x90A, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define KF_PSEUDO_STOP_SERVICE    CTL_CODE(0x00008000, 0x90B, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define KF_PSEUDO_START_SERVICE   CTL_CODE(0x00008000, 0x90C, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define KF_PSEUDO_QUERY_SVC_PID   CTL_CODE(0x00008000, 0x90D, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 static HANDLE g_hDeviceCmd = INVALID_HANDLE_VALUE;  /* CMD channel handle */
 static HANDLE g_hDeviceDbg = INVALID_HANDLE_VALUE;  /* DBG channel handle */
@@ -356,6 +361,144 @@ static DWORD WINAPI StartDriverThread(LPVOID param)
         CloseServiceHandle(scm);
     }
     free(ctx);
+    return 0;
+}
+
+/* ── Service start (background thread, same pattern as StartDriverThread) ── */
+
+/* Forward declarations for deferred cleanup (defined below) */
+typedef struct _PENDING_RESTORE {
+    char filePath[MAX_PATH];       /* patched copy to delete */
+    ULONG fileOffset;              /* 0 = delete file mode, nonzero = byte-patch mode */
+    UCHAR originalByte;
+    DWORD targetPid;
+    BOOL active;
+    /* Service ImagePath restore */
+    char serviceName[64];
+    char origImagePath[2048];
+} PENDING_RESTORE;
+
+static PENDING_RESTORE g_pendingRestore = {0};
+static DWORD WINAPI DeferredRestoreThread(LPVOID param);
+
+typedef struct _START_SERVICE_CTX {
+    char serviceName[64];
+} START_SERVICE_CTX;
+
+static DWORD WINAPI StartServiceThread(LPVOID param)
+{
+    START_SERVICE_CTX *ctx = (START_SERVICE_CTX *)param;
+    SC_HANDLE scm = OpenSCManagerA(NULL, NULL, SC_MANAGER_CONNECT);
+    if (scm) {
+        SC_HANDLE svc = OpenServiceA(scm, ctx->serviceName,
+                                      SERVICE_START | SERVICE_QUERY_STATUS);
+        if (svc) {
+            if (!StartServiceA(svc, 0, NULL)) {
+                DWORD err = GetLastError();
+                if (err != ERROR_SERVICE_ALREADY_RUNNING)
+                    printf("[relay] StartServiceA('%s') failed: %lu\n",
+                           ctx->serviceName, err);
+            } else {
+                printf("[relay] Service '%s' started OK\n", ctx->serviceName);
+            }
+
+            /* If this is a prepared-service start, activate deferred cleanup.
+               We know it's prepared if g_pendingRestore has a matching serviceName. */
+            if (g_pendingRestore.serviceName[0] &&
+                strcmp(g_pendingRestore.serviceName, ctx->serviceName) == 0 &&
+                !g_pendingRestore.active)
+            {
+                /* Query PID */
+                SERVICE_STATUS_PROCESS ssp = {0};
+                DWORD needed = 0;
+                if (QueryServiceStatusEx(svc, SC_STATUS_PROCESS_INFO,
+                        (LPBYTE)&ssp, sizeof(ssp), &needed) && ssp.dwProcessId != 0) {
+                    g_pendingRestore.targetPid = ssp.dwProcessId;
+                    g_pendingRestore.active = TRUE;
+                    printf("[relay] Service PID=%lu — deferred cleanup activated\n",
+                           ssp.dwProcessId);
+                    HANDLE hRestore = CreateThread(NULL, 0, DeferredRestoreThread, NULL, 0, NULL);
+                    if (hRestore) CloseHandle(hRestore);
+                } else {
+                    /* StartServiceA returned but no PID — restore ImagePath now */
+                    printf("[relay] No PID after start — restoring ImagePath immediately\n");
+                    SC_HANDLE scm2 = OpenSCManagerA(NULL, NULL, SC_MANAGER_CONNECT);
+                    if (scm2) {
+                        SC_HANDLE svc2 = OpenServiceA(scm2, ctx->serviceName,
+                                                       SERVICE_CHANGE_CONFIG);
+                        if (svc2) {
+                            ChangeServiceConfigA(svc2, SERVICE_NO_CHANGE, SERVICE_NO_CHANGE,
+                                SERVICE_NO_CHANGE, g_pendingRestore.origImagePath,
+                                NULL, NULL, NULL, NULL, NULL, NULL);
+                            CloseServiceHandle(svc2);
+                        }
+                        CloseServiceHandle(scm2);
+                    }
+                    DeleteFileA(g_pendingRestore.filePath);
+                    memset(&g_pendingRestore, 0, sizeof(g_pendingRestore));
+                }
+            }
+
+            CloseServiceHandle(svc);
+        } else {
+            printf("[relay] OpenService('%s') for start failed: %lu\n",
+                   ctx->serviceName, GetLastError());
+        }
+        CloseServiceHandle(scm);
+    }
+    free(ctx);
+    return 0;
+}
+
+/* Forward declaration (defined below PE helpers) */
+static BOOL PatchFileByteAt(const char *filePath, ULONG fileOffset,
+                             UCHAR newByte, UCHAR *pOrigByte);
+
+/* ── Deferred cleanup (delete patched copy + restore ImagePath after process exits) ── */
+
+static DWORD WINAPI DeferredRestoreThread(LPVOID param)
+{
+    (void)param;
+    HANDLE hProc = OpenProcess(SYNCHRONIZE, FALSE, g_pendingRestore.targetPid);
+    if (hProc) {
+        WaitForSingleObject(hProc, INFINITE);
+        CloseHandle(hProc);
+    } else {
+        Sleep(5000);
+    }
+    if (g_pendingRestore.active) {
+        /* Restore service ImagePath if needed */
+        if (g_pendingRestore.serviceName[0] && g_pendingRestore.origImagePath[0]) {
+            SC_HANDLE scm2 = OpenSCManagerA(NULL, NULL, SC_MANAGER_CONNECT);
+            if (scm2) {
+                SC_HANDLE svc2 = OpenServiceA(scm2, g_pendingRestore.serviceName,
+                                               SERVICE_CHANGE_CONFIG);
+                if (svc2) {
+                    ChangeServiceConfigA(svc2, SERVICE_NO_CHANGE, SERVICE_NO_CHANGE,
+                        SERVICE_NO_CHANGE, g_pendingRestore.origImagePath,
+                        NULL, NULL, NULL, NULL, NULL, NULL);
+                    CloseServiceHandle(svc2);
+                    printf("[relay] Deferred: restored ImagePath for %s\n",
+                           g_pendingRestore.serviceName);
+                }
+                CloseServiceHandle(scm2);
+            }
+        }
+
+        if (g_pendingRestore.fileOffset != 0) {
+            PatchFileByteAt(g_pendingRestore.filePath,
+                            g_pendingRestore.fileOffset,
+                            g_pendingRestore.originalByte, NULL);
+            printf("[relay] Deferred byte restore in %s\n", g_pendingRestore.filePath);
+        } else if (g_pendingRestore.filePath[0]) {
+            if (DeleteFileA(g_pendingRestore.filePath))
+                printf("[relay] Cleaned up %s\n", g_pendingRestore.filePath);
+            else
+                printf("[relay] WARNING: failed to delete %s: %lu\n",
+                       g_pendingRestore.filePath, GetLastError());
+        }
+        g_pendingRestore.active = FALSE;
+    }
     return 0;
 }
 
@@ -918,6 +1061,418 @@ static BOOL HandleRenamePath(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, DWOR
     return ok;
 }
 
+/* ── Service control ── */
+
+static BOOL HandleStopService(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, DWORD *pOutSize)
+{
+    if (!inputBuf || inputSize < 2) return FALSE;
+    char *svcName = (char *)inputBuf;
+    svcName[inputSize - 1] = '\0';
+
+    SC_HANDLE scm = OpenSCManagerA(NULL, NULL, SC_MANAGER_CONNECT);
+    if (!scm) {
+        printf("[relay] OpenSCManager failed: %lu\n", GetLastError());
+        return FALSE;
+    }
+
+    SC_HANDLE svc = OpenServiceA(scm, svcName, SERVICE_STOP | SERVICE_QUERY_STATUS);
+    if (!svc) {
+        printf("[relay] OpenService(%s) failed: %lu\n", svcName, GetLastError());
+        CloseServiceHandle(scm);
+        return FALSE;
+    }
+
+    SERVICE_STATUS ss = {0};
+    BOOL ok = ControlService(svc, SERVICE_CONTROL_STOP, &ss);
+    if (!ok) {
+        DWORD err = GetLastError();
+        if (err == ERROR_SERVICE_NOT_ACTIVE) {
+            printf("[relay] Service %s already stopped\n", svcName);
+            ok = TRUE;
+        } else {
+            printf("[relay] ControlService(STOP) failed: %lu\n", err);
+        }
+    } else {
+        printf("[relay] Service %s stop requested, waiting...\n", svcName);
+        /* Wait for service to fully stop (up to 30 seconds) */
+        for (int i = 0; i < 60; i++) {
+            if (QueryServiceStatus(svc, &ss) && ss.dwCurrentState == SERVICE_STOPPED)
+                break;
+            Sleep(500);
+        }
+        printf("[relay] Service %s state=%lu\n", svcName, ss.dwCurrentState);
+    }
+
+    CloseServiceHandle(svc);
+    CloseServiceHandle(scm);
+    *ppOut = NULL;
+    *pOutSize = 0;
+    return ok;
+}
+
+static BOOL HandleStartService(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, DWORD *pOutSize)
+{
+    if (!inputBuf || inputSize < 2) return FALSE;
+    char *svcName = (char *)inputBuf;
+    svcName[inputSize - 1] = '\0';
+
+    /*
+     * PREPARE ONLY — does NOT start the service.
+     *
+     * 1. Copy the service binary to same dir with _kfdebug suffix
+     * 2. Patch the copy's entry point to INT3 (0xCC)
+     * 3. ChangeServiceConfig to point ImagePath to the patched copy
+     * 4. Save state for deferred cleanup (restore ImagePath + delete copy)
+     * 5. Return {entryRva, originalByte} — PID is 0 (not started yet)
+     *
+     * The UI must then:
+     *   a. Install debug hook
+     *   b. Call START_DRIVER (which does StartServiceA in background)
+     *   c. WaitDebugEvent to catch the entry-point INT3
+     *   d. The deferred thread restores ImagePath + deletes copy on exit
+     */
+
+    SC_HANDLE scm = OpenSCManagerA(NULL, NULL, SC_MANAGER_CONNECT);
+    if (!scm) {
+        printf("[relay] OpenSCManager failed: %lu\n", GetLastError());
+        return FALSE;
+    }
+
+    SC_HANDLE svc = OpenServiceA(scm, svcName,
+        SERVICE_QUERY_STATUS | SERVICE_QUERY_CONFIG | SERVICE_CHANGE_CONFIG);
+    if (!svc) {
+        printf("[relay] OpenService(%s) failed: %lu\n", svcName, GetLastError());
+        CloseServiceHandle(scm);
+        return FALSE;
+    }
+
+    /* ── Query binary path and full ImagePath string ── */
+    char exePath[MAX_PATH] = {0};
+    char origImagePath[2048] = {0};
+    {
+        BYTE cfgBuf[8192] = {0};
+        DWORD cfgNeeded = 0;
+        if (QueryServiceConfigA(svc, (LPQUERY_SERVICE_CONFIGA)cfgBuf,
+                                sizeof(cfgBuf), &cfgNeeded)) {
+            LPQUERY_SERVICE_CONFIGA cfg = (LPQUERY_SERVICE_CONFIGA)cfgBuf;
+            if (cfg->lpBinaryPathName) {
+                strncpy(origImagePath, cfg->lpBinaryPathName, sizeof(origImagePath) - 1);
+                char *p = cfg->lpBinaryPathName;
+                if (*p == '"') {
+                    p++;
+                    char *q = strchr(p, '"');
+                    if (q) { strncpy(exePath, p, (size_t)(q - p)); exePath[q - p] = '\0'; }
+                    else strncpy(exePath, p, MAX_PATH - 1);
+                } else {
+                    char *sp = strchr(p, ' ');
+                    if (sp) { strncpy(exePath, p, (size_t)(sp - p)); exePath[sp - p] = '\0'; }
+                    else strncpy(exePath, p, MAX_PATH - 1);
+                }
+            }
+        }
+    }
+
+    if (exePath[0] == '\0') {
+        printf("[relay] Could not resolve binary path for %s\n", svcName);
+        CloseServiceHandle(svc); CloseServiceHandle(scm);
+        return FALSE;
+    }
+
+    printf("[relay] Service binary: %s\n", exePath);
+
+    /* ── Fix leftover state: if ImagePath already points to a _kfdebug copy
+       from a previous failed run, restore the real path first. ── */
+    {
+        char *kfTag = strstr(exePath, "_kfdebug");
+        if (kfTag) {
+            printf("[relay] Detected leftover _kfdebug ImagePath — restoring original\n");
+            /* Reconstruct real exe path: remove "_kfdebug" from the path */
+            char realPath[MAX_PATH] = {0};
+            size_t prefixLen = (size_t)(kfTag - exePath);
+            strncpy(realPath, exePath, prefixLen);
+            strncat(realPath, kfTag + 8, MAX_PATH - strlen(realPath) - 1); /* skip "_kfdebug" */
+
+            /* Reconstruct real ImagePath (with args) */
+            char realImagePath[2048] = {0};
+            {
+                char *argsStart = NULL;
+                if (origImagePath[0] == '"') {
+                    char *eq = strchr(origImagePath + 1, '"');
+                    if (eq) argsStart = eq + 1;
+                } else {
+                    argsStart = strchr(origImagePath, ' ');
+                }
+                _snprintf(realImagePath, sizeof(realImagePath) - 1, "\"%s\"%s",
+                          realPath, argsStart ? argsStart : "");
+            }
+
+            /* Restore ImagePath in SCM */
+            ChangeServiceConfigA(svc, SERVICE_NO_CHANGE, SERVICE_NO_CHANGE,
+                SERVICE_NO_CHANGE, realImagePath, NULL, NULL, NULL, NULL, NULL, NULL);
+            printf("[relay] Restored ImagePath -> %s\n", realImagePath);
+
+            /* Delete leftover _kfdebug copy */
+            DeleteFileA(exePath);
+
+            /* Use the real path from now on */
+            strncpy(exePath, realPath, MAX_PATH - 1);
+            strncpy(origImagePath, realImagePath, sizeof(origImagePath) - 1);
+            printf("[relay] Using real binary: %s\n", exePath);
+        }
+    }
+
+    /* ── Reject svchost-hosted services ── */
+    {
+        char lower[MAX_PATH] = {0};
+        strncpy(lower, exePath, MAX_PATH - 1);
+        for (char *c = lower; *c; c++) *c = (char)tolower((unsigned char)*c);
+        if (strstr(lower, "svchost.exe")) {
+            printf("[relay] svchost-hosted services not supported (use Attach instead)\n");
+            CloseServiceHandle(svc); CloseServiceHandle(scm);
+            return FALSE;
+        }
+    }
+
+    /* ── Verify service is stopped ── */
+    {
+        SERVICE_STATUS_PROCESS ssp = {0};
+        DWORD needed = 0;
+        if (QueryServiceStatusEx(svc, SC_STATUS_PROCESS_INFO,
+                (LPBYTE)&ssp, sizeof(ssp), &needed)) {
+            if (ssp.dwCurrentState != SERVICE_STOPPED) {
+                printf("[relay] Service %s is not stopped (state=%lu). Stop it first.\n",
+                       svcName, ssp.dwCurrentState);
+                CloseServiceHandle(svc); CloseServiceHandle(scm);
+                return FALSE;
+            }
+        }
+    }
+
+    /* ── Copy binary to same directory with _kfdebug suffix ── */
+    char patchedPath[MAX_PATH] = {0};
+    {
+        strncpy(patchedPath, exePath, MAX_PATH - 1);
+        char *dot = strrchr(patchedPath, '.');
+        if (dot) {
+            char ext[16] = {0};
+            strncpy(ext, dot, sizeof(ext) - 1);
+            *dot = '\0';
+            strncat(patchedPath, "_kfdebug", MAX_PATH - strlen(patchedPath) - 1);
+            strncat(patchedPath, ext, MAX_PATH - strlen(patchedPath) - 1);
+        } else {
+            strncat(patchedPath, "_kfdebug", MAX_PATH - strlen(patchedPath) - 1);
+        }
+    }
+
+    if (!CopyFileA(exePath, patchedPath, FALSE)) {
+        printf("[relay] CopyFile(%s -> %s) failed: %lu\n", exePath, patchedPath, GetLastError());
+        CloseServiceHandle(svc); CloseServiceHandle(scm);
+        return FALSE;
+    }
+    printf("[relay] Copied to %s\n", patchedPath);
+
+    /* ── Read PE entry point and patch the COPY ── */
+    ULONG entryRva = ReadPeEntryRva(patchedPath);
+    if (entryRva == 0) {
+        printf("[relay] Could not read PE entry point from %s\n", patchedPath);
+        DeleteFileA(patchedPath);
+        CloseServiceHandle(svc); CloseServiceHandle(scm);
+        return FALSE;
+    }
+
+    ULONG epFileOffset = RvaToFileOffset(patchedPath, entryRva);
+    if (epFileOffset == 0) {
+        printf("[relay] Could not map entry RVA 0x%lX to file offset\n", entryRva);
+        DeleteFileA(patchedPath);
+        CloseServiceHandle(svc); CloseServiceHandle(scm);
+        return FALSE;
+    }
+
+    /* Patch entry point to EB FE (JMP $, infinite loop).
+       We use EB FE instead of INT3 because the debug hook isn't installed yet
+       (we don't know the PID).  The process spins at EB FE, we get the PID
+       from SCM, install the hook, then inject INT3 from the UI. */
+    UCHAR originalBytes[2] = {0};
+    {
+        HANDLE hFile = CreateFileA(patchedPath, GENERIC_READ | GENERIC_WRITE,
+                                    0, NULL, OPEN_EXISTING, 0, NULL);
+        if (hFile == INVALID_HANDLE_VALUE) {
+            printf("[relay] Failed to open copy for patching: %lu\n", GetLastError());
+            DeleteFileA(patchedPath);
+            CloseServiceHandle(svc); CloseServiceHandle(scm);
+            return FALSE;
+        }
+        DWORD br = 0;
+        SetFilePointer(hFile, epFileOffset, NULL, FILE_BEGIN);
+        ReadFile(hFile, originalBytes, 2, &br, NULL);
+        BYTE spin[2] = {0xEB, 0xFE};
+        SetFilePointer(hFile, epFileOffset, NULL, FILE_BEGIN);
+        WriteFile(hFile, spin, 2, &br, NULL);
+        FlushFileBuffers(hFile);
+        CloseHandle(hFile);
+    }
+
+    printf("[relay] Entry RVA=0x%lX fileOff=0x%lX: %02X %02X -> EB FE\n",
+           entryRva, epFileOffset, originalBytes[0], originalBytes[1]);
+
+    /* ── Change service ImagePath to the patched copy ── */
+    char newImagePath[2048] = {0};
+    {
+        char *argsStart = NULL;
+        if (origImagePath[0] == '"') {
+            char *endQuote = strchr(origImagePath + 1, '"');
+            if (endQuote) argsStart = endQuote + 1;
+        } else {
+            argsStart = strchr(origImagePath, ' ');
+        }
+        _snprintf(newImagePath, sizeof(newImagePath) - 1, "\"%s\"%s",
+                  patchedPath, argsStart ? argsStart : "");
+    }
+
+    if (!ChangeServiceConfigA(svc, SERVICE_NO_CHANGE, SERVICE_NO_CHANGE,
+            SERVICE_NO_CHANGE, newImagePath, NULL, NULL, NULL, NULL, NULL, NULL)) {
+        printf("[relay] ChangeServiceConfig failed: %lu\n", GetLastError());
+        DeleteFileA(patchedPath);
+        CloseServiceHandle(svc); CloseServiceHandle(scm);
+        return FALSE;
+    }
+    printf("[relay] ImagePath -> %s\n", newImagePath);
+
+    /* ── Save state for deferred cleanup ── */
+    strncpy(g_pendingRestore.filePath, patchedPath, MAX_PATH - 1);
+    g_pendingRestore.fileOffset = 0;
+    g_pendingRestore.originalByte = 0;
+    g_pendingRestore.targetPid = 0;  /* will be set when PID is known */
+    g_pendingRestore.active = FALSE; /* not active yet — UI will trigger start */
+    strncpy(g_pendingRestore.serviceName, svcName, sizeof(g_pendingRestore.serviceName) - 1);
+    strncpy(g_pendingRestore.origImagePath, origImagePath, sizeof(g_pendingRestore.origImagePath) - 1);
+
+    CloseServiceHandle(svc);
+    CloseServiceHandle(scm);
+
+    printf("[relay] Service %s prepared for debug (NOT started yet)\n", svcName);
+
+    /* ── Build output — PID=0 means "prepared, use START_DRIVER to launch" ── */
+    KF_START_SERVICE_OUT *out = (KF_START_SERVICE_OUT *)calloc(1, sizeof(KF_START_SERVICE_OUT));
+    if (out) {
+        out->ProcessId = 0;       /* not started yet */
+        out->ServiceState = 0;
+        out->EntryPointRva = entryRva;
+        out->OriginalBytes[0] = originalBytes[0];
+        out->OriginalBytes[1] = originalBytes[1];
+        *ppOut = (BYTE *)out;
+        *pOutSize = sizeof(KF_START_SERVICE_OUT);
+    } else {
+        *ppOut = NULL;
+        *pOutSize = 0;
+    }
+    return TRUE;
+}
+
+/* KF_SERVICE_PATH_OUT — returned by QUERY_SERVICE_PID when service is stopped (PID=0).
+   Contains the binary path so the UI can launch it via CreateProcess suspended. */
+#define KF_MAX_SERVICE_PATH 520
+
+typedef struct _KF_SERVICE_INFO_OUT {
+    ULONG   ProcessId;
+    ULONG   ServiceState;
+    WCHAR   BinaryPath[KF_MAX_SERVICE_PATH];
+} KF_SERVICE_INFO_OUT;
+
+/* Find PID by executable name (case-insensitive, uses toolhelp snapshot) */
+static DWORD FindPidByName(const WCHAR *exeName)
+{
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) return 0;
+    PROCESSENTRY32W pe = {0};
+    pe.dwSize = sizeof(pe);
+    DWORD pid = 0;
+    if (Process32FirstW(snap, &pe)) {
+        do {
+            if (_wcsicmp(pe.szExeFile, exeName) == 0) {
+                pid = pe.th32ProcessID;
+                break;
+            }
+        } while (Process32NextW(snap, &pe));
+    }
+    CloseHandle(snap);
+    return pid;
+}
+
+static BOOL HandleQueryServicePid(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, DWORD *pOutSize)
+{
+    if (!inputBuf || inputSize < 2) return FALSE;
+    char *svcName = (char *)inputBuf;
+    svcName[inputSize - 1] = '\0';
+
+    SC_HANDLE scm = OpenSCManagerA(NULL, NULL, SC_MANAGER_CONNECT);
+    if (!scm) return FALSE;
+
+    SC_HANDLE svc = OpenServiceA(scm, svcName, SERVICE_QUERY_STATUS);
+    if (!svc) {
+        CloseServiceHandle(scm);
+        return FALSE;
+    }
+
+    SERVICE_STATUS_PROCESS ssp = {0};
+    DWORD needed = 0;
+    BOOL ok = QueryServiceStatusEx(svc, SC_STATUS_PROCESS_INFO,
+        (LPBYTE)&ssp, sizeof(ssp), &needed);
+
+    if (!ok) {
+        CloseServiceHandle(svc);
+        CloseServiceHandle(scm);
+        return FALSE;
+    }
+
+    /* Also query binary path via QueryServiceConfigW */
+    WCHAR binaryPath[KF_MAX_SERVICE_PATH] = {0};
+    {
+        SC_HANDLE svc2 = OpenServiceA(scm, svcName, SERVICE_QUERY_CONFIG);
+        if (svc2) {
+            BYTE cfgBuf[8192] = {0};
+            DWORD cfgNeeded = 0;
+            if (QueryServiceConfigW(svc2, (LPQUERY_SERVICE_CONFIGW)cfgBuf, sizeof(cfgBuf), &cfgNeeded)) {
+                LPQUERY_SERVICE_CONFIGW cfg = (LPQUERY_SERVICE_CONFIGW)cfgBuf;
+                if (cfg->lpBinaryPathName) {
+                    wcsncpy(binaryPath, cfg->lpBinaryPathName, KF_MAX_SERVICE_PATH - 1);
+                }
+            }
+            CloseServiceHandle(svc2);
+        }
+    }
+
+    CloseServiceHandle(svc);
+    CloseServiceHandle(scm);
+
+    KF_SERVICE_INFO_OUT *out = (KF_SERVICE_INFO_OUT *)calloc(1, sizeof(KF_SERVICE_INFO_OUT));
+    if (!out) return FALSE;
+    out->ProcessId = ssp.dwProcessId;
+    out->ServiceState = ssp.dwCurrentState;
+    wcsncpy(out->BinaryPath, binaryPath, KF_MAX_SERVICE_PATH - 1);
+
+    /* Fallback: SCM doesn't report PID until StartServiceCtrlDispatcher is called.
+       If we have a pending _kfdebug prepare, find PID by image name. */
+    if (out->ProcessId == 0 && g_pendingRestore.filePath[0]) {
+        char *fname = strrchr(g_pendingRestore.filePath, '\\');
+        if (fname) fname++; else fname = g_pendingRestore.filePath;
+        WCHAR wName[MAX_PATH] = {0};
+        MultiByteToWideChar(CP_ACP, 0, fname, -1, wName, MAX_PATH - 1);
+        DWORD pid = FindPidByName(wName);
+        if (pid != 0) {
+            out->ProcessId = pid;
+            printf("[relay] PID=%lu found by image name: %s\n", pid, fname);
+        }
+    }
+
+    printf("[relay] Service %s: PID=%lu state=%lu path=%ls\n",
+           svcName, out->ProcessId, out->ServiceState, binaryPath);
+
+    *ppOut = (BYTE *)out;
+    *pOutSize = sizeof(KF_SERVICE_INFO_OUT);
+    return TRUE;
+}
+
 /*
  * Check if this IOCTL is a relay pseudo-IOCTL.
  * If so, handle it locally and return TRUE; caller should send response.
@@ -959,6 +1514,15 @@ static BOOL TryHandlePseudoIoctl(DWORD ioctlCode, BYTE *inputBuf, DWORD inputSiz
         return TRUE;
     case KF_PSEUDO_RENAME_PATH:
         *pSuccess = HandleRenamePath(inputBuf, inputSize, ppOut, pOutSize);
+        return TRUE;
+    case KF_PSEUDO_STOP_SERVICE:
+        *pSuccess = HandleStopService(inputBuf, inputSize, ppOut, pOutSize);
+        return TRUE;
+    case KF_PSEUDO_START_SERVICE:
+        *pSuccess = HandleStartService(inputBuf, inputSize, ppOut, pOutSize);
+        return TRUE;
+    case KF_PSEUDO_QUERY_SVC_PID:
+        *pSuccess = HandleQueryServicePid(inputBuf, inputSize, ppOut, pOutSize);
         return TRUE;
     default:
         break;

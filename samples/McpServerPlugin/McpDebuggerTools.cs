@@ -775,19 +775,14 @@ public class McpDebuggerTools
         var addr = ParseHex(a.GetProperty("address").GetString()!);
         OnUi(() => _api.UI.DecompileFunction(addr));
 
-        var sw   = System.Diagnostics.Stopwatch.StartNew();
         var last = OnUi(() => _api.UI.GetDecompiledCode());
-        while (sw.ElapsedMilliseconds < 30_000)
+        while (true)
         {
             Thread.Sleep(200);
             var code = OnUi(() => _api.UI.GetDecompiledCode());
             if (!string.IsNullOrEmpty(code) && code != last && !code.Contains("Decompiling..."))
                 return code.Length > 3000 ? code[..3000] + "\n// ... (truncated)" : code;
         }
-        var final_ = OnUi(() => _api.UI.GetDecompiledCode());
-        if (!string.IsNullOrEmpty(final_) && !final_.Contains("Decompiling..."))
-            return final_.Length > 3000 ? final_[..3000] + "\n// ... (truncated)" : final_;
-        return "Decompilation timed out — RetDec may not be installed";
     }
 
     // ── Symbols / Modules ────────────────────────────────────────────────────

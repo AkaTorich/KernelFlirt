@@ -313,6 +313,12 @@ public partial class MainWindow : Window
             VM.RefreshImports(mod.BaseAddress);
     }
 
+    private void OnModuleShowExports(object sender, RoutedEventArgs e)
+    {
+        if (ModulesGrid.SelectedItem is ModuleInfo mod)
+            VM.RefreshExports(mod.BaseAddress);
+    }
+
     private void OnModuleShowFunctions(object sender, RoutedEventArgs e)
     {
         if (ModulesGrid.SelectedItem is ModuleInfo mod)
@@ -740,6 +746,7 @@ public partial class MainWindow : Window
         return header switch
         {
             "Imports" => (ImportsGrid.SelectedItem as ImportEntry)?.ResolvedAddress ?? 0,
+            "Exports" => (ExportsGrid.SelectedItem as ExportEntry)?.Address ?? 0,
             "Functions" => (FunctionsGrid.SelectedItem as FunctionEntry)?.Address ?? 0,
             "Search" => (SearchGrid.SelectedItem as SearchResult)?.Address ?? 0,
             "Exceptions" => (ExceptionsGrid.SelectedItem as ExceptionEntry)?.FunctionStart ?? 0,
@@ -757,6 +764,55 @@ public partial class MainWindow : Window
     {
         if (ImportsGrid.SelectedItem is ImportEntry imp)
             Clipboard.SetText($"{imp.Module}!{imp.Display} IAT={imp.IatHex} -> {imp.ResolvedHex}");
+    }
+
+    /* ================================================================== */
+    /*  Exports tab                                                        */
+    /* ================================================================== */
+
+    private void OnExportDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (ExportsGrid.SelectedItem is ExportEntry exp)
+        {
+            VM.FollowInDisasmCommand.Execute(exp.Address);
+            MainTabControl.SelectedIndex = 0;
+        }
+    }
+
+    private void OnExportFollowDisasm(object sender, RoutedEventArgs e)
+    {
+        if (ExportsGrid.SelectedItem is ExportEntry exp)
+        {
+            VM.FollowInDisasmCommand.Execute(exp.Address);
+            MainTabControl.SelectedIndex = 0;
+        }
+    }
+
+    private void OnExportFollowDump(object sender, RoutedEventArgs e)
+    {
+        if (ExportsGrid.SelectedItem is ExportEntry exp)
+        {
+            VM.FollowInDumpCommand.Execute(exp.Address);
+            UpdateHexDumpDisplay();
+        }
+    }
+
+    private void OnExportDecompile(object sender, RoutedEventArgs e)
+    {
+        if (ExportsGrid.SelectedItem is ExportEntry exp)
+            DecompileAddress(exp.Address);
+    }
+
+    private void OnExportSetBp(object sender, RoutedEventArgs e)
+    {
+        if (ExportsGrid.SelectedItem is ExportEntry exp)
+            VM.SetBreakpointAtAddress(exp.Address);
+    }
+
+    private void OnExportCopy(object sender, RoutedEventArgs e)
+    {
+        if (ExportsGrid.SelectedItem is ExportEntry exp)
+            Clipboard.SetText($"{exp.Module}!{exp.Display} {exp.AddressHex}");
     }
 
     /* ================================================================== */

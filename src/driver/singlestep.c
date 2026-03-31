@@ -41,13 +41,21 @@ KfSingleStep(
 
     pKThread = (PVOID)thread;
 
-    __try {
-        /* Read KTHREAD.TrapFrame pointer at offset 0x90 */
-        pTrapFrame = *(PVOID *)((UCHAR *)pKThread + KTHREAD_TRAPFRAME_OFFSET);
+    pTrapFrame = *(PVOID *)((UCHAR *)pKThread + KTHREAD_TRAPFRAME_OFFSET);
 
-        if (pTrapFrame == NULL) {
-            status = STATUS_UNSUCCESSFUL;
-        } else {
+    if (pTrapFrame == NULL ||
+        (ULONG_PTR)pTrapFrame < 0xFFFF800000000000ULL ||
+        !MmIsAddressValid(pTrapFrame) ||
+        !MmIsAddressValid((UCHAR *)pTrapFrame + TF_EFLAGS)) {
+        DbgPrint("KernelFlirt: SingleStep TID %u - TrapFrame %p not resident\n",
+                 input->ThreadId, pTrapFrame);
+        ObDereferenceObject(thread);
+        Irp->IoStatus.Information = 0;
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    __try {
+        {
             /* Set the Trap Flag in EFLAGS within KTRAP_FRAME */
             ULONG64 eflags = *(ULONG64 *)((UCHAR *)pTrapFrame + TF_EFLAGS);
             eflags |= EFLAGS_TF;

@@ -67,6 +67,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public RangeObservableCollection<ImportEntry> FilteredImports { get; } = [];
     private List<ImportEntry> _allImports = [];
     [ObservableProperty] private string _importFilter = "";
+    public RangeObservableCollection<ExportEntry> Exports { get; } = [];
+    public RangeObservableCollection<ExportEntry> FilteredExports { get; } = [];
+    private List<ExportEntry> _allExports = [];
+    [ObservableProperty] private string _exportFilter = "";
     public RangeObservableCollection<FunctionEntry> Functions { get; } = [];
     public RangeObservableCollection<FunctionEntry> FilteredFunctions { get; } = [];
     private List<FunctionEntry> _allFunctions = [];
@@ -1029,6 +1033,326 @@ public partial class MainViewModel : ObservableObject, IDisposable
         await DoAttachAsync();
     }
 
+    /// <summary>
+    /// Debug a Windows service: stop it, restart it, catch at ServiceMain.
+    /// Uses relay to control SCM, then attaches with BP on StartServiceCtrlDispatcherW.
+    /// </summary>
+    [RelayCommand]
+    private async Task DebugServiceAsync()
+    {
+        if (!IsConnected || !_driver.IsRemote)
+        {
+            Log("Debug Service requires a remote connection (via relay)");
+            return;
+        }
+
+        string serviceName = PromptInput("Debug Service",
+            "Enter service name (e.g. Spooler, wuauserv, BITS):");
+        if (string.IsNullOrWhiteSpace(serviceName)) return;
+        serviceName = serviceName.Trim();
+
+        Log($"[Service] Debugging service: {serviceName}");
+
+        // 1. Query binary path
+        StatusText = $"Querying {serviceName}...";
+        var (_, _, binaryPath) = await Task.Run(() => _driver.QueryServiceInfo(serviceName));
+        if (string.IsNullOrWhiteSpace(binaryPath))
+        {
+            Log("[Service] Could not query service");
+            StatusText = "Query failed";
+            return;
+        }
+
+        string exePath = binaryPath.Trim('"');
+        if (exePath.Contains("svchost.exe", StringComparison.OrdinalIgnoreCase))
+        {
+            Log($"[Service] {serviceName} runs in svchost — use Attach + Show Exports");
+            StatusText = "Svchost — use Attach";
+            return;
+        }
+        Log($"[Service] Binary: {exePath}");
+
+        // 2. Pre-resolve StartServiceCtrlDispatcherW BEFORE stopping the service.
+        //    ASLR is per-boot — address is the same in all processes.
+        //    Read it from the currently running service process (or any other).
+        ulong dispatcherAddr = 0;
+        {
+            var (curPid, curState, _) = await Task.Run(() => _driver.QueryServiceInfo(serviceName));
+            uint probePid = (curPid != 0 && curState != 1) ? curPid : 0;
+
+            // If service is running, use its PID to find sechost.dll exports
+            if (probePid != 0)
+            {
+                Log($"[Service] Probing sechost.dll from running PID {probePid}...");
+                var probeMods = await Task.Run(() => _driver.EnumModules(probePid));
+                var sechost = probeMods.FirstOrDefault(m =>
+                    m.Name.Equals("sechost.dll", StringComparison.OrdinalIgnoreCase));
+                if (sechost != null)
+                    dispatcherAddr = await FindExportByNameAsync(probePid, sechost.BaseAddress, "StartServiceCtrlDispatcherW", $"sechost.dll@{probePid}");
+            }
+
+            // Fallback: try any process that has sechost.dll loaded
+            if (dispatcherAddr == 0)
+            {
+                Log("[Service] Probing sechost.dll from process list...");
+                var procs = await Task.Run(() => _driver.EnumProcesses());
+                foreach (var proc in procs)
+                {
+                    if (proc.ProcessId <= 4) continue;
+                    var mods = await Task.Run(() => _driver.EnumModules(proc.ProcessId));
+                    var sec = mods.FirstOrDefault(m =>
+                        m.Name.Equals("sechost.dll", StringComparison.OrdinalIgnoreCase));
+                    if (sec != null)
+                    {
+                        Log($"[Service] Trying PID {proc.ProcessId} ({proc.Name}) sechost @ {sec.BaseAddress:X16}...");
+                        dispatcherAddr = await FindExportByNameAsync(proc.ProcessId, sec.BaseAddress, "StartServiceCtrlDispatcherW", $"sechost.dll@{proc.ProcessId}");
+                        if (dispatcherAddr != 0)
+                        {
+                            Log($"[Service] Found via PID {proc.ProcessId}");
+                            break;
+                        }
+                    }
+                    if (dispatcherAddr != 0) break;
+                }
+            }
+
+            if (dispatcherAddr != 0)
+                Log($"[Service] StartServiceCtrlDispatcherW = {dispatcherAddr:X16}");
+            else
+            {
+                Log("[Service] Can't pre-resolve StartServiceCtrlDispatcherW");
+                StatusText = "Failed";
+                return;
+            }
+        }
+
+        // 3. Stop the service
+        StatusText = $"Stopping {serviceName}...";
+        await Task.Run(() => _driver.StopService(serviceName));
+        for (int i = 0; i < 40; i++)
+        {
+            await Task.Delay(500);
+            var (_, st, _) = await Task.Run(() => _driver.QueryServiceInfo(serviceName));
+            if (st == 1) break;
+        }
+        Log("[Service] Service stopped");
+
+        // 4. Detach previous
+        if (TargetPid != 0)
+            await DetachProcess();
+
+        // 5. Prepare service — relay copies binary, patches EP to EB FE,
+        //    changes ImagePath.  Does NOT start the service yet.
+        StatusText = $"Preparing {serviceName}...";
+        var (prepared, _, entryRva, origBytes) = await Task.Run(() => _driver.StartService(serviceName));
+        if (!prepared || origBytes.Length < 2)
+        {
+            Log("[Service] Prepare failed");
+            StatusText = "Prepare failed";
+            return;
+        }
+        Log($"[Service] Prepared: EP RVA=0x{entryRva:X}  origBytes={origBytes[0]:X2} {origBytes[1]:X2}");
+
+        // 6. Start service via SCM (background thread) — process will spin at EB FE
+        StatusText = $"Starting {serviceName}...";
+        var startOk = await Task.Run(() => _driver.StartRemoteDriver(serviceName));
+        if (!startOk)
+        {
+            Log("[Service] StartService dispatch failed");
+            StatusText = "Start failed";
+            return;
+        }
+
+        // 7. Poll for PID — relay's QueryServiceInfo does SCM query + fallback
+        //    by _kfdebug image name via CreateToolhelp32Snapshot.
+        uint svcPid = 0;
+        for (int i = 0; i < 50; i++)
+        {
+            await Task.Delay(100);
+            var (pid, st, _) = await Task.Run(() => _driver.QueryServiceInfo(serviceName));
+            if (pid != 0)
+            {
+                svcPid = pid;
+                Log($"[Service] PID={svcPid} (state={st}, spinning at EB FE)");
+                break;
+            }
+        }
+        if (svcPid == 0)
+        {
+            Log("[Service] Timeout waiting for service PID");
+            StatusText = "PID timeout";
+            return;
+        }
+        TargetPid = svcPid;
+
+        // 8. Give loader time to map DLLs (process spins at EB FE entry point)
+        await Task.Delay(1500);
+
+        // 9. Install debug hook targeting this PID
+        await Task.Run(() => _driver.InstallDebugHook(svcPid));
+        IsDebugHookActive = true;
+
+        // Enumerate modules + threads (process alive, spinning at EP)
+        var threads = await Task.Run(() => _driver.EnumThreads(svcPid));
+        Threads.ReplaceAll(threads);
+        if (threads.Count > 0) SelectedThreadId = threads[0].ThreadId;
+
+        var modules = await Task.Run(() => _driver.EnumModules(svcPid));
+        Modules.ReplaceAll(modules);
+        Log($"[Service] {modules.Count} modules, {threads.Count} threads");
+
+        int symLoaded = 0;
+        await Task.Run(() => { foreach (var m in modules) if (_symbols.LoadModule(svcPid, m.Name, m.BaseAddress, m.Size)) symLoaded++; });
+        Log($"[Service] Symbols: {symLoaded}/{modules.Count}");
+
+        // 10. Set a software breakpoint at entry point (handles read-only .text pages
+        //     via CR0.WP trick in the driver — WriteMemory can't write to RX pages).
+        //     The process is spinning at EB FE; the BP replaces EB with CC.
+        ulong epAddr = 0;
+        uint? epBpHandle = null;
+        if (modules.Count > 0 && entryRva != 0)
+        {
+            epAddr = modules[0].BaseAddress + entryRva;
+            epBpHandle = await Task.Run(() => _driver.SetBreakpoint(svcPid, 0, epAddr, BreakpointType.Software));
+            Log($"[Service] Set entry point BP at {epAddr:X16}");
+        }
+
+        StatusText = "Waiting for entry point INT3...";
+        var epEvt = await Task.Run(() => _driver.WaitDebugEvent());
+        if (epEvt == null)
+        {
+            Log("[Service] No debug event at entry point");
+            StatusText = "Failed";
+            return;
+        }
+
+        Log($"[Service] Caught at entry point: {epEvt.Address:X16} (TID {epEvt.ThreadId})");
+        SelectedThreadId = epEvt.ThreadId;
+
+        // 11. Remove entry point BP, then overwrite EB FE with the real original bytes.
+        //     RemoveBreakpoint restores the BP's saved byte (EB from EB FE) — wrong.
+        //     We must write the real original bytes (e.g. 48 83) over the EB FE.
+        //     The .text page is RX so we need ProtectMemory → write → restore.
+        if (epBpHandle.HasValue)
+            await Task.Run(() => _driver.RemoveBreakpoint(epBpHandle.Value));
+        if (epAddr != 0)
+        {
+            const uint PAGE_EXECUTE_READWRITE = 0x40;
+            var (protOk, oldProt) = await Task.Run(() =>
+                _driver.ProtectMemory(svcPid, epAddr, 4096, PAGE_EXECUTE_READWRITE));
+            Log($"[Service] ProtectMemory(RWX): ok={protOk} oldProt=0x{oldProt:X}");
+
+            var writeOk = await Task.Run(() => _driver.WriteMemory(svcPid, epAddr, origBytes));
+            Log($"[Service] WriteMemory({origBytes[0]:X2} {origBytes[1]:X2}): ok={writeOk}");
+
+            if (protOk)
+                await Task.Run(() => _driver.ProtectMemory(svcPid, epAddr, 4096, oldProt));
+
+            // Verify the write
+            var verify = await Task.Run(() => _driver.ReadMemory(svcPid, epAddr, 2));
+            if (verify != null && verify.Length >= 2)
+                Log($"[Service] Verify EP bytes: {verify[0]:X2} {verify[1]:X2} (expected {origBytes[0]:X2} {origBytes[1]:X2})");
+            else
+                Log("[Service] WARNING: could not verify EP bytes");
+        }
+
+        // 12. Set BP on StartServiceCtrlDispatcherW, continue from entry point
+        Log($"[Service] BP at StartServiceCtrlDispatcherW ({dispatcherAddr:X16})");
+        var dispBp = await Task.Run(() => _driver.SetBreakpoint(svcPid, 0, dispatcherAddr, BreakpointType.Software));
+        Log($"[Service] Dispatcher BP handle: {(dispBp.HasValue ? dispBp.Value.ToString() : "FAILED")}");
+
+        IsBreakState = false;
+        IsRunning = true;
+        StatusText = "Running to StartServiceCtrlDispatcher...";
+
+        // STEP_PAST sets TF — first event will be a single-step, not our dispatcher BP.
+        // Loop until we hit the dispatcher BP (skip single-step and other spurious events).
+        DebugEvent? dispEvt = null;
+        {
+            var waitTask = Task.Run(() => _driver.WaitDebugEvent());
+            await Task.Delay(50);
+            await Task.Run(() => _driver.ContinueDebugEvent(DriverComm.CONTINUE_STEP_PAST));
+            dispEvt = await waitTask;
+
+            const int maxRetries = 30;
+            for (int retry = 0; retry < maxRetries && dispEvt != null; retry++)
+            {
+                if (dispEvt.Type == 0 && dispEvt.Address == dispatcherAddr)
+                    break;  // got the dispatcher BP
+                Log($"[Service] Skipping event: type={dispEvt.Type} addr={dispEvt.Address:X16}");
+                waitTask = Task.Run(() => _driver.WaitDebugEvent());
+                await Task.Delay(50);
+                await Task.Run(() => _driver.ContinueDebugEvent(DriverComm.CONTINUE_RUN));
+                dispEvt = await waitTask;
+            }
+        }
+        if (dispBp.HasValue)
+            await Task.Run(() => _driver.RemoveBreakpoint(dispBp.Value));
+
+        if (dispEvt == null) { Log("[Service] No event"); IsRunning = false; return; }
+
+        Log($"[Service] Hit StartServiceCtrlDispatcher at {dispEvt.Address:X16}");
+        SelectedThreadId = dispEvt.ThreadId;
+
+        // 8. Read RCX → SERVICE_TABLE_ENTRY[0].lpServiceProc
+        var regs = _driver.ReadRegisters(svcPid, SelectedThreadId, Is32Bit);
+        Registers.ReplaceAll(regs);
+        var rcxReg = regs.FirstOrDefault(r => r.Name == (Is32Bit ? "ECX" : "RCX"));
+
+        if (rcxReg != null && rcxReg.Value != 0)
+        {
+            int ptrSize = Is32Bit ? 4 : 8;
+            var procData = _driver.ReadMemory(svcPid, rcxReg.Value + (ulong)ptrSize, (uint)ptrSize);
+            ulong smAddr = procData != null ? (Is32Bit ? BitConverter.ToUInt32(procData, 0) : BitConverter.ToUInt64(procData, 0)) : 0;
+            if (smAddr != 0)
+            {
+                var symName = _symbols.ResolveAddress(svcPid, smAddr, Modules.ToList()) ?? $"{smAddr:X16}";
+                Log($"[Service] ServiceMain = {symName} ({smAddr:X16})");
+
+                // Set BP on ServiceMain, continue
+                var smBp = await Task.Run(() => _driver.SetBreakpoint(svcPid, 0, smAddr, BreakpointType.Software));
+                if (smBp.HasValue)
+                {
+                    _tempBpHandle = smBp.Value;
+                    StatusText = $"Running to {symName}...";
+
+                    var waitTask2 = Task.Run(() => _driver.WaitDebugEvent());
+                    await Task.Delay(50);
+                    await Task.Run(() => _driver.ContinueDebugEvent());
+                    var smEvt = await waitTask2;
+                    await Task.Run(() => _driver.RemoveBreakpoint(_tempBpHandle!.Value));
+                    _tempBpHandle = null;
+
+                    if (smEvt != null)
+                    {
+                        Log($"[Service] Stopped at ServiceMain ({smEvt.Address:X16})");
+                        SelectedThreadId = smEvt.ThreadId;
+                        IsRunning = false;
+                        IsBreakState = true;
+                        StatusText = $"ServiceMain - PID {svcPid}";
+                        RefreshRegisters();
+
+                        // Navigate disasm to ServiceMain
+                        DisasmAddress = smEvt.Address;
+                        var smCode = await Task.Run(() => _driver.ReadMemory(svcPid, smEvt.Address, 4096));
+                        if (smCode != null) { PatchBpBytesForDisasm(smCode, smEvt.Address); Instructions.ReplaceAll(_disasm.Disassemble(smCode, smEvt.Address)); }
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Fallback — stopped at dispatcher
+        IsRunning = false;
+        IsBreakState = true;
+        StatusText = $"StartServiceCtrlDispatcher - PID {svcPid}";
+        Log("[Service] Stopped at dispatcher. Read RCX for ServiceMain address.");
+        RefreshRegisters();
+        DisasmAddress = dispEvt.Address;
+        var dCode = await Task.Run(() => _driver.ReadMemory(svcPid, dispEvt.Address, 4096));
+        if (dCode != null) { PatchBpBytesForDisasm(dCode, dispEvt.Address); Instructions.ReplaceAll(_disasm.Disassemble(dCode, dispEvt.Address)); }
+    }
+
     private async Task DoAttachAsync()
     {
         if (!IsConnected || TargetPid == 0) return;
@@ -1250,7 +1574,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             Log($"Hex dump: read failed at {hexAddr:X16}");
         }
 
-        // Parse imports from main exe
+        // Parse imports from main exe (exports loaded on demand via Show Exports)
         RefreshImports();
         RefreshExceptions();
         RefreshSections();
@@ -1279,6 +1603,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         // Only auto-break if RIP is inside the main module (CRT startup).
         // If RIP is in ntdll/kernel32/etc., the process already passed main — skip.
+        // If registers unavailable (paged-out trap frame on attach), treat as already running.
         var rip = Registers.FirstOrDefault(r => r.Name == IpRegName);
         if (rip != null && rip.Value != 0 && modules.Count > 0)
         {
@@ -1290,6 +1615,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 Log("Auto-break: process already running (RIP outside main module), pausing here");
                 return false;
             }
+        }
+        else if (_isPausedViaSuspend && (rip == null || rip.Value == 0))
+        {
+            Log("Auto-break: registers unavailable (trap frame paged out), pausing here");
+            return false;
         }
 
         // Try common entry point symbol names
@@ -1315,22 +1645,350 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         if (entryAddr == 0)
         {
-            Log("Auto-break: no main/WinMain found, staying at CRT startup");
+            // No main/WinMain — try service detection.
+            // If the process calls StartServiceCtrlDispatcherW, it's a Windows service.
+            // Break there, read SERVICE_TABLE_ENTRY from RCX, then break at ServiceMain.
+            var serviceResult = await TryAutoBreakAtServiceMain(pid);
+            if (serviceResult) return true;
+
+            Log("Auto-break: no main/WinMain/ServiceMain found, staying at CRT startup");
             return false;
         }
 
-        // Set temp BP at entry point
-        var handle = await Task.Run(() => _driver.SetBreakpoint(pid, 0, entryAddr, BreakpointType.Software));
+        // Set temp BP at entry point and run
+        return await RunToAddress(pid, entryAddr, foundName!);
+    }
+
+    /// <summary>
+    /// Detect Windows service process: set BP on StartServiceCtrlDispatcherW,
+    /// read SERVICE_TABLE_ENTRY.lpServiceProc from RCX, then break at ServiceMain.
+    /// </summary>
+    private async Task<bool> TryAutoBreakAtServiceMain(uint pid)
+    {
+        // Find StartServiceCtrlDispatcherW by parsing export table of sechost/advapi32.
+        // SymFromNameW often fails for system DLLs without PDBs, so we read exports directly.
+        string[] targetModules = ["sechost.dll", "advapi32.dll"];
+        string[] targetExports = ["StartServiceCtrlDispatcherW", "StartServiceCtrlDispatcherA"];
+
+        ulong dispatcherAddr = 0;
+        string? dispatcherName = null;
+
+        foreach (var modName in targetModules)
+        {
+            var mod = Modules.FirstOrDefault(m =>
+                m.Name.Equals(modName, StringComparison.OrdinalIgnoreCase));
+            if (mod == null) continue;
+
+            foreach (var exportName in targetExports)
+            {
+                var addr = await Task.Run(() => FindExportByName(pid, mod.BaseAddress, exportName));
+                if (addr != 0)
+                {
+                    dispatcherAddr = addr;
+                    dispatcherName = $"{modName}!{exportName}";
+                    break;
+                }
+            }
+            if (dispatcherAddr != 0) break;
+        }
+
+        // Fallback to symbol resolution
+        if (dispatcherAddr == 0)
+        {
+            string[] symNames = [
+                "sechost!StartServiceCtrlDispatcherW", "sechost.dll!StartServiceCtrlDispatcherW",
+                "advapi32!StartServiceCtrlDispatcherW", "advapi32.dll!StartServiceCtrlDispatcherW",
+            ];
+            foreach (var name in symNames)
+            {
+                var addr = _symbols.ResolveNameToAddress(name);
+                if (addr != 0) { dispatcherAddr = addr; dispatcherName = name; break; }
+            }
+        }
+
+        if (dispatcherAddr == 0) return false;
+
+        Log($"Auto-break: service detected, BP at {dispatcherName} ({dispatcherAddr:X16})");
+
+        // Set BP on StartServiceCtrlDispatcher
+        var h = await Task.Run(() => _driver.SetBreakpoint(pid, 0, dispatcherAddr, BreakpointType.Software));
+        if (!h.HasValue) return false;
+        _tempBpHandle = h.Value;
+
+        // Direct WaitDebugEvent — no listener, no timeout polling
+        IsBreakState = false;
+        IsRunning = true;
+        StatusText = "Running to StartServiceCtrlDispatcher...";
+
+        var waitTask = Task.Run(() => _driver.WaitDebugEvent());
+        await Task.Delay(50);
+
+        // Resume all threads
+        var threads = Threads.ToList();
+        await Task.Run(() => { foreach (var t in threads) _driver.ResumeThread(t.ThreadId); });
+        _isPausedViaSuspend = false;
+
+        var dispEvt = await waitTask;
+
+        await Task.Run(() => _driver.RemoveBreakpoint(_tempBpHandle!.Value));
+        _tempBpHandle = null;
+
+        if (dispEvt == null)
+        {
+            Log("Auto-break: no event from StartServiceCtrlDispatcher");
+            IsRunning = false;
+            return false;
+        }
+
+        Log($"Auto-break: hit StartServiceCtrlDispatcher at {dispEvt.Address:X16}");
+        SelectedThreadId = dispEvt.ThreadId;
+
+        // Read RCX → SERVICE_TABLE_ENTRY[0].lpServiceProc
+        var regs = _driver.ReadRegisters(pid, SelectedThreadId, Is32Bit);
+        var rcxReg = regs.FirstOrDefault(r => r.Name == (Is32Bit ? "ECX" : "RCX"));
+        if (rcxReg == null || rcxReg.Value == 0)
+        {
+            Log("Auto-break: couldn't read RCX");
+            await Task.Run(() => _driver.ContinueDebugEvent());
+            IsRunning = false;
+            IsBreakState = true;
+            return true;
+        }
+
+        int ptrSize = Is32Bit ? 4 : 8;
+        var procData = _driver.ReadMemory(pid, rcxReg.Value + (ulong)ptrSize, (uint)ptrSize);
+        if (procData == null)
+        {
+            Log("Auto-break: couldn't read SERVICE_TABLE_ENTRY");
+            await Task.Run(() => _driver.ContinueDebugEvent());
+            IsRunning = false;
+            IsBreakState = true;
+            return true;
+        }
+
+        ulong serviceMainAddr = Is32Bit
+            ? BitConverter.ToUInt32(procData, 0)
+            : BitConverter.ToUInt64(procData, 0);
+
+        if (serviceMainAddr == 0)
+        {
+            Log("Auto-break: ServiceMain address is null");
+            await Task.Run(() => _driver.ContinueDebugEvent());
+            IsRunning = false;
+            IsBreakState = true;
+            return true;
+        }
+
+        var symName = _symbols.ResolveAddress(pid, serviceMainAddr, Modules.ToList()) ?? $"{serviceMainAddr:X16}";
+        Log($"Auto-break: ServiceMain at {symName} ({serviceMainAddr:X16})");
+
+        // Set BP on ServiceMain
+        var smBp = await Task.Run(() => _driver.SetBreakpoint(pid, 0, serviceMainAddr, BreakpointType.Software));
+        if (!smBp.HasValue)
+        {
+            Log("Auto-break: failed to set BP on ServiceMain");
+            await Task.Run(() => _driver.ContinueDebugEvent());
+            IsRunning = false;
+            IsBreakState = true;
+            return true;
+        }
+        _tempBpHandle = smBp.Value;
+
+        // Continue from dispatcher → run to ServiceMain
+        StatusText = $"Running to ServiceMain...";
+        var waitTask2 = Task.Run(() => _driver.WaitDebugEvent());
+        await Task.Delay(50);
+        await Task.Run(() => _driver.ContinueDebugEvent());
+
+        var smEvt = await waitTask2;
+
+        await Task.Run(() => _driver.RemoveBreakpoint(_tempBpHandle!.Value));
+        _tempBpHandle = null;
+
+        if (smEvt == null)
+        {
+            Log("Auto-break: no event from ServiceMain");
+            IsRunning = false;
+            return false;
+        }
+
+        Log($"Auto-break: hit ServiceMain at {smEvt.Address:X16}");
+        SelectedThreadId = smEvt.ThreadId;
+        IsRunning = false;
+        IsBreakState = true;
+        StatusText = $"ServiceMain - PID {pid}";
+
+        // Refresh UI
+        RefreshRegisters();
+        return true;
+    }
+
+    /// <summary>
+    /// Like TryAutoBreakAtServiceMain, but resumes via ContinueDebugEvent
+    /// (process is stopped on a debug event, not suspended).
+    /// </summary>
+    private async Task<bool> TryAutoBreakAtServiceMainFromDebugEvent(uint pid)
+    {
+        // Find StartServiceCtrlDispatcherW via export table (runs on UI thread for logging)
+        string[] targetModules = ["sechost.dll", "advapi32.dll"];
+        string[] targetExports = ["StartServiceCtrlDispatcherW", "StartServiceCtrlDispatcherA"];
+
+        ulong dispatcherAddr = 0;
+        string? dispatcherName = null;
+
+        foreach (var modName in targetModules)
+        {
+            var mod = Modules.FirstOrDefault(m =>
+                m.Name.Equals(modName, StringComparison.OrdinalIgnoreCase));
+            if (mod == null) { Log($"[Service] Module {modName} not found"); continue; }
+
+            foreach (var exportName in targetExports)
+            {
+                var addr = await FindExportByNameAsync(pid, mod.BaseAddress, exportName, modName);
+                if (addr != 0)
+                {
+                    dispatcherAddr = addr;
+                    dispatcherName = $"{modName}!{exportName}";
+                    break;
+                }
+            }
+            if (dispatcherAddr != 0) break;
+        }
+
+        if (dispatcherAddr == 0)
+        {
+            Log("[Service] StartServiceCtrlDispatcherW not found");
+            await Task.Run(() => _driver.ContinueDebugEvent());
+            IsBreakState = false;
+            return false;
+        }
+
+        Log($"[Service] BP at {dispatcherName} ({dispatcherAddr:X16})");
+
+        // Set BP
+        var h = await Task.Run(() => _driver.SetBreakpoint(pid, 0, dispatcherAddr, BreakpointType.Software));
+        if (!h.HasValue)
+        {
+            await Task.Run(() => _driver.ContinueDebugEvent());
+            return false;
+        }
+        _tempBpHandle = h.Value;
+
+        // WaitDebugEvent FIRST, then ContinueDebugEvent to resume from entry point
+        IsBreakState = false;
+        IsRunning = true;
+        StatusText = "Running to StartServiceCtrlDispatcher...";
+
+        var waitTask = Task.Run(() => _driver.WaitDebugEvent());
+        await Task.Delay(50);
+        await Task.Run(() => _driver.ContinueDebugEvent());
+
+        var dispEvt = await waitTask;
+
+        await Task.Run(() => _driver.RemoveBreakpoint(_tempBpHandle!.Value));
+        _tempBpHandle = null;
+
+        if (dispEvt == null)
+        {
+            Log("[Service] No event at StartServiceCtrlDispatcher");
+            IsRunning = false;
+            return false;
+        }
+
+        Log($"[Service] Hit StartServiceCtrlDispatcher at {dispEvt.Address:X16}");
+        SelectedThreadId = dispEvt.ThreadId;
+
+        // Read RCX → SERVICE_TABLE_ENTRY[0].lpServiceProc
+        var regs = _driver.ReadRegisters(pid, SelectedThreadId, Is32Bit);
+        var rcxReg = regs.FirstOrDefault(r => r.Name == (Is32Bit ? "ECX" : "RCX"));
+        if (rcxReg == null || rcxReg.Value == 0)
+        {
+            Log("[Service] RCX is null");
+            await Task.Run(() => _driver.ContinueDebugEvent());
+            IsRunning = false;
+            IsBreakState = true;
+            return true;
+        }
+
+        int ptrSize = Is32Bit ? 4 : 8;
+        var procData = _driver.ReadMemory(pid, rcxReg.Value + (ulong)ptrSize, (uint)ptrSize);
+        if (procData == null)
+        {
+            Log("[Service] Can't read SERVICE_TABLE_ENTRY");
+            await Task.Run(() => _driver.ContinueDebugEvent());
+            IsRunning = false;
+            IsBreakState = true;
+            return true;
+        }
+
+        ulong serviceMainAddr = Is32Bit
+            ? BitConverter.ToUInt32(procData, 0)
+            : BitConverter.ToUInt64(procData, 0);
+
+        if (serviceMainAddr == 0)
+        {
+            Log("[Service] ServiceMain address is 0");
+            await Task.Run(() => _driver.ContinueDebugEvent());
+            IsRunning = false;
+            IsBreakState = true;
+            return true;
+        }
+
+        var symName = _symbols.ResolveAddress(pid, serviceMainAddr, Modules.ToList()) ?? $"{serviceMainAddr:X16}";
+        Log($"[Service] ServiceMain at {symName} ({serviceMainAddr:X16})");
+
+        // BP on ServiceMain, continue from dispatcher
+        var smBp = await Task.Run(() => _driver.SetBreakpoint(pid, 0, serviceMainAddr, BreakpointType.Software));
+        if (!smBp.HasValue)
+        {
+            await Task.Run(() => _driver.ContinueDebugEvent());
+            IsRunning = false;
+            IsBreakState = true;
+            return true;
+        }
+        _tempBpHandle = smBp.Value;
+
+        StatusText = $"Running to ServiceMain...";
+        var waitTask2 = Task.Run(() => _driver.WaitDebugEvent());
+        await Task.Delay(50);
+        await Task.Run(() => _driver.ContinueDebugEvent());
+
+        var smEvt = await waitTask2;
+
+        await Task.Run(() => _driver.RemoveBreakpoint(_tempBpHandle!.Value));
+        _tempBpHandle = null;
+
+        if (smEvt == null)
+        {
+            Log("[Service] No event at ServiceMain");
+            IsRunning = false;
+            return false;
+        }
+
+        Log($"[Service] Hit ServiceMain at {smEvt.Address:X16}");
+        SelectedThreadId = smEvt.ThreadId;
+        IsRunning = false;
+        IsBreakState = true;
+        StatusText = $"ServiceMain - PID {pid}";
+        RefreshRegisters();
+        return true;
+    }
+
+    /// <summary>
+    /// Set a temp BP at the given address, resume all threads, and start listening.
+    /// </summary>
+    private async Task<bool> RunToAddress(uint pid, ulong address, string label)
+    {
+        var handle = await Task.Run(() => _driver.SetBreakpoint(pid, 0, address, BreakpointType.Software));
         if (!handle.HasValue)
         {
-            Log($"Auto-break: failed to set BP at {foundName} ({entryAddr:X16})");
+            Log($"Auto-break: failed to set BP at {label} ({address:X16})");
             return false;
         }
 
         _tempBpHandle = handle.Value;
-        Log($"Auto-break: BP at {foundName} ({entryAddr:X16}), running...");
+        Log($"Auto-break: BP at {label} ({address:X16}), running...");
 
-        // Resume all threads — they're suspended, not in debug event
         var threads = Threads.ToList();
         await Task.Run(() =>
         {
@@ -1340,9 +1998,115 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _isPausedViaSuspend = false;
         IsBreakState = false;
         IsRunning = true;
-        StatusText = $"Running to {foundName}...";
+        StatusText = $"Running to {label}...";
         StartDebugListener();
         return true;
+    }
+
+    /// <summary>
+    /// Parse PE export table from memory to find a function address by name.
+    /// Reads the module image in one shot to avoid thousands of small TCP reads.
+    /// </summary>
+    private ulong FindExportByName(uint pid, ulong moduleBase, string funcName)
+    {
+        try
+        {
+            // Find module size from Modules list
+            uint modSize = 0;
+            foreach (var m in Modules)
+                if (m.BaseAddress == moduleBase) { modSize = m.Size; break; }
+            if (modSize == 0) modSize = 2 * 1024 * 1024;
+            uint readSize = Math.Min(modSize, 4 * 1024 * 1024);
+
+            var image = _driver.ReadMemory(pid, moduleBase, readSize);
+            if (image == null || image.Length < 0x40) return 0;
+
+            var exports = ParseExportsFromBuffer(image, moduleBase, "");
+            foreach (var exp in exports)
+                if (exp.Function.Equals(funcName, StringComparison.Ordinal))
+                    return exp.Address;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[FindExport] Exception: {ex.Message}");
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Same as FindExportByName but runs on UI thread so Log() works. For diagnostics.
+    /// </summary>
+    private async Task<ulong> FindExportByNameAsync(uint pid, ulong moduleBase, string funcName, string modLabel)
+    {
+        if (moduleBase == 0) return 0;
+
+        uint modSize = 0;
+        foreach (var m in Modules)
+            if (m.BaseAddress == moduleBase) { modSize = m.Size; break; }
+
+        // If size unknown, read PE header first to get SizeOfImage
+        if (modSize == 0)
+        {
+            var hdr = await Task.Run(() => _driver.ReadMemory(pid, moduleBase, 0x1000));
+            if (hdr != null && hdr.Length >= 0x40 && hdr[0] == 0x4D && hdr[1] == 0x5A)
+            {
+                uint peOff = BitConverter.ToUInt32(hdr, 0x3C);
+                if (peOff + 0x60 <= hdr.Length)
+                {
+                    ushort hdrMag = BitConverter.ToUInt16(hdr, (int)peOff + 0x18);
+                    int sizeOfImageOff = hdrMag == 0x20B ? (int)peOff + 0x50 : (int)peOff + 0x50;
+                    if (sizeOfImageOff + 4 <= hdr.Length)
+                        modSize = BitConverter.ToUInt32(hdr, sizeOfImageOff);
+                }
+            }
+        }
+
+        if (modSize == 0) modSize = 0x100000; // 1MB fallback
+        uint readSize = Math.Min(modSize, 4 * 1024 * 1024);
+
+        Log($"[FindExport] {modLabel}: reading 0x{readSize:X} bytes...");
+        var image = await Task.Run(() => _driver.ReadMemory(pid, moduleBase, readSize));
+        if (image == null || image.Length < 0x40)
+        {
+            Log($"[FindExport] {modLabel}: read failed ({image?.Length ?? 0} bytes)");
+            return 0;
+        }
+        Log($"[FindExport] {modLabel}: got 0x{image.Length:X} bytes");
+
+        // PE diagnostics
+        if (image[0] != 0x4D || image[1] != 0x5A) { Log($"[FindExport] {modLabel}: no MZ"); return 0; }
+        uint pOff = BitConverter.ToUInt32(image, 0x3C);
+        if (pOff + 0x18 > image.Length) { Log($"[FindExport] {modLabel}: PE offset too large"); return 0; }
+        ushort mag = BitConverter.ToUInt16(image, (int)pOff + 0x18);
+        bool x64 = mag == 0x20B;
+        int edOff = x64 ? (int)pOff + 0x88 : (int)pOff + 0x78;
+        uint eRva = (edOff + 8 <= image.Length) ? BitConverter.ToUInt32(image, edOff) : 0;
+        uint eSz = (edOff + 8 <= image.Length) ? BitConverter.ToUInt32(image, edOff + 4) : 0;
+        Log($"[FindExport] {modLabel}: PE=0x{pOff:X} magic=0x{mag:X} exportRva=0x{eRva:X} size=0x{eSz:X}");
+
+        if (eRva == 0 || eSz == 0) { Log($"[FindExport] {modLabel}: no export directory"); return 0; }
+        if (eRva + 40 > (uint)image.Length) { Log($"[FindExport] {modLabel}: export dir at 0x{eRva:X} beyond image 0x{image.Length:X}"); return 0; }
+
+        uint nFuncs = BitConverter.ToUInt32(image, (int)eRva + 20);
+        uint nNames = BitConverter.ToUInt32(image, (int)eRva + 24);
+        uint addrTbl = BitConverter.ToUInt32(image, (int)eRva + 28);
+        Log($"[FindExport] {modLabel}: funcs={nFuncs} names={nNames} addrTbl=0x{addrTbl:X}");
+
+        if (addrTbl + nFuncs * 4 > (uint)image.Length)
+        {
+            Log($"[FindExport] {modLabel}: addrTbl 0x{addrTbl:X}+{nFuncs * 4} > image 0x{image.Length:X}");
+            return 0;
+        }
+
+        var exports = ParseExportsFromBuffer(image, moduleBase, modLabel);
+        Log($"[FindExport] {modLabel}: parsed {exports.Count} exports");
+
+        foreach (var exp in exports)
+            if (exp.Function.Equals(funcName, StringComparison.Ordinal))
+                return exp.Address;
+
+        return 0;
     }
 
     [RelayCommand]
@@ -1406,6 +2170,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _tempBpHandle = null;
         _allFunctions = [];
         _allImports = [];
+        _allExports = [];
         TargetPid = 0;
         SelectedThreadId = 0;
         Is32Bit = false;
@@ -1425,6 +2190,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         FilteredStrings.Clear();
         Imports.Clear();
         FilteredImports.Clear();
+        Exports.Clear();
+        FilteredExports.Clear();
         Functions.Clear();
         FilteredFunctions.Clear();
         HexData = [];
@@ -3790,6 +4557,25 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    partial void OnExportFilterChanged(string value) => ApplyExportFilter();
+
+    private void ApplyExportFilter()
+    {
+        if (string.IsNullOrWhiteSpace(ExportFilter))
+        {
+            FilteredExports.ReplaceAll(_allExports);
+        }
+        else
+        {
+            var filter = ExportFilter;
+            var filtered = _allExports
+                .Where(e => e.Function.Contains(filter, StringComparison.OrdinalIgnoreCase)
+                         || e.Module.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            FilteredExports.ReplaceAll(filtered);
+        }
+    }
+
     partial void OnFunctionFilterChanged(string value) => ApplyFunctionFilter();
 
     private void ApplyFunctionFilter()
@@ -4891,6 +5677,149 @@ public partial class MainViewModel : ObservableObject, IDisposable
         // Check .dll or .DLL suffix (case insensitive)
         string name = Encoding.ASCII.GetString(image, (int)rva, len);
         return name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /* ================================================================== */
+    /*  Exports                                                            */
+    /* ================================================================== */
+
+    public async void RefreshExports(ulong moduleBase = 0)
+    {
+        if (!IsConnected || TargetPid == 0) return;
+
+        var pid = TargetPid;
+        var allExports = new List<ExportEntry>();
+        List<ModuleInfo> modulesToScan;
+
+        if (moduleBase == 0)
+        {
+            // All loaded modules
+            modulesToScan = Modules.ToList();
+        }
+        else
+        {
+            // Single module
+            var mod = Modules.FirstOrDefault(m => m.BaseAddress == moduleBase);
+            if (mod == null) return;
+            modulesToScan = [mod];
+        }
+
+        foreach (var mod in modulesToScan)
+        {
+            uint modSize = mod.Size != 0 ? mod.Size : 2 * 1024 * 1024;
+            uint readSize = Math.Min(modSize, 4 * 1024 * 1024);
+
+            var modBase = mod.BaseAddress;
+            var modName = mod.Name;
+            var image = await Task.Run(() => _driver.ReadMemory(pid, modBase, readSize));
+            if (image == null || image.Length < 0x40)
+            {
+                Log($"Export parse: {modName} read failed (requested {readSize}, got {image?.Length ?? 0})");
+                continue;
+            }
+
+            var exports = ParseExportsFromBuffer(image, modBase, modName);
+            if (exports.Count > 0)
+                Log($"  {modName}: {exports.Count} exports");
+            allExports.AddRange(exports);
+        }
+
+        _allExports = allExports;
+        Exports.ReplaceAll(allExports);
+        ApplyExportFilter();
+        Log($"Found {allExports.Count} exports in {modulesToScan.Count} module(s)");
+    }
+
+    private List<ExportEntry> ParseExportsFromBuffer(byte[] image, ulong modBase, string moduleName)
+    {
+        var result = new List<ExportEntry>();
+        try
+        {
+            if (image.Length < 0x40) return result;
+            if (image[0] != 0x4D || image[1] != 0x5A) return result;
+
+            uint peOffset = BitConverter.ToUInt32(image, 0x3C);
+            if (peOffset + 0x18 > image.Length) return result;
+            if (image[peOffset] != 'P' || image[peOffset + 1] != 'E') return result;
+
+            ushort magic = BitConverter.ToUInt16(image, (int)peOffset + 0x18);
+            bool is64 = magic == 0x20B;
+
+            // Export directory is DataDirectory[0]
+            int exportDirOffset = is64 ? (int)peOffset + 0x88 : (int)peOffset + 0x78;
+            if (exportDirOffset + 8 > image.Length) return result;
+
+            uint exportRva = BitConverter.ToUInt32(image, exportDirOffset);
+            uint exportSize = BitConverter.ToUInt32(image, exportDirOffset + 4);
+            Debug.WriteLine($"[ExportParse] {moduleName}: exportRva=0x{exportRva:X} size=0x{exportSize:X} imageLen=0x{image.Length:X}");
+            if (exportRva == 0 || exportSize == 0) { Debug.WriteLine($"[ExportParse] {moduleName}: no export dir"); return result; }
+            if (exportRva + 40 > (uint)image.Length) { Debug.WriteLine($"[ExportParse] {moduleName}: export dir beyond image (0x{exportRva:X}+40 > 0x{image.Length:X})"); return result; }
+
+            uint numberOfFunctions = BitConverter.ToUInt32(image, (int)exportRva + 20);
+            uint numberOfNames = BitConverter.ToUInt32(image, (int)exportRva + 24);
+            uint addressTableRva = BitConverter.ToUInt32(image, (int)exportRva + 28);
+            uint nameTableRva = BitConverter.ToUInt32(image, (int)exportRva + 32);
+            uint ordinalTableRva = BitConverter.ToUInt32(image, (int)exportRva + 36);
+            uint ordinalBase = BitConverter.ToUInt32(image, (int)exportRva + 16);
+
+            Debug.WriteLine($"[ExportParse] {moduleName}: funcs={numberOfFunctions} names={numberOfNames} addrTbl=0x{addressTableRva:X} nameTbl=0x{nameTableRva:X}");
+
+            if (numberOfFunctions == 0 || numberOfFunctions > 0x10000) { Debug.WriteLine($"[ExportParse] {moduleName}: bad numberOfFunctions"); return result; }
+            if (addressTableRva == 0 || addressTableRva + numberOfFunctions * 4 > (uint)image.Length) { Debug.WriteLine($"[ExportParse] {moduleName}: address table beyond image (0x{addressTableRva:X}+{numberOfFunctions*4} > 0x{image.Length:X})"); return result; }
+
+            // Build name→ordinal map
+            var nameMap = new Dictionary<ushort, string>();
+            if (numberOfNames > 0 &&
+                nameTableRva + numberOfNames * 4 <= image.Length &&
+                ordinalTableRva + numberOfNames * 2 <= image.Length)
+            {
+                for (uint i = 0; i < numberOfNames; i++)
+                {
+                    uint nameRva = BitConverter.ToUInt32(image, (int)(nameTableRva + i * 4));
+                    ushort ordIndex = BitConverter.ToUInt16(image, (int)(ordinalTableRva + i * 2));
+
+                    if (nameRva < image.Length)
+                    {
+                        int nameEnd = Array.IndexOf(image, (byte)0, (int)nameRva);
+                        if (nameEnd < 0 || nameEnd > nameRva + 256)
+                            nameEnd = (int)Math.Min(nameRva + 256, image.Length);
+                        if (nameEnd > nameRva)
+                        {
+                            string name = Encoding.ASCII.GetString(image, (int)nameRva, nameEnd - (int)nameRva);
+                            nameMap[ordIndex] = name;
+                        }
+                    }
+                }
+            }
+
+            // Walk address table
+            for (uint i = 0; i < numberOfFunctions; i++)
+            {
+                uint funcRva = BitConverter.ToUInt32(image, (int)(addressTableRva + i * 4));
+                if (funcRva == 0) continue;
+
+                // Skip forwarded exports (RVA inside export directory)
+                if (funcRva >= exportRva && funcRva < exportRva + exportSize)
+                    continue;
+
+                var entry = new ExportEntry
+                {
+                    Module = moduleName,
+                    Ordinal = (ushort)(i + ordinalBase),
+                    Address = modBase + funcRva,
+                };
+
+                if (nameMap.TryGetValue((ushort)i, out var funcName))
+                    entry.Function = funcName;
+
+                result.Add(entry);
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Export parse error: {ex.Message}");
+        }
+        return result;
     }
 
     public async void RefreshKernelModules()

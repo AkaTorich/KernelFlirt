@@ -78,6 +78,7 @@
             <MenuItem Header="_File">
                 <MenuItem Header="_Open Process..." Command="{Binding OpenProcessCommand}" />
                 <MenuItem Header="Open &amp; _Debug (.exe)..." Command="{Binding OpenAndDebugCommand}" />
+                <MenuItem Header="Debug _Service..." Command="{Binding DebugServiceCommand}" />
                 <MenuItem Header="_Connect Kernel..." Command="{Binding ConnectKernelCommand}" />
                 <MenuItem Header="_Disconnect" Command="{Binding DisconnectKernelCommand}" />
                 <Separator />
@@ -331,6 +332,7 @@
                             <MenuItem Header="Copy Base Address" Click="OnModuleCopyBase" />
                             <Separator />
                             <MenuItem Header="Show Imports" Click="OnModuleShowImports" />
+                            <MenuItem Header="Show Exports" Click="OnModuleShowExports" />
                             <MenuItem Header="Show Functions" Click="OnModuleShowFunctions" />
                         </ContextMenu>
                     </DataGrid.ContextMenu>
@@ -775,6 +777,47 @@
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="Foreground" Value="{DynamicResource HexBrush}" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
+            <!-- Tab: Exports -->
+            <TabItem Header="Exports">
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top" Margin="2">
+                        <TextBlock Text="Filter: " VerticalAlignment="Center" Foreground="{DynamicResource CommentBrush}" />
+                        <TextBox Text="{Binding ExportFilter, UpdateSourceTrigger=PropertyChanged}"
+                                 Background="{DynamicResource BgLightBrush}" Foreground="{DynamicResource FgBrush}"
+                                 BorderBrush="{DynamicResource BorderBrush}" Padding="3,1" />
+                    </DockPanel>
+                    <DataGrid x:Name="ExportsGrid" ItemsSource="{Binding FilteredExports}" IsReadOnly="True"
+                              AutoGenerateColumns="False" BorderBrush="{DynamicResource BorderBrush}"
+                              RowStyle="{StaticResource BpRowStyle}"
+                              CellStyle="{StaticResource BpCellStyle}"
+                              RowBackground="{x:Null}" AlternatingRowBackground="{x:Null}"
+                              MouseDoubleClick="OnExportDoubleClick"
+                              PreviewMouseRightButtonDown="DataGrid_PreviewMouseRightButtonDown">
+                        <DataGrid.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Follow in Disassembler" Click="OnExportFollowDisasm" />
+                                <MenuItem Header="Follow in Dump" Click="OnExportFollowDump" />
+                                <MenuItem Header="Decompile" Click="OnExportDecompile" />
+                                <MenuItem Header="Set Breakpoint" Click="OnExportSetBp" />
+                                <MenuItem Header="Copy Address" Click="OnExportCopy" />
+                            </ContextMenu>
+                        </DataGrid.ContextMenu>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Module" Width="140" Binding="{Binding Module}" />
+                            <DataGridTextColumn Header="Function" Width="220" Binding="{Binding Display}" />
+                            <DataGridTextColumn Header="Ordinal" Width="60" Binding="{Binding Ordinal}" />
+                            <DataGridTextColumn Header="Address" Width="*" Binding="{Binding AddressHex}">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{DynamicResource AddressBrush}" />
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>

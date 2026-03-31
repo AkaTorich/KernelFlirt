@@ -211,7 +211,8 @@ $pluginProjects = @(
     "samples\AiAssistantPlugin\AiAssistantPlugin.csproj",
     "samples\McpServerPlugin\McpServerPlugin.csproj",
     "samples\SignatureDetector\SignatureDetector.csproj",
-    "samples\PeRebuilder\PeRebuilder.csproj"
+    "samples\PeRebuilder\PeRebuilder.csproj",
+    "samples\VulnHunterPlugin\VulnHunterPlugin.csproj"
 )
 foreach ($pluginRelPath in $pluginProjects) {
     $pluginProj = Join-Path $Root $pluginRelPath

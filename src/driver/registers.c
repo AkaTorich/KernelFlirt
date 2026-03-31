@@ -121,6 +121,22 @@ KfReadRegisters(
         return STATUS_UNSUCCESSFUL;
     }
 
+    /*
+     * Validate that the trap frame pages are resident before reading.
+     * Service processes (spoolsv, svchost, etc.) can have threads in
+     * deep kernel wait whose trap frames are paged out. Reading paged-out
+     * nonpaged-expectation memory causes PAGE_FAULT_IN_NONPAGED_AREA (BSOD)
+     * which __try/__except cannot catch.
+     */
+    if (!MmIsAddressValid(pTrapFrame) ||
+        !MmIsAddressValid((UCHAR *)pTrapFrame + TF_SEGSS)) {
+        DbgPrint("[KernelFlirt] ReadRegs(TID %u): TrapFrame=%p — pages not resident (paged out)\n",
+                 targetTid, pTrapFrame);
+        ObDereferenceObject(thread);
+        Irp->IoStatus.Information = 0;
+        return STATUS_UNSUCCESSFUL;
+    }
+
     DbgPrint("[KernelFlirt] ReadRegs(TID %u): TrapFrame=%p\n", targetTid, pTrapFrame);
 
     __try {
@@ -216,6 +232,15 @@ KfWriteRegisters(
         return STATUS_UNSUCCESSFUL;
     }
 
+    if (!MmIsAddressValid(pTrapFrame) ||
+        !MmIsAddressValid((UCHAR *)pTrapFrame + TF_SEGSS)) {
+        DbgPrint("[KernelFlirt] WriteRegs(TID %u): TrapFrame=%p — pages not resident\n",
+                 input->Target.ThreadId, pTrapFrame);
+        ObDereferenceObject(thread);
+        Irp->IoStatus.Information = 0;
+        return STATUS_UNSUCCESSFUL;
+    }
+
     __try {
         /* Write volatile registers */
         *(ULONG64 *)((UCHAR *)pTrapFrame + TF_RAX) = input->Registers.Rax;
@@ -296,6 +321,15 @@ KfWriteRip(
     pTrapFrame = *(PVOID *)((UCHAR *)thread + KTHREAD_TRAPFRAME_OFFSET);
 
     if (!IS_KERN_PTR(pTrapFrame)) {
+        ObDereferenceObject(thread);
+        Irp->IoStatus.Information = 0;
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    if (!MmIsAddressValid(pTrapFrame) ||
+        !MmIsAddressValid((UCHAR *)pTrapFrame + TF_RSP)) {
+        DbgPrint("[KernelFlirt] WriteRip(TID %u): TrapFrame=%p — pages not resident\n",
+                 input->ThreadId, pTrapFrame);
         ObDereferenceObject(thread);
         Irp->IoStatus.Information = 0;
         return STATUS_UNSUCCESSFUL;

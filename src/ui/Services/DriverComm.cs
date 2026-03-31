@@ -79,6 +79,9 @@ public class DriverComm : IDisposable
     private static readonly uint IOCTL_KF_DELETE_PATH     = CTL_CODE(DeviceType, 0x908, 0, 0);
     private static readonly uint IOCTL_KF_CREATE_DIR      = CTL_CODE(DeviceType, 0x909, 0, 0);
     private static readonly uint IOCTL_KF_RENAME_PATH     = CTL_CODE(DeviceType, 0x90A, 0, 0);
+    private static readonly uint IOCTL_KF_STOP_SERVICE    = CTL_CODE(DeviceType, 0x90B, 0, 0);
+    private static readonly uint IOCTL_KF_START_SERVICE   = CTL_CODE(DeviceType, 0x90C, 0, 0);
+    private static readonly uint IOCTL_KF_QUERY_SERVICE_PID = CTL_CODE(DeviceType, 0x90D, 0, 0);
 
     #endregion
 
@@ -232,6 +235,35 @@ public class DriverComm : IDisposable
     {
         public KF_THREAD_TARGET Target;
         public KF_REGISTERS Registers;
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    private struct KF_SERVICE_PID_OUT
+    {
+        public uint ProcessId;
+        public uint ServiceState;
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    private struct KF_START_SERVICE_OUT
+    {
+        public uint ProcessId;
+        public uint ServiceState;
+        public uint EntryPointRva;
+        public byte OriginalByte0;
+        public byte OriginalByte1;
+        public byte Reserved0;
+        public byte Reserved1;
+    }
+
+    private const int KF_MAX_SERVICE_PATH = 520;
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1, CharSet = CharSet.Unicode)]
+    private unsafe struct KF_SERVICE_INFO_OUT
+    {
+        public uint ProcessId;
+        public uint ServiceState;
+        public fixed char BinaryPath[520];
     }
 
     // Relay pseudo-IOCTL structures
@@ -1408,6 +1440,40 @@ public class DriverComm : IDisposable
             progress?.Invoke(sent, totalSize);
         }
         return !ct.IsCancellationRequested;
+    }
+
+    // ── Service control (relay) ──
+
+    public bool StopService(string serviceName)
+    {
+        byte[] input = System.Text.Encoding.ASCII.GetBytes(serviceName + "\0");
+        var (ok, _) = SendIoctl(IOCTL_KF_STOP_SERVICE, input, 0);
+        return ok;
+    }
+
+    public (bool ok, uint pid, uint entryRva, byte[] originalBytes) StartService(string serviceName)
+    {
+        byte[] input = System.Text.Encoding.ASCII.GetBytes(serviceName + "\0");
+        var (ok, data) = SendIoctl(IOCTL_KF_START_SERVICE, input, Marshal.SizeOf<KF_START_SERVICE_OUT>());
+        if (!ok || data == null) return (ok, 0, 0, Array.Empty<byte>());
+        try
+        {
+            var result = BytesToStruct<KF_START_SERVICE_OUT>(data);
+            return (true, result.ProcessId, result.EntryPointRva,
+                    new byte[] { result.OriginalByte0, result.OriginalByte1 });
+        }
+        catch { return (ok, 0, 0, Array.Empty<byte>()); }
+    }
+
+    public (uint pid, uint state, string binaryPath) QueryServiceInfo(string serviceName)
+    {
+        byte[] input = System.Text.Encoding.ASCII.GetBytes(serviceName + "\0");
+        var (ok, data) = SendIoctl(IOCTL_KF_QUERY_SERVICE_PID, input, Marshal.SizeOf<KF_SERVICE_INFO_OUT>());
+        if (!ok || data == null) return (0, 0, "");
+        var result = BytesToStruct<KF_SERVICE_INFO_OUT>(data);
+        string path;
+        unsafe { path = new string(result.BinaryPath).TrimEnd('\0'); }
+        return (result.ProcessId, result.ServiceState, path);
     }
 
     #endregion
