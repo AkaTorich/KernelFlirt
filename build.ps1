@@ -44,7 +44,6 @@ $BinUI     = Join-Path $BinDir "UI"
 $BinDriver = Join-Path $BinDir "Driver"
 $BinLoader = Join-Path $BinDir "Loader"
 $BinRelay  = Join-Path $BinDir "Relay"
-$BinTest   = Join-Path $BinDir "TestDriver"
 
 # ── Clean ─────────────────────────────────────────────────────────────────────
 
@@ -58,7 +57,7 @@ if ($Clean) {
 
 # ── Create output dirs ──────────────────────────────────────────────────────
 
-foreach ($d in @($BinUI, $BinDriver, $BinLoader, $BinRelay, $BinTest)) {
+foreach ($d in @($BinUI, $BinDriver, $BinLoader, $BinRelay)) {
     if (!(Test-Path $d)) { New-Item -ItemType Directory -Path $d -Force | Out-Null }
 }
 
@@ -139,18 +138,6 @@ if (!$UIOnly) {
         }
         $stepNum++
 
-        # ── Build Test Driver ───────────────────────────────────────────────
-        Write-Host "`n[$stepNum/$totalSteps] Building TestDriver ($Configuration) ..." -ForegroundColor Green
-        $testProj = Join-Path $Root "src\testdriver\testdriver.vcxproj"
-        & $MSBuild $testProj /p:Configuration=$Configuration /p:Platform=x64 /v:minimal /nologo
-        if ($LASTEXITCODE -ne 0) { throw "TestDriver build failed." }
-
-        $testOut = Join-Path $Root "src\testdriver\build\testdriver\$Configuration"
-        if (Test-Path "$testOut\KfTestDriver.sys") {
-            Copy-Item "$testOut\KfTestDriver.sys" $BinTest -Force
-            Copy-Item "$testOut\KfTestDriver.pdb" $BinTest -Force -ErrorAction SilentlyContinue
-            Write-Host "  -> bin\TestDriver\KfTestDriver.sys" -ForegroundColor DarkGreen
-        }
         $stepNum++
     }
 }
@@ -203,7 +190,6 @@ if (!(Test-Path $pluginsDir)) { New-Item -ItemType Directory -Path $pluginsDir -
 
 # Build and copy plugins
 $pluginProjects = @(
-    "samples\SamplePlugin\SamplePlugin.csproj",
     "samples\AntiDebugPlugin\AntiDebugPlugin.csproj",
     "samples\ThemidaPlugin\ThemidaPlugin.csproj",
     "samples\ApiMonitorPlugin\ApiMonitorPlugin.csproj",
@@ -259,53 +245,6 @@ foreach ($pluginRelPath in $pluginProjects) {
     }
 }
 
-# Build AntiDebugTest (native C, needs MSVC cl.exe)
-$antiDebugSrc = Join-Path $Root "samples\AntiDebugTest\antidebug_test.c"
-if ((Test-Path $antiDebugSrc) -and $canBuildNative) {
-    $BinSamples = Join-Path $BinDir "Samples"
-    if (!(Test-Path $BinSamples)) { New-Item -ItemType Directory -Path $BinSamples -Force | Out-Null }
-
-    # Find vcvarsall.bat from VS installation
-    $vsInstall = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath 2>$null
-    if ($vsInstall) {
-        $vcvars = Join-Path $vsInstall "VC\Auxiliary\Build\vcvarsall.bat"
-    }
-    if ($vcvars -and (Test-Path $vcvars)) {
-        $antiDebugDir = Join-Path $Root "samples\AntiDebugTest"
-        cmd /c "call `"$vcvars`" x64 >nul 2>&1 && cd /d `"$antiDebugDir`" && cl /O2 /Zi /W3 /GS- /D_CRT_SECURE_NO_WARNINGS /DNDEBUG antidebug_test.c /Fe:antidebug_test.exe /link /DEBUG /OPT:REF /OPT:ICF /INCREMENTAL:NO user32.lib kernel32.lib >nul 2>&1"
-        if ($LASTEXITCODE -eq 0) {
-            Copy-Item (Join-Path $antiDebugDir "antidebug_test.exe") $BinSamples -Force
-            Copy-Item (Join-Path $antiDebugDir "antidebug_test.pdb") $BinSamples -Force -ErrorAction SilentlyContinue
-            Write-Host "  -> bin\Samples\antidebug_test.exe + .pdb" -ForegroundColor DarkGreen
-        } else {
-            Write-Host "  [WARNING] AntiDebugTest compilation failed" -ForegroundColor Yellow
-        }
-    }
-}
-
-# Build StringDecryptorTest samples (native C, needs MSVC cl.exe)
-$strDecTestDir = Join-Path $Root "samples\StringDecryptorTest"
-if ((Test-Path $strDecTestDir) -and $canBuildNative) {
-    $BinSamples = Join-Path $BinDir "Samples"
-    if (!(Test-Path $BinSamples)) { New-Item -ItemType Directory -Path $BinSamples -Force | Out-Null }
-
-    $vsInstall = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath 2>$null
-    if ($vsInstall) { $vcvars = Join-Path $vsInstall "VC\Auxiliary\Build\vcvarsall.bat" }
-
-    if ($vcvars -and (Test-Path $vcvars)) {
-        foreach ($testSrc in @("xor_strings.c", "rc4_strings.c")) {
-            $testName = [System.IO.Path]::GetFileNameWithoutExtension($testSrc)
-            cmd /c "call `"$vcvars`" x64 >nul 2>&1 && cd /d `"$strDecTestDir`" && cl /Od /Zi /W3 /GS- /MT $testSrc /Fe:$testName.exe /link /RELEASE /DEBUG /ENTRY:Entry /SUBSYSTEM:CONSOLE /NODEFAULTLIB /INCREMENTAL:NO kernel32.lib >nul 2>&1"
-            if ($LASTEXITCODE -eq 0) {
-                Copy-Item (Join-Path $strDecTestDir "$testName.exe") $BinSamples -Force
-                Copy-Item (Join-Path $strDecTestDir "$testName.pdb") $BinSamples -Force -ErrorAction SilentlyContinue
-                Write-Host "  -> bin\Samples\$testName.exe + .pdb" -ForegroundColor DarkGreen
-            } else {
-                Write-Host "  [WARNING] $testName compilation failed" -ForegroundColor Yellow
-            }
-        }
-    }
-}
 
 # Copy settings file
 $settingsFile = Join-Path $Root "kf_settings.txt"
@@ -325,9 +264,7 @@ if (Test-Path $kdSrc) {
 
 $driversToSign = @()
 $driverSys = Join-Path $BinDriver "KernelFlirt.sys"
-$testSys   = Join-Path $BinTest   "KfTestDriver.sys"
 if (Test-Path $driverSys) { $driversToSign += $driverSys }
-if (Test-Path $testSys)   { $driversToSign += $testSys }
 
 $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
@@ -429,11 +366,9 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  bin\Driver\      KernelFlirt.sys"
 Write-Host "  bin\Loader\      KfLoader.exe"
 Write-Host "  bin\Relay\       KfRelay.exe"
-Write-Host "  bin\TestDriver\  KfTestDriver.sys"
 Write-Host "  bin\UI\          KernelFlirt.exe"
 Write-Host "  bin\UI\plugins\  McpServerPlugin.dll  (MCP server on http://localhost:13371/sse)"
 Write-Host "  bin\UI\plugins\  SignatureDetector.dll + userdb.txt (4445 PEiD signatures)"
-Write-Host "  bin\Samples\     antidebug_test.exe, xor_strings.exe, rc4_strings.exe"
 Write-Host ""
 Write-Host "Usage:" -ForegroundColor Yellow
 Write-Host "  1. On VM: KfLoader.exe install + start"
