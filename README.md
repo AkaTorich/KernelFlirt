@@ -49,26 +49,10 @@ For non-target processes hitting our INT3 (shared CoW pages), the handler transp
 :: Disable kernel protections (reboot required)
 disable_kernel_protection.ps1
 
-:: Sometimes the KdTrap hook requires the kernel debug path to be initialized.
-:: If breakpoints don't fire after hook install, run kd.exe on the HOST first:
+disable_kernel_protection.ps1
 ```
 
-### 2. KD Bootstrap (if needed)
-
-Sometimes the kernel debug exception path (KdTrap -> KdpStub) is not active until a kernel debugger has connected at least once. If `INSTALL_HOOK` succeeds but breakpoints never fire (`HookCallCount` stays 0), do this:
-
-```cmd
-:: On HOST — start KD before booting the VM:
-.\kd.exe -k com:pipe,port=\\.\pipe\kf_debug,resets=0,reconnect
-
-:: Then boot/reboot the VM.
-:: KD will catch the initial breakpoint. Type 'g' and press Enter to continue.
-:: After Windows finishes booting, you can close KD — the debug path is now warm.
-```
-
-> **Note:** This is only needed once per VM boot. In some configurations it works without KD at all — the hook catches exceptions immediately. If unsure, do the KD step first.
-
-### 3. Deploy & Run
+### 2. Deploy & Run
 
 ```cmd
 :: On VM — copy files:
@@ -368,9 +352,6 @@ KernelFlirt/
 │   └── SDK.md                         # Plugin SDK documentation
 ├── Scripts/
 │   └── disable_kernel_protection.ps1  # VM kernel protection disable
-├── KD/                                # Bundled KD debugger binaries
-│   ├── kd.exe, dbgeng.dll, dbghelp.dll, ...
-│   └── symsrv.dll
 └── bin/                               # Build output
     ├── Driver/  KernelFlirt.sys
     ├── Loader/  KfLoader.exe
