@@ -39,9 +39,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public void SetAddressAnnotation(ulong address, string? annotation)
     {
         if (string.IsNullOrEmpty(annotation))
-            _addressAnnotations.Remove(address);
+        {
+            if (_addressAnnotations.Remove(address))
+                OnNoteRemoved?.Invoke(address);
+        }
         else
+        {
+            bool existed = _addressAnnotations.ContainsKey(address);
             _addressAnnotations[address] = annotation;
+            if (existed)
+                OnNoteEdited?.Invoke(address, annotation);
+            else
+                OnNoteAdded?.Invoke(address, annotation);
+        }
     }
 
     // Called from disasm context menu
@@ -3757,6 +3767,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         foreach (var instr in instrs)
         {
+            // Reset annotation fields — stale values from previous annotations must be cleared
+            instr.Comment = null;
+            instr.AddressLabel = null;
+            instr.BranchTargetSymbol = null;
+            instr.BranchTargetAddress = 0;
+
             // Resolve the instruction's own address to show function name
             var addrSym = _symbols.ResolveViaDbgHelp(instr.Address);
             if (addrSym != null && !addrSym.Contains("+0x"))

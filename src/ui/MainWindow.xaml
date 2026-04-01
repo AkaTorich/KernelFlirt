@@ -174,21 +174,21 @@
 
                 <Rectangle Width="1" Fill="{DynamicResource BorderBrush}" Margin="8,2" />
 
-                <Button Content="Run" Command="{Binding RunCommand}" ToolTip="Run (F9)" />
-                <Button Content="Pause" Command="{Binding PauseCommand}" ToolTip="Pause (F12)" />
-                <Button Content="F5" Command="{Binding ContinueExecutionCommand}" ToolTip="Continue (F5)" />
-                <Button Content="F7" Command="{Binding StepInCommand}" ToolTip="Step Into (F7)" />
-                <Button Content="F8" Command="{Binding StepOverCommand}" ToolTip="Step Over (F8)" />
-                <Button Content="Out" Command="{Binding StepOutCommand}" ToolTip="Step Out (Ctrl+F9)" />
-                <Button Content="F4" Command="{Binding RunToCursorCommand}" ToolTip="Run to Cursor (F4)" />
+                <Button Content="Run" Command="{Binding RunCommand}" ToolTip="Run (F9)" Foreground="Green" />
+                <Button Content="Pause" Command="{Binding PauseCommand}" ToolTip="Pause (F12)" Foreground="Green" />
+                <Button Content="F5" Command="{Binding ContinueExecutionCommand}" ToolTip="Continue (F5)" Foreground="Green" />
+                <Button Content="F7" Command="{Binding StepInCommand}" ToolTip="Step Into (F7)" Foreground="Green" />
+                <Button Content="F8" Command="{Binding StepOverCommand}" ToolTip="Step Over (F8)" Foreground="Green" />
+                <Button Content="Out" Command="{Binding StepOutCommand}" ToolTip="Step Out (Ctrl+F9)" Foreground="Green" />
+                <Button Content="F4" Command="{Binding RunToCursorCommand}" ToolTip="Run to Cursor (F4)" Foreground="Green" />
 
                 <Rectangle Width="1" Fill="{DynamicResource BorderBrush}" Margin="8,2" />
 
-                <Button Content="BP" Click="OnBpButtonClick" ToolTip="Toggle breakpoint (F2)" />
-                <Button Content="HW" Command="{Binding ToggleHwBreakpointCommand}" ToolTip="Toggle hardware breakpoint" />
-                <Button Content="WW" Command="{Binding ToggleHwWriteBreakpointCommand}" ToolTip="Toggle HW write watchpoint" />
-                <Button Content="RW" Command="{Binding ToggleHwRwBreakpointCommand}" ToolTip="Toggle HW read/write watchpoint" />
-                <Button Content="Mem" Command="{Binding ToggleMemoryBreakpointCommand}" ToolTip="Toggle memory breakpoint (PAGE_GUARD)" />
+                <Button Content="BP" Click="OnBpButtonClick" ToolTip="Toggle breakpoint (F2)" Foreground="#FF5370" />
+                <Button Content="HW" Command="{Binding ToggleHwBreakpointCommand}" ToolTip="Toggle hardware breakpoint" Foreground="#FF5370" />
+                <Button Content="WW" Command="{Binding ToggleHwWriteBreakpointCommand}" ToolTip="Toggle HW write watchpoint" Foreground="#FF5370" />
+                <Button Content="RW" Command="{Binding ToggleHwRwBreakpointCommand}" ToolTip="Toggle HW read/write watchpoint" Foreground="#FF5370" />
+                <Button Content="Mem" Command="{Binding ToggleMemoryBreakpointCommand}" ToolTip="Toggle memory breakpoint (PAGE_GUARD)" Foreground="#FF5370" />
 
                 <Rectangle Width="1" Fill="{DynamicResource BorderBrush}" Margin="8,2" />
 

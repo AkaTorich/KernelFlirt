@@ -363,6 +363,30 @@ public class McpDebuggerTools
              "Read a UNICODE_STRING structure (Length + MaxLength + Buffer pointer) and return the string contents.",
              Obj(Prop("address", "string", "Hex address of the UNICODE_STRING struct")),
              required: ["address"]),
+
+        // ── Notes / Bookmarks ─────────────────────────────────────────────
+        Tool("write_note",
+             "Add or update a note/bookmark at an address. The note is shown as a comment in the disassembly " +
+             "and persisted between sessions (via Bookmarks/Notes plugin). Use this to annotate important " +
+             "addresses, functions, suspicious code, or analysis findings.",
+             Obj(Prop("address", "string", "Hex address to annotate"),
+                 Prop("note",    "string", "Note text (e.g. 'decryption loop', 'OEP candidate', 'anti-debug check')")),
+             required: ["address", "note"]),
+
+        Tool("read_note",
+             "Read the note/bookmark at a specific address. Returns the note text or empty if none.",
+             Obj(Prop("address", "string", "Hex address")),
+             required: ["address"]),
+
+        Tool("read_all_notes",
+             "Read all notes/bookmarks. Returns a list of all annotated addresses with their notes. " +
+             "Useful to get context about previous analysis sessions.",
+             Obj()),
+
+        Tool("remove_note",
+             "Remove a note/bookmark at an address.",
+             Obj(Prop("address", "string", "Hex address")),
+             required: ["address"]),
     ];
 
     // ── Dispatch ─────────────────────────────────────────────────────────────
@@ -459,6 +483,12 @@ public class McpDebuggerTools
                 "list_strings"              => ExecListStrings(root),
                 "compare_memory"            => ExecCompareMemory(root),
                 "read_unicode_struct"       => ExecReadUnicodeStruct(root),
+
+                // Notes / Bookmarks
+                "write_note"                => ExecWriteNote(root),
+                "read_note"                 => ExecReadNote(root),
+                "read_all_notes"            => ExecReadAllNotes(),
+                "remove_note"               => ExecRemoveNote(root),
 
                 _ => $"Unknown tool: {toolName}"
             };
@@ -1818,4 +1848,44 @@ public class McpDebuggerTools
     }
 
     private static string Sym(string? s) => s != null ? $" ({s})" : "";
+
+    // ── Notes / Bookmarks ────────────────────────────────────────────────────
+
+    private string ExecWriteNote(JsonElement a)
+    {
+        var addr = ParseHex(a.GetProperty("address").GetString()!);
+        var note = a.GetProperty("note").GetString()!;
+        OnUi(() => _api.UI.SetAddressAnnotation(addr, note));
+        OnUi(() => _api.UI.RefreshDisassembly());
+        return $"Note set at 0x{addr:X}: {note}";
+    }
+
+    private string ExecReadNote(JsonElement a)
+    {
+        var addr = ParseHex(a.GetProperty("address").GetString()!);
+        var note = OnUi(() => _api.UI.GetAddressAnnotation(addr));
+        return note != null ? $"0x{addr:X}: {note}" : $"No note at 0x{addr:X}";
+    }
+
+    private string ExecReadAllNotes()
+    {
+        var all = OnUi(() => _api.UI.GetAllAnnotations());
+        if (all.Count == 0) return "No notes/bookmarks";
+        var sb = new StringBuilder();
+        sb.AppendLine($"{all.Count} note(s):");
+        foreach (var (addr, note) in all.OrderBy(kv => kv.Key))
+        {
+            var sym = OnUi(() => _api.Symbols.ResolveAddress(addr));
+            sb.AppendLine($"  0x{addr:X16}  {(sym != null ? $"({sym})  " : "")}{note}");
+        }
+        return sb.ToString();
+    }
+
+    private string ExecRemoveNote(JsonElement a)
+    {
+        var addr = ParseHex(a.GetProperty("address").GetString()!);
+        OnUi(() => _api.UI.SetAddressAnnotation(addr, null));
+        OnUi(() => _api.UI.RefreshDisassembly());
+        return $"Note removed at 0x{addr:X}";
+    }
 }

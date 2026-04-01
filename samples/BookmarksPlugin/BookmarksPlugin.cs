@@ -32,6 +32,7 @@ public class Plugin : IKernelFlirtPlugin
     private string _savePath = "";
     private string _pluginsDir = "";
     private string _currentTarget = "";
+    private bool _syncing;
 
     public void Initialize(IDebuggerApi api)
     {
@@ -201,17 +202,32 @@ public class Plugin : IKernelFlirtPlugin
             _api.UI.NavigateDisassembly(bm.Address);
     }
 
-    // Context menu events from disasm view
+    // Events from SetAddressAnnotation (context menu, MCP, AI Assistant)
     private void OnExternalNoteAdded(ulong addr, string note)
     {
+        if (_syncing) return;
         if (_bookmarks.Any(b => b.Address == addr)) { OnExternalNoteEdited(addr, note); return; }
-        AddBookmark(addr, note);
+        var bm = new Bookmark { Address = addr, Note = note };
+        var modules = _api.Symbols.GetModules();
+        foreach (var mod in modules)
+        {
+            if (addr >= mod.BaseAddress && addr < mod.BaseAddress + mod.Size)
+            {
+                bm.Module = mod.Name;
+                bm.Offset = addr - mod.BaseAddress;
+                break;
+            }
+        }
+        _bookmarks.Add(bm);
+        RefreshGrid();
+        SaveToDisk();
     }
 
     private void OnExternalNoteEdited(ulong addr, string note)
     {
+        if (_syncing) return;
         var bm = _bookmarks.FirstOrDefault(b => b.Address == addr);
-        if (bm == null) { AddBookmark(addr, note); return; }
+        if (bm == null) { OnExternalNoteAdded(addr, note); return; }
         bm.Note = note;
         RefreshGrid();
         SaveToDisk();
@@ -219,11 +235,13 @@ public class Plugin : IKernelFlirtPlugin
 
     private void OnExternalNoteRemoved(ulong addr)
     {
+        if (_syncing) return;
         var bm = _bookmarks.FirstOrDefault(b => b.Address == addr);
         if (bm == null) return;
         _bookmarks.Remove(bm);
         RefreshGrid();
         SaveToDisk();
+        _api.UI.RefreshDisassembly();
     }
 
     private void OnAddAtRip()
@@ -312,11 +330,13 @@ public class Plugin : IKernelFlirtPlugin
 
     private void SyncAnnotations()
     {
+        _syncing = true;
         foreach (var bm in _bookmarks)
         {
             var text = string.IsNullOrEmpty(bm.Note) ? "[bookmark]" : bm.Note;
             _api.UI.SetAddressAnnotation(bm.Address, text);
         }
+        _syncing = false;
         _api.UI.RefreshDisassembly();
     }
 

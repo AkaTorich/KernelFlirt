@@ -355,6 +355,32 @@ public class DebuggerTools
             new { type = "object", properties = new {
                 address = new { type = "string", description = "Hex address of the UNICODE_STRING struct" }
             }, required = new[] { "address" } }),
+
+        // ── Notes / Bookmarks ─────────────────────────────────────────────
+        MakeTool("write_note",
+            "Add or update a note/bookmark at an address. Shown as a comment in the disassembly " +
+            "and persisted between sessions. Use to annotate functions, suspicious code, or findings.",
+            new { type = "object", properties = new {
+                address = new { type = "string", description = "Hex address" },
+                note    = new { type = "string", description = "Note text" }
+            }, required = new[] { "address", "note" } }),
+
+        MakeTool("read_note",
+            "Read the note at a specific address. Returns the note text or empty if none.",
+            new { type = "object", properties = new {
+                address = new { type = "string", description = "Hex address" }
+            }, required = new[] { "address" } }),
+
+        MakeTool("read_all_notes",
+            "Read all notes/bookmarks. Returns all annotated addresses with notes. " +
+            "Useful to get context from previous analysis sessions.",
+            new { type = "object", properties = new { } }),
+
+        MakeTool("remove_note",
+            "Remove a note/bookmark at an address.",
+            new { type = "object", properties = new {
+                address = new { type = "string", description = "Hex address" }
+            }, required = new[] { "address" } }),
     ];
 
     /// <summary>
@@ -452,6 +478,12 @@ public class DebuggerTools
                 "list_strings"             => ExecListStrings(root),
                 "compare_memory"           => ExecCompareMemory(root),
                 "read_unicode_struct"      => ExecReadUnicodeStruct(root),
+
+                // Notes / Bookmarks
+                "write_note"               => ExecWriteNote(root),
+                "read_note"                => ExecReadNote(root),
+                "read_all_notes"           => ExecReadAllNotes(),
+                "remove_note"              => ExecRemoveNote(root),
 
                 _ => $"Unknown tool: {toolName}"
             };
@@ -1707,4 +1739,44 @@ public class DebuggerTools
         type = "function",
         function = new { name, description = desc, parameters }
     };
+
+    // ── Notes / Bookmarks ────────────────────────────────────────────────────
+
+    private string ExecWriteNote(JsonElement a)
+    {
+        var addr = ParseAddress(a.GetProperty("address").GetString()!);
+        var note = a.GetProperty("note").GetString()!;
+        _api.UI.SetAddressAnnotation(addr, note);
+        _api.UI.RefreshDisassembly();
+        return $"Note set at 0x{addr:X}: {note}";
+    }
+
+    private string ExecReadNote(JsonElement a)
+    {
+        var addr = ParseAddress(a.GetProperty("address").GetString()!);
+        var note = _api.UI.GetAddressAnnotation(addr);
+        return note != null ? $"0x{addr:X}: {note}" : $"No note at 0x{addr:X}";
+    }
+
+    private string ExecReadAllNotes()
+    {
+        var all = _api.UI.GetAllAnnotations();
+        if (all.Count == 0) return "No notes/bookmarks";
+        var sb = new StringBuilder();
+        sb.AppendLine($"{all.Count} note(s):");
+        foreach (var (addr, note) in all.OrderBy(kv => kv.Key))
+        {
+            var sym = _api.Symbols.ResolveAddress(addr);
+            sb.AppendLine($"  0x{addr:X16}  {(sym != null ? $"({sym})  " : "")}{note}");
+        }
+        return sb.ToString();
+    }
+
+    private string ExecRemoveNote(JsonElement a)
+    {
+        var addr = ParseAddress(a.GetProperty("address").GetString()!);
+        _api.UI.SetAddressAnnotation(addr, null);
+        _api.UI.RefreshDisassembly();
+        return $"Note removed at 0x{addr:X}";
+    }
 }
