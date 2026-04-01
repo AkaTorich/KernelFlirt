@@ -254,11 +254,13 @@ if (Test-Path $settingsFile) {
     Write-Host "  -> bin\UI\kf_settings.txt (settings)" -ForegroundColor DarkGreen
 }
 
-# Copy KD debugger (kd.exe, dbgeng.dll, dbghelp.dll, symsrv.dll, etc.)
+# Copy dbgeng/dbghelp DLLs (symbol engine dependencies)
 $kdSrc = Join-Path $Root "KD"
 if (Test-Path $kdSrc) {
-    Copy-Item "$kdSrc\*" $BinUI -Force
-    Write-Host "  -> bin\UI\kd.exe + dbgeng DLLs (KD debugger)" -ForegroundColor DarkGreen
+    foreach ($dll in Get-ChildItem "$kdSrc\*.dll") {
+        Copy-Item $dll.FullName $BinUI -Force
+    }
+    Write-Host "  -> bin\UI\dbgeng DLLs (symbol engine)" -ForegroundColor DarkGreen
 }
 
 # ── Sign Drivers ─────────────────────────────────────────────────────────────
