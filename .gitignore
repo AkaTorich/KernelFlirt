@@ -41,7 +41,8 @@ memory/
 .mcp.json
 CLAUDE.md
 
-
+# OTHER TRASH
+TODO.txt
 
 # Keep these project directories (override [Bb]in/ rule for retdec-bin/bin/)
 !retdec-bin/
