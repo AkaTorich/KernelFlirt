@@ -1,5 +1,34 @@
 # Changelog
 
+## v1.7.0 — 2026-04-04
+
+### New Plugin: C# Scripting Console
+
+- **Roslyn-based C# REPL** — write and execute C# scripts with full access to `IDebuggerApi` directly in the debugger. No compilation, no separate project — type code, press F5, see results.
+- **REPL state** — variables persist between executions. Define a variable in one run, use it in the next.
+- **Built-in shortcuts** — `ReadMem()`, `WriteMem()`, `ReadString()`, `ReadWString()`, `ReadPtr()`, `ReadU32()`, `ReadU64()`, `Reg("RAX")`, `RIP`, `RSP`, `Sym(addr)`, `Addr("name")`, `print()` — all available as top-level globals without boilerplate.
+- **Run selection** — select a fragment of code and press F5 to execute only the selected portion.
+- **Event handlers from scripts** — register `OnDebugEventFilter` callbacks to build custom breakpoint loggers, API tracers, and auto-unpackers without writing a full plugin.
+- **Load/Save .csx files** — save scripts to disk and reload them later.
+- **Console.WriteLine capture** — `Console.WriteLine` output is redirected to the output panel alongside `print()`.
+- **Cancellation** — Stop button cancels long-running scripts.
+
+### New Plugin: FLIRT Signatures
+
+- **IDA-compatible FLIRT pattern matching** — recognizes statically linked library functions by matching byte patterns at function entry points. Loads `.pat` files from `plugins/FLIRTpat/` directory.
+- **Function discovery** — enumerates functions via `.pdata` (RUNTIME_FUNCTION) on x64 or prologue scanning (`55 8B EC`) on x86.
+- **Bulk memory reads** — reads entire executable sections at once, then indexes locally. Avoids thousands of per-function kernel round-trips.
+- **Prefix-indexed matching** — O(1) signature lookup via 2-byte prefix hash instead of linear scan.
+- **Built-in fallback database** — ~50 common MSVC x64 CRT patterns (security_init_cookie, initterm, malloc, free, strlen, printf, etc.) when no `.pat` files are present.
+- **Apply/Clear annotations** — one-click `[FLIRT] function_name` annotations in the disassembly view, with undo via Clear.
+- **.pat generator tool** (`tools/GeneratePatFiles.csproj`) — generates `.pat` files from MSVC `.lib` archives (libcmt, libvcruntime, libcpmt, libconcrt, libucrt) for both x64 and x86. Auto-discovers Visual Studio and Windows SDK paths.
+
+### Build
+
+- `build.ps1` now builds and copies ScriptingPlugin (+ Roslyn dependencies) and FlirtPlugin.
+- `build.ps1` creates `bin\UI\plugins\FLIRTpat\` directory for `.pat` signature files.
+- `.pat` files are now included in the plugin data file copy step.
+
 ## v1.6.0 — 2026-03-30
 
 ### Service Debugging (Debug Service)
