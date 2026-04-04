@@ -13,6 +13,19 @@
 - **Console.WriteLine capture** — `Console.WriteLine` output is redirected to the output panel alongside `print()`.
 - **Cancellation** — Stop button cancels long-running scripts.
 
+### New Plugin: Graph View (CFG)
+
+- **Control flow graph visualization** — IDA Pro-style graph view of functions. Basic blocks as nodes, edges for branches. MSAGL Sugiyama layered layout for automatic top-down arrangement.
+- **Capstone disassembly** — own disassembler instance, independent of the main UI. Parses branch targets, classifies instructions (call/jmp/jcc/ret), detects function boundaries.
+- **Symbol resolution** — call targets show as `MODULE!FunctionName` (e.g. `KERNEL32.dll!CreateFileA`). Follows IAT thunks (`FF 25`, `48 FF 25`, `E9 rel32`) to resolve real API names. Uses PDB function table as fallback when `SymFromAddr` fails.
+- **Syntax highlighting** — mnemonics colored by type: blue for regular, purple for branches/ret, yellow for calls. Resolved call operands highlighted. Address column in gray.
+- **Current RIP highlighting** — block containing current instruction pointer shown with green border.
+- **Function navigation** — double-click on underlined call targets or right-click → "Graph: MODULE!func" to navigate into called functions. Full navigation stack with **Back (Shift+Esc)** to return.
+- **Block context menu** — Set Color (7 colors + reset), Collapse/Expand block, Copy Address/Assembly, Add Comment (synced with Bookmarks plugin), Toggle Breakpoint, Graph called functions, Collapse All/Expand All, Reset All Colors, Go Back.
+- **Zoom & pan** — mouse wheel zooms relative to cursor position, left-drag pans, Fit/1:1 buttons. `BitmapCache` for GPU-accelerated smooth pan/zoom.
+- **Thunk/stub filtering** — IAT stubs and library code blocks automatically excluded from graph via reachability analysis from entry point.
+- **User annotations** — comments from Bookmarks plugin shown as green `; comment` text in graph blocks.
+
 ### New Plugin: FLIRT Signatures
 
 - **IDA-compatible FLIRT pattern matching** — recognizes statically linked library functions by matching byte patterns at function entry points. Loads `.pat` files from `plugins/FLIRTpat/` directory.
@@ -25,9 +38,15 @@
 
 ### Build
 
-- `build.ps1` now builds and copies ScriptingPlugin (+ Roslyn dependencies) and FlirtPlugin.
+- `build.ps1` now builds and copies ScriptingPlugin (+ Roslyn dependencies), FlirtPlugin, and GraphViewPlugin (+ MSAGL).
 - `build.ps1` creates `bin\UI\plugins\FLIRTpat\` directory for `.pat` signature files.
 - `.pat` files are now included in the plugin data file copy step.
+
+### Symbol Resolution
+
+- **Function table fallback** — when `SymFromAddr` fails (common with certain PDBs), `ResolveAddress` now falls back to a function lookup table built from `SymEnumSymbols`. Binary search by address returns `funcName` or `funcName+0xOffset`.
+- **Cache fix** — `module+offset` fallback results are no longer cached, so they get re-resolved after PDB loads.
+- **Cache invalidation on module load** — stale symbol cache entries within a module's address range are cleared when `SymLoadModuleExW` loads new symbols.
 
 ## v1.6.0 — 2026-03-30
 
