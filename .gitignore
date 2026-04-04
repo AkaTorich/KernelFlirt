@@ -36,6 +36,13 @@ bld/
 retdec/
 IdaPRO-MCP/
 
+# CLAUDE TRASH
+memory/
+.mcp.json
+CLAUDE.md
+
+
+
 # Keep these project directories (override [Bb]in/ rule for retdec-bin/bin/)
 !retdec-bin/
 !retdec-bin/**
