@@ -25,6 +25,14 @@ public sealed class GraphPanel : Grid
     private Dictionary<ulong, Rect> _hitMap = new();
     private List<BasicBlock> _blocks = new();
 
+    // Block state (persists across re-renders)
+    private readonly Dictionary<ulong, Color> _blockColors = new();
+    private readonly HashSet<ulong> _collapsedBlocks = new();
+    private readonly Stack<ulong> _navigationStack = new();
+    private List<GraphRenderer.CallTargetHit> _callTargets = new();
+    private ulong _lastFuncAddr;
+    private ulong _lastRip;
+
     // Pan state
     private bool _isPanning;
     private Point _panStart;
@@ -77,6 +85,7 @@ public sealed class GraphPanel : Grid
         toolbar.Children.Add(_addressBox);
 
         toolbar.Children.Add(MakeButton("Go", (_, _) => OnGraphAtAddress()));
+        toolbar.Children.Add(MakeButton("Back (Shift+Esc)", OnGoBack));
         toolbar.Children.Add(MakeSeparator());
         toolbar.Children.Add(MakeButton("Zoom In", (_, _) => Zoom(1.2)));
         toolbar.Children.Add(MakeButton("Zoom Out", (_, _) => Zoom(1 / 1.2)));
@@ -116,6 +125,9 @@ public sealed class GraphPanel : Grid
         container.MouseLeftButtonUp += OnMouseLeftUp;
         container.MouseMove += OnMouseMove;
         container.MouseRightButtonUp += OnMouseRightUp;
+        container.PreviewMouseLeftButtonDown += OnPreviewMouseLeftDown;
+        container.PreviewKeyDown += OnKeyDown;
+        container.Focusable = true;
 
         SetRow(container, 1);
         Children.Add(container);
@@ -191,6 +203,8 @@ public sealed class GraphPanel : Grid
     private void BuildAndRender(ulong funcAddr, ulong currentRip)
     {
         _statusText.Text = "Building CFG...";
+        _lastFuncAddr = funcAddr;
+        _lastRip = currentRip;
 
         Task.Run(() =>
         {
@@ -208,7 +222,9 @@ public sealed class GraphPanel : Grid
                 int totalInstrs = blocks.Sum(b => b.Instructions.Count);
                 int totalEdges = blocks.Sum(b => b.Successors.Count);
 
-                _hitMap = _renderer.Render(_canvas, blocks, _api.Is32Bit, currentRip);
+                var annotations = _api.UI.GetAllAnnotations();
+                _callTargets = new List<GraphRenderer.CallTargetHit>();
+                _hitMap = _renderer.Render(_canvas, blocks, _api.Is32Bit, currentRip, _blockColors, _collapsedBlocks, annotations, _callTargets);
                 ResetZoom();
 
                 var sym = _api.Symbols.ResolveAddress(funcAddr);
@@ -283,6 +299,61 @@ public sealed class GraphPanel : Grid
 
     // ── Mouse interaction ────────────────────────────────────────────────────
 
+    private void OnPreviewMouseLeftDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ClickCount != 2) return; // only double-click
+
+        var canvasPos = e.GetPosition(_canvas);
+
+        foreach (var ct in _callTargets)
+        {
+            if (ct.Rect.Contains(canvasPos))
+            {
+                NavigateToFunction(ct.TargetAddress, ct.Symbol);
+                e.Handled = true;
+                return;
+            }
+        }
+    }
+
+    private void NavigateToFunction(ulong targetAddr, string symbol)
+    {
+        // Push current function onto navigation stack
+        _api.Log.Info($"[GraphView] Navigate: target=0x{targetAddr:X} lastFunc=0x{_lastFuncAddr:X} stackBefore={_navigationStack.Count}");
+        if (_lastFuncAddr != 0)
+            _navigationStack.Push(_lastFuncAddr);
+        else
+            _navigationStack.Push(targetAddr); // fallback: at least save something
+
+        _addressBox.Text = $"0x{targetAddr:X}";
+        BuildAndRender(targetAddr, 0);
+        _statusText.Text = $"Navigated to {symbol}. Stack: {_navigationStack.Count}. Shift+Esc to go back.";
+    }
+
+    private void OnGoBack(object sender, RoutedEventArgs e) => GoBack();
+
+    private void OnKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape && Keyboard.Modifiers == ModifierKeys.Shift)
+        {
+            GoBack();
+            e.Handled = true;
+        }
+    }
+
+    private void GoBack()
+    {
+        if (_navigationStack.Count == 0)
+        {
+            _statusText.Text = "No previous function in history.";
+            return;
+        }
+        var prevAddr = _navigationStack.Pop();
+        _addressBox.Text = $"0x{prevAddr:X}";
+        BuildAndRender(prevAddr, 0);
+        _statusText.Text = $"Back to 0x{prevAddr:X}. ({_navigationStack.Count} in history)";
+    }
+
     private void OnMouseWheel(object sender, MouseWheelEventArgs e)
     {
         // Zoom relative to mouse position
@@ -342,26 +413,215 @@ public sealed class GraphPanel : Grid
         }
     }
 
-    private void OnMouseRightUp(object sender, MouseButtonEventArgs e)
+    private ulong? HitTestBlock(MouseEventArgs e)
     {
-        // Right-click on a block → navigate to that address in disassembly
-        // Convert mouse position to canvas coordinates
-        var mousePos = e.GetPosition(_container);
-        double scale = _scaleTransform.ScaleX;
-        double canvasX = (mousePos.X - _translateTransform.X) / scale;
-        double canvasY = (mousePos.Y - _translateTransform.Y) / scale;
-        var canvasPos = new Point(canvasX, canvasY);
+        // GetPosition(_canvas) gives position in canvas coordinate space
+        // (WPF automatically applies inverse RenderTransform)
+        var canvasPos = e.GetPosition(_canvas);
 
         foreach (var (addr, rect) in _hitMap)
-        {
             if (rect.Contains(canvasPos))
+                return addr;
+        return null;
+    }
+
+    private void OnMouseRightUp(object sender, MouseButtonEventArgs e)
+    {
+        var addr = HitTestBlock(e);
+
+        var menu = new ContextMenu();
+
+        // If clicked on empty space — show minimal menu with Go Back
+        if (addr == null)
+        {
+            var miBack = new MenuItem { Header = $"Go Back ({_navigationStack.Count} in history) [Shift+Esc]" };
+            miBack.Click += (_, _) => GoBack();
+            menu.Items.Add(miBack);
+            _container.ContextMenu = menu;
+            menu.IsOpen = true;
+            e.Handled = true;
+            return;
+        }
+
+        var blockAddr = addr.Value;
+        var block = _blocks.FirstOrDefault(b => b.StartAddress == blockAddr);
+        if (block == null) return;
+
+        // ── Navigate ────────────────────────────────────────────────────
+        var miNav = new MenuItem { Header = $"Go to 0x{blockAddr:X} in Disassembly" };
+        miNav.Click += (_, _) => {
+            _api.UI.NavigateDisassembly(blockAddr);
+            _statusText.Text = $"Navigated to 0x{blockAddr:X}";
+        };
+        menu.Items.Add(miNav);
+
+        menu.Items.Add(new Separator());
+
+        // ── Color ───────────────────────────────────────────────────────
+        var miColor = new MenuItem { Header = "Set Color" };
+        AddColorItem(miColor, "Red", Colors.DarkRed, blockAddr);
+        AddColorItem(miColor, "Green", Color.FromRgb(0x26, 0x4F, 0x26), blockAddr);
+        AddColorItem(miColor, "Blue", Color.FromRgb(0x1E, 0x3A, 0x5F), blockAddr);
+        AddColorItem(miColor, "Yellow", Color.FromRgb(0x5F, 0x5A, 0x1E), blockAddr);
+        AddColorItem(miColor, "Purple", Color.FromRgb(0x3A, 0x1E, 0x5F), blockAddr);
+        AddColorItem(miColor, "Orange", Color.FromRgb(0x5F, 0x3A, 0x1E), blockAddr);
+        AddColorItem(miColor, "Cyan", Color.FromRgb(0x1E, 0x4F, 0x5F), blockAddr);
+
+        var miReset = new MenuItem { Header = "Reset" };
+        miReset.Click += (_, _) => { _blockColors.Remove(blockAddr); Rerender(); };
+        miColor.Items.Add(new Separator());
+        miColor.Items.Add(miReset);
+        menu.Items.Add(miColor);
+
+        // ── Collapse / Expand ───────────────────────────────────────────
+        bool isCollapsed = _collapsedBlocks.Contains(blockAddr);
+        var miCollapse = new MenuItem { Header = isCollapsed ? "Expand Block" : "Collapse Block" };
+        miCollapse.Click += (_, _) =>
+        {
+            if (isCollapsed) _collapsedBlocks.Remove(blockAddr);
+            else _collapsedBlocks.Add(blockAddr);
+            Rerender();
+        };
+        menu.Items.Add(miCollapse);
+
+        // ── Graph called functions ──────────────────────────────────────
+        var callInstrs = block.Instructions
+            .Where(i => i.IsCall && i.BranchTarget != 0 && i.ResolvedSymbol != null)
+            .ToList();
+        if (callInstrs.Count > 0)
+        {
+            menu.Items.Add(new Separator());
+            foreach (var ci in callInstrs)
             {
-                _api.UI.NavigateDisassembly(addr);
-                _statusText.Text = $"Navigated to 0x{addr:X}";
-                e.Handled = true;
-                return;
+                var targetAddr = ci.BranchTarget;
+                var sym = ci.ResolvedSymbol!;
+                var mi = new MenuItem { Header = $"Graph: {sym}" };
+                mi.Click += (_, _) => NavigateToFunction(targetAddr, sym);
+                menu.Items.Add(mi);
             }
         }
+
+        menu.Items.Add(new Separator());
+
+        // ── Copy ────────────────────────────────────────────────────────
+        var miCopyAddr = new MenuItem { Header = "Copy Address" };
+        miCopyAddr.Click += (_, _) => Clipboard.SetText($"0x{blockAddr:X}");
+        menu.Items.Add(miCopyAddr);
+
+        var miCopyAsm = new MenuItem { Header = "Copy Assembly" };
+        miCopyAsm.Click += (_, _) =>
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (var instr in block.Instructions)
+                sb.AppendLine($"{instr.AddressHex(_api.Is32Bit)}  {instr.Text}");
+            Clipboard.SetText(sb.ToString());
+        };
+        menu.Items.Add(miCopyAsm);
+
+        menu.Items.Add(new Separator());
+
+        // ── Annotate ────────────────────────────────────────────────────
+        var miAnnotate = new MenuItem { Header = "Add Comment" };
+        miAnnotate.Click += (_, _) =>
+        {
+            var existing = _api.UI.GetAddressAnnotation(blockAddr) ?? "";
+            var dlg = new Window
+            {
+                Title = "Block Comment", Width = 400, Height = 150,
+                WindowStartupLocation = WindowStartupLocation.CenterScreen,
+                ResizeMode = ResizeMode.NoResize
+            };
+            var sp = new StackPanel { Margin = new Thickness(10) };
+            sp.Children.Add(new TextBlock { Text = $"Comment for 0x{blockAddr:X}:" });
+            var tb = new TextBox { Text = existing, Margin = new Thickness(0, 5, 0, 5) };
+            sp.Children.Add(tb);
+            var btnOk = new Button { Content = "OK", Width = 80, HorizontalAlignment = HorizontalAlignment.Right };
+            btnOk.Click += (_, _) => { dlg.DialogResult = true; dlg.Close(); };
+            sp.Children.Add(btnOk);
+            dlg.Content = sp;
+            tb.Focus();
+            tb.SelectAll();
+            if (dlg.ShowDialog() == true && !string.IsNullOrEmpty(tb.Text))
+            {
+                _api.UI.SetAddressAnnotation(blockAddr, tb.Text);
+                _api.UI.RefreshDisassembly();
+                _statusText.Text = $"Comment set at 0x{blockAddr:X}";
+            }
+        };
+        menu.Items.Add(miAnnotate);
+
+        // ── Breakpoint ──────────────────────────────────────────────────
+        var miBp = new MenuItem { Header = "Toggle Breakpoint at Block Start" };
+        miBp.Click += (_, _) =>
+        {
+            var bps = _api.Breakpoints.GetAll();
+            var existing = bps.FirstOrDefault(bp => bp.Address == blockAddr);
+            if (existing != null)
+            {
+                _api.Breakpoints.RemoveBreakpoint(existing.Handle);
+                _statusText.Text = $"Breakpoint removed at 0x{blockAddr:X}";
+            }
+            else
+            {
+                _api.Breakpoints.SetBreakpoint(_api.TargetPid, 0, blockAddr, PluginBreakpointType.Software);
+                _statusText.Text = $"Breakpoint set at 0x{blockAddr:X}";
+            }
+        };
+        menu.Items.Add(miBp);
+
+        // ── Expand/collapse all ─────────────────────────────────────────
+        menu.Items.Add(new Separator());
+        var miCollapseAll = new MenuItem { Header = "Collapse All Blocks" };
+        miCollapseAll.Click += (_, _) =>
+        {
+            foreach (var b in _blocks) _collapsedBlocks.Add(b.StartAddress);
+            Rerender();
+        };
+        menu.Items.Add(miCollapseAll);
+
+        var miExpandAll = new MenuItem { Header = "Expand All Blocks" };
+        miExpandAll.Click += (_, _) => { _collapsedBlocks.Clear(); Rerender(); };
+        menu.Items.Add(miExpandAll);
+
+        var miResetColors = new MenuItem { Header = "Reset All Colors" };
+        miResetColors.Click += (_, _) => { _blockColors.Clear(); Rerender(); };
+        menu.Items.Add(miResetColors);
+
+        menu.Items.Add(new Separator());
+        var miGoBack = new MenuItem
+        {
+            Header = $"Go Back ({_navigationStack.Count} in history) [Shift+Esc]"
+        };
+        miGoBack.Click += (_, _) => GoBack();
+        menu.Items.Add(miGoBack);
+
+        _container.ContextMenu = menu;
+        menu.IsOpen = true;
+        e.Handled = true;
+    }
+
+    private void AddColorItem(MenuItem parent, string name, Color color, ulong blockAddr)
+    {
+        var mi = new MenuItem
+        {
+            Header = name,
+            Icon = new System.Windows.Shapes.Rectangle
+            {
+                Width = 14, Height = 14,
+                Fill = new SolidColorBrush(color),
+                RadiusX = 2, RadiusY = 2
+            }
+        };
+        mi.Click += (_, _) => { _blockColors[blockAddr] = color; Rerender(); };
+        parent.Items.Add(mi);
+    }
+
+    private void Rerender()
+    {
+        if (_blocks.Count == 0) return;
+        var annotations = _api.UI.GetAllAnnotations();
+        _callTargets = new List<GraphRenderer.CallTargetHit>();
+        _hitMap = _renderer.Render(_canvas, _blocks, _api.Is32Bit, _lastRip, _blockColors, _collapsedBlocks, annotations, _callTargets);
     }
 
     // ── Zoom/Pan helpers ─────────────────────────────────────────────────────

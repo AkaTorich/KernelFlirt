@@ -33,16 +33,33 @@ public sealed class GraphRenderer
     private static readonly Brush MnemonicBrush = new SolidColorBrush(Color.FromRgb(0x56, 0x9C, 0xD6));
     private static readonly Brush JmpMnemonicBrush = new SolidColorBrush(Color.FromRgb(0xC5, 0x86, 0xC0));
     private static readonly Brush CallMnemonicBrush = new SolidColorBrush(Color.FromRgb(0xDC, 0xDC, 0xAA));
+    private static readonly Brush CommentBrush = new SolidColorBrush(Color.FromRgb(0x60, 0x8B, 0x4E)); // green comment
     private static readonly Brush TrueEdgeBrush = new SolidColorBrush(Color.FromRgb(0x4E, 0xC9, 0xB0)); // green
     private static readonly Brush FalseEdgeBrush = new SolidColorBrush(Color.FromRgb(0xD1, 0x6B, 0x6B)); // red
     private static readonly Brush UnconditionalEdgeBrush = new SolidColorBrush(Color.FromRgb(0x60, 0x90, 0xD0)); // blue
     private static readonly Brush CurrentBlockBrush = new SolidColorBrush(Color.FromRgb(0x26, 0x4F, 0x26));
 
     /// <summary>
+    /// Clickable call target: screen rect → target address.
+    /// </summary>
+    public sealed class CallTargetHit
+    {
+        public Rect Rect { get; init; }
+        public ulong TargetAddress { get; init; }
+        public string Symbol { get; init; } = "";
+    }
+
+    /// <summary>
     /// Render the CFG blocks onto the given Canvas.
     /// Returns a map of block address → Rect for hit testing.
+    /// callTargets is populated with clickable call operand regions.
     /// </summary>
-    public Dictionary<ulong, Rect> Render(Canvas canvas, List<BasicBlock> blocks, bool is32Bit, ulong currentRip = 0)
+    public Dictionary<ulong, Rect> Render(Canvas canvas, List<BasicBlock> blocks, bool is32Bit,
+        ulong currentRip = 0,
+        Dictionary<ulong, Color>? blockColors = null,
+        HashSet<ulong>? collapsedBlocks = null,
+        IReadOnlyDictionary<ulong, string>? annotations = null,
+        List<CallTargetHit>? callTargets = null)
     {
         canvas.Children.Clear();
         var hitMap = new Dictionary<ulong, Rect>();
@@ -53,23 +70,39 @@ public sealed class GraphRenderer
         var nodeSizes = new Dictionary<ulong, (double w, double h, int lines)>();
         foreach (var block in blocks)
         {
-            int lines = block.Instructions.Count + 1; // +1 for header
-            double maxWidth = 0;
-            foreach (var instr in block.Instructions)
+            bool collapsed = collapsedBlocks?.Contains(block.StartAddress) == true;
+
+            if (collapsed)
             {
-                var text = $" {instr.AddressHex(is32Bit)}  {instr.Text}";
-                var width = MeasureText(text);
-                if (width > maxWidth) maxWidth = width;
+                // Collapsed: just header + summary line
+                var headerText = $" {(is32Bit ? $"{block.StartAddress:X8}" : $"{block.StartAddress:X16}")}  [{block.Instructions.Count} instr]";
+                double nodeW = MeasureText(headerText) + NodePaddingX * 2;
+                double nodeH = LineHeight * 2 + NodePaddingY * 2;
+                nodeSizes[block.StartAddress] = (Math.Max(nodeW, 120), nodeH, 2);
             }
+            else
+            {
+                int lines = block.Instructions.Count + 1; // +1 for header
+                double maxWidth = 0;
+                foreach (var instr in block.Instructions)
+                {
+                    var displayText = $" {instr.AddressHex(is32Bit)}  {instr.Text}";
+                    // Include annotation width if present
+                    if (annotations != null && annotations.TryGetValue(instr.Address, out var note))
+                        displayText += $"  ; {note}";
+                    var text = displayText;
+                    var width = MeasureText(text);
+                    if (width > maxWidth) maxWidth = width;
+                }
 
-            // Header width
-            var headerText = $" {(is32Bit ? $"{block.StartAddress:X8}" : $"{block.StartAddress:X16}")}";
-            var headerW = MeasureText(headerText);
-            if (headerW > maxWidth) maxWidth = headerW;
+                var headerText = $" {(is32Bit ? $"{block.StartAddress:X8}" : $"{block.StartAddress:X16}")}";
+                var headerW = MeasureText(headerText);
+                if (headerW > maxWidth) maxWidth = headerW;
 
-            double nodeW = maxWidth + NodePaddingX * 2;
-            double nodeH = lines * LineHeight + NodePaddingY * 2;
-            nodeSizes[block.StartAddress] = (nodeW, nodeH, lines);
+                double nodeW = maxWidth + NodePaddingX * 2;
+                double nodeH = lines * LineHeight + NodePaddingY * 2;
+                nodeSizes[block.StartAddress] = (nodeW, nodeH, lines);
+            }
         }
 
         // ── Step 2: MSAGL layout ────────────────────────────────────────────
@@ -167,7 +200,9 @@ public sealed class GraphRenderer
             bool isCurrent = currentRip != 0 && block.Instructions.Any(
                 instr => instr.Address == currentRip);
 
-            DrawNode(canvas, block, left, top, w, h, is32Bit, isCurrent);
+            bool collapsed = collapsedBlocks?.Contains(block.StartAddress) == true;
+            Color? customColor = blockColors?.TryGetValue(block.StartAddress, out var c) == true ? c : null;
+            DrawNode(canvas, block, left, top, w, h, is32Bit, isCurrent, collapsed, customColor, annotations, callTargets);
             hitMap[block.StartAddress] = new Rect(left, top, w, h);
         }
 
@@ -185,14 +220,25 @@ public sealed class GraphRenderer
     }
 
     private static void DrawNode(Canvas canvas, BasicBlock block, double left, double top,
-        double width, double height, bool is32Bit, bool isCurrent)
+        double width, double height, bool is32Bit, bool isCurrent,
+        bool collapsed = false, Color? customColor = null,
+        IReadOnlyDictionary<ulong, string>? annotations = null,
+        List<CallTargetHit>? callTargets = null)
     {
-        // Background
+        // Background color
+        Brush bgFill;
+        if (customColor.HasValue)
+            bgFill = new SolidColorBrush(customColor.Value);
+        else if (isCurrent)
+            bgFill = CurrentBlockBrush;
+        else
+            bgFill = NodeBgBrush;
+
         var bg = new System.Windows.Shapes.Rectangle
         {
             Width = width,
             Height = height,
-            Fill = isCurrent ? CurrentBlockBrush : NodeBgBrush,
+            Fill = bgFill,
             Stroke = isCurrent ? TrueEdgeBrush : NodeBorderBrush,
             StrokeThickness = isCurrent ? 2 : 1,
             RadiusX = 3,
@@ -215,34 +261,66 @@ public sealed class GraphRenderer
         Canvas.SetTop(header, top);
         canvas.Children.Add(header);
 
-        // Header text (block address)
+        // Header text
         var headerAddr = is32Bit ? $"{block.StartAddress:X8}" : $"{block.StartAddress:X16}";
-        AddText(canvas, headerAddr, left + NodePaddingX, top + 1, TextBrush, FontWeights.Bold);
-
-        // Instructions
-        double y = top + LineHeight + NodePaddingY;
-        foreach (var instr in block.Instructions)
+        if (collapsed)
         {
-            // Address
-            double x = left + NodePaddingX;
-            var addrText = is32Bit ? $"{instr.Address:X8}" : $"{instr.Address:X16}";
-            var addrW = AddText(canvas, addrText, x, y, AddrBrush);
-            x += addrW + 8;
+            AddText(canvas, $"{headerAddr}  [{block.Instructions.Count} instr]",
+                left + NodePaddingX, top + 1, TextBrush, FontWeights.Bold);
 
-            // Mnemonic (colored by type)
-            Brush mnBrush;
-            if (instr.IsCall) mnBrush = CallMnemonicBrush;
-            else if (instr.IsBranch || instr.IsRet) mnBrush = JmpMnemonicBrush;
-            else mnBrush = MnemonicBrush;
+            // Collapsed indicator
+            var lastInstr = block.Instructions[^1];
+            var summary = $"... {lastInstr.Text}";
+            AddText(canvas, summary, left + NodePaddingX, top + LineHeight + NodePaddingY, AddrBrush);
+        }
+        else
+        {
+            AddText(canvas, headerAddr, left + NodePaddingX, top + 1, TextBrush, FontWeights.Bold);
 
-            var mnW = AddText(canvas, instr.Mnemonic, x, y, mnBrush);
-            x += mnW + 6;
+            // Instructions
+            double y = top + LineHeight + NodePaddingY;
+            foreach (var instr in block.Instructions)
+            {
+                double x = left + NodePaddingX;
+                var addrText = is32Bit ? $"{instr.Address:X8}" : $"{instr.Address:X16}";
+                var addrW = AddText(canvas, addrText, x, y, AddrBrush);
+                x += addrW + 8;
 
-            // Operands
-            if (!string.IsNullOrEmpty(instr.Operands))
-                AddText(canvas, instr.Operands, x, y, TextBrush);
+                Brush mnBrush;
+                if (instr.IsCall) mnBrush = CallMnemonicBrush;
+                else if (instr.IsBranch || instr.IsRet) mnBrush = JmpMnemonicBrush;
+                else mnBrush = MnemonicBrush;
 
-            y += LineHeight;
+                var mnW = AddText(canvas, instr.Mnemonic, x, y, mnBrush);
+                x += mnW + 6;
+
+                if (!string.IsNullOrEmpty(instr.DisplayOperands))
+                {
+                    bool isClickable = instr.IsCall && instr.ResolvedSymbol != null && instr.BranchTarget != 0;
+                    var opBrush = instr.ResolvedSymbol != null ? CallMnemonicBrush : TextBrush;
+                    var opW = AddText(canvas, instr.DisplayOperands, x, y, opBrush,
+                        underline: isClickable);
+
+                    // Register clickable area for call targets
+                    if (isClickable && callTargets != null)
+                    {
+                        callTargets.Add(new CallTargetHit
+                        {
+                            Rect = new Rect(x, y, opW, LineHeight),
+                            TargetAddress = instr.BranchTarget,
+                            Symbol = instr.ResolvedSymbol!
+                        });
+                    }
+
+                    x += opW + 6;
+                }
+
+                // User annotation from Bookmarks plugin (green comment)
+                if (annotations != null && annotations.TryGetValue(instr.Address, out var note))
+                    AddText(canvas, $"; {note}", x, y, CommentBrush);
+
+                y += LineHeight;
+            }
         }
     }
 
@@ -343,7 +421,7 @@ public sealed class GraphRenderer
     }
 
     private static double AddText(Canvas canvas, string text, double x, double y,
-        Brush brush, FontWeight? weight = null)
+        Brush brush, FontWeight? weight = null, bool underline = false)
     {
         var tb = new TextBlock
         {
@@ -351,13 +429,15 @@ public sealed class GraphRenderer
             FontFamily = new FontFamily("Consolas"),
             FontSize = FontSize,
             Foreground = brush,
-            FontWeight = weight ?? FontWeights.Normal
+            FontWeight = weight ?? FontWeights.Normal,
+            Cursor = underline ? System.Windows.Input.Cursors.Hand : null
         };
+        if (underline)
+            tb.TextDecorations = TextDecorations.Underline;
         Canvas.SetLeft(tb, x);
         Canvas.SetTop(tb, y);
         canvas.Children.Add(tb);
 
-        // Return approximate width
         return MeasureText(text);
     }
 

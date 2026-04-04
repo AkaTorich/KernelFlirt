@@ -16,6 +16,14 @@ public class SymbolService : IDisposable
     private readonly Dictionary<ulong, string> _symbolCache = new();
     private readonly HashSet<ulong> _loadedModules = new();
     private readonly Dictionary<ulong, string> _pdbPaths = new();
+
+    /// <summary>
+    /// Function lookup table built from SymEnumSymbols.
+    /// Sorted by address for binary search.
+    /// Used as fallback when SymFromAddr fails.
+    /// </summary>
+    private readonly List<(ulong Address, uint Size, string Name)> _functionTable = new();
+    private bool _functionTableDirty = true;
     private readonly object _lock = new();
     private IntPtr _hProcess;
     private bool _initialized;
@@ -146,6 +154,15 @@ public class SymbolService : IDisposable
                 _loadedModules.Add(baseAddress);
                 if (pdbPath != null)
                     _pdbPaths[baseAddress] = pdbPath;
+
+                // Invalidate cached symbol lookups for addresses in this module's range
+                // so they get re-resolved with the newly loaded PDB
+                var staleKeys = _symbolCache.Keys
+                    .Where(a => a >= baseAddress && a < baseAddress + size)
+                    .ToList();
+                foreach (var key in staleKeys)
+                    _symbolCache.Remove(key);
+
                 return true;
             }
 
@@ -354,12 +371,17 @@ public class SymbolService : IDisposable
             return cached;
 
         string? result = null;
+        bool isRealSymbol = false;
 
-        // Try dbghelp first
+        // Try dbghelp (SymFromAddr + function table fallback)
         if (_initialized)
+        {
             result = ResolveViaDbgHelp(address);
+            if (result != null)
+                isRealSymbol = true;
+        }
 
-        // Fallback: module+offset
+        // Fallback: module+offset (NOT cached — may be resolved later when PDB loads)
         if (result == null)
         {
             var module = modules.FirstOrDefault(m =>
@@ -371,8 +393,10 @@ public class SymbolService : IDisposable
             }
         }
 
-        if (result != null)
+        // Only cache real symbol resolutions, not module+offset fallbacks
+        if (result != null && isRealSymbol)
             _symbolCache[address] = result;
+
         return result;
     }
 
@@ -385,6 +409,7 @@ public class SymbolService : IDisposable
         {
             if (!_initialized) return null;
 
+            // Try SymFromAddr first (works for system DLLs with proper PDBs)
             var symbolInfo = DbgHelpNative.AllocSymbolInfo();
             try
             {
@@ -404,7 +429,10 @@ public class SymbolService : IDisposable
             {
                 DbgHelpNative.FreeSymbolInfo(symbolInfo);
             }
-            return null;
+
+            // Fallback: use function table built from SymEnumSymbols
+            // (works when SymFromAddr fails but SymEnumSymbols found the functions)
+            return ResolveViaFunctionTable(address);
         }
     }
 
@@ -538,8 +566,62 @@ public class SymbolService : IDisposable
 
                 DbgHelpNative.SymEnumSymbolsW(_hProcess, baseDll, "*", callback, IntPtr.Zero);
             }
+
+            // Update function lookup table for ResolveAddress fallback
+            if (results.Count > 0)
+            {
+                // Merge new results into the function table (avoid duplicates)
+                var existing = new HashSet<ulong>(_functionTable.Select(f => f.Address));
+                foreach (var (name, addr, sz) in results)
+                {
+                    if (!existing.Contains(addr))
+                        _functionTable.Add((addr, sz, name));
+                }
+                _functionTable.Sort((a, b) => a.Address.CompareTo(b.Address));
+                _functionTableDirty = false;
+            }
         }
         return results;
+    }
+
+    /// <summary>
+    /// Look up a function name from the function table (built by EnumFunctions).
+    /// Uses binary search. Returns "funcname" or "funcname+0xOFFSET" or null.
+    /// </summary>
+    private string? ResolveViaFunctionTable(ulong address)
+    {
+        if (_functionTable.Count == 0) return null;
+
+        // Binary search: find the last function with Address <= address
+        int lo = 0, hi = _functionTable.Count - 1;
+        int best = -1;
+        while (lo <= hi)
+        {
+            int mid = (lo + hi) / 2;
+            if (_functionTable[mid].Address <= address)
+            {
+                best = mid;
+                lo = mid + 1;
+            }
+            else
+            {
+                hi = mid - 1;
+            }
+        }
+
+        if (best < 0) return null;
+
+        var (funcAddr, funcSize, funcName) = _functionTable[best];
+
+        // Check if address is within the function
+        // If size is 0, allow up to 0x1000 (heuristic for functions without size info)
+        uint effectiveSize = funcSize > 0 ? funcSize : 0x1000;
+        if (address >= funcAddr + effectiveSize) return null;
+
+        ulong displacement = address - funcAddr;
+        return displacement > 0
+            ? $"{funcName}+0x{displacement:X}"
+            : funcName;
     }
 
     /// <summary>
