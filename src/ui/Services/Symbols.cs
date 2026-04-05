@@ -18,6 +18,12 @@ public class SymbolService : IDisposable
     private readonly Dictionary<ulong, string> _pdbPaths = new();
 
     /// <summary>
+    /// User-defined function names (registered via RegisterFunction).
+    /// Highest priority — checked before SymFromAddr and function table.
+    /// </summary>
+    private readonly Dictionary<ulong, (string Name, uint Size)> _userFunctions = new();
+
+    /// <summary>
     /// Function lookup table built from SymEnumSymbols.
     /// Sorted by address for binary search.
     /// Used as fallback when SymFromAddr fails.
@@ -409,7 +415,18 @@ public class SymbolService : IDisposable
         {
             if (!_initialized) return null;
 
-            // Try SymFromAddr first (works for system DLLs with proper PDBs)
+            // Check user-defined functions first (highest priority)
+            foreach (var (funcAddr, (funcName, funcSize)) in _userFunctions)
+            {
+                uint effSize = funcSize > 0 ? funcSize : 0x1000;
+                if (address >= funcAddr && address < funcAddr + effSize)
+                {
+                    ulong disp = address - funcAddr;
+                    return disp > 0 ? $"{funcName}+0x{disp:X}" : funcName;
+                }
+            }
+
+            // Try SymFromAddr (works for system DLLs with proper PDBs)
             var symbolInfo = DbgHelpNative.AllocSymbolInfo();
             try
             {
@@ -1099,6 +1116,34 @@ public class SymbolService : IDisposable
     }
 
     public void ClearCache() => _symbolCache.Clear();
+
+    /// <summary>
+    /// Register a user-defined function name. Takes priority over PDB/SymFromAddr.
+    /// </summary>
+    public void RegisterFunction(ulong address, string? name, uint size = 0)
+    {
+        lock (_lock)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                _userFunctions.Remove(address);
+            }
+            else
+            {
+                _userFunctions[address] = (name, size);
+            }
+            // Invalidate cache for this address range
+            _symbolCache.Remove(address);
+            if (size > 0)
+            {
+                var staleKeys = _symbolCache.Keys
+                    .Where(a => a > address && a < address + size)
+                    .ToList();
+                foreach (var key in staleKeys)
+                    _symbolCache.Remove(key);
+            }
+        }
+    }
 
     public void Reset()
     {

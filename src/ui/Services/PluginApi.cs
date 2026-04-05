@@ -238,6 +238,9 @@ public class SymbolApiAdapter : ISymbolApi
             LoadOrder = m.LoadOrder,
             Name = m.Name
         }).ToList();
+
+    public void RegisterFunction(ulong address, string? name, uint size = 0) =>
+        _symbols.RegisterFunction(address, name, size);
 }
 
 public class ProcessApiAdapter : IProcessApi
