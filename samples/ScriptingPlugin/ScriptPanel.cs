@@ -48,7 +48,7 @@ public sealed class ScriptPanel : Grid
             Margin = new Thickness(0, 0, 0, 4)
         };
 
-        toolbar.Children.Add(MakeButton("Run (F5)", OnRun));
+        toolbar.Children.Add(MakeButton("Run (Shift+F5)", OnRun));
         toolbar.Children.Add(MakeButton("Stop", OnStop));
         toolbar.Children.Add(MakeSeparator());
         toolbar.Children.Add(MakeButton("Clear Output", OnClearOutput));
@@ -85,7 +85,7 @@ public sealed class ScriptPanel : Grid
             Padding = new Thickness(4),
             Text = "// C# scripting — полный доступ к IDebuggerApi\n"
                  + "// Переменные сохраняются между запусками (REPL)\n"
-                 + "// F5 = Run, Ctrl+Enter = Run\n"
+                 + "// Shift+F5 = Run, Ctrl+Enter = Run\n"
                  + "\n"
                  + "var regs = api.Memory.ReadRegisters(api.TargetPid, api.SelectedThreadId);\n"
                  + "foreach (var r in regs.Where(r => !r.IsFlag))\n"
@@ -145,8 +145,8 @@ public sealed class ScriptPanel : Grid
 
     private void OnEditorKeyDown(object sender, KeyEventArgs e)
     {
-        // F5 or Ctrl+Enter = Run
-        if (e.Key == Key.F5 ||
+        // Shift+F5 or Ctrl+Enter = Run
+        if ((e.Key == Key.F5 && Keyboard.Modifiers == ModifierKeys.Shift) ||
             (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.Control))
         {
             e.Handled = true;
