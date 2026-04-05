@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.7.1 — 2026-04-05
+
+### New Plugin: Network Monitor
+
+- **Real-time network traffic capture** — hooks 28 network API functions across Winsock (send/recv/sendto/recvfrom/WSASend/WSARecv/WSASendTo/WSARecvFrom), control (connect/accept/bind/listen/closesocket), WinINet (InternetOpen/Connect, HttpOpenRequest/SendRequest, InternetReadFile), and WinHTTP (WinHttpOpen/Connect/OpenRequest/SendRequest/ReadData).
+- **Live traffic grid** — DataGrid with columns: index, timestamp, TID, direction (SEND/RECV/CTRL/HTTP), function name, data size, details, return value. Auto-scrolls to latest event.
+- **Data preview** — for send operations, captures first 64 bytes of the buffer. Shows as ASCII if printable, hex dump otherwise.
+- **Socket address parsing** — `connect`/`bind` calls show parsed `sockaddr_in` (IP:port).
+- **Return value capture** — one-shot breakpoint at return address captures RAX (bytes sent/received, new socket handle, etc.).
+- **Direction filter** — filter by SEND/RECV/CTRL/HTTP or show all.
+- **Text filter** — filter by function name, details, or data preview.
+- **Export CSV** — save full trace to CSV file.
+- **Detail panel** — click any row to see full event details in the bottom panel.
+- **x86/x64 support** — handles both fastcall (x64) and stdcall (x86) calling conventions.
+- **Auto-stop on disconnect** — hooks automatically removed when debugger disconnects.
+
+### Build
+
+- `build.ps1` now builds and copies NetworkMonitorPlugin.
+
 ## v1.7.0 — 2026-04-04
 
 ### New Plugin: C# Scripting Console
@@ -38,7 +58,7 @@
 
 ### Build
 
-- `build.ps1` now builds and copies ScriptingPlugin (+ Roslyn dependencies), FlirtPlugin, and GraphViewPlugin (+ MSAGL).
+- `build.ps1` now builds and copies ScriptingPlugin (+ Roslyn), FlirtPlugin, and GraphViewPlugin (+ MSAGL).
 - `build.ps1` creates `bin\UI\plugins\FLIRTpat\` directory for `.pat` signature files.
 - `.pat` files are now included in the plugin data file copy step.
 
