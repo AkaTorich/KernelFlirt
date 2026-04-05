@@ -29,7 +29,7 @@ public class SymbolService : IDisposable
     /// Used as fallback when SymFromAddr fails.
     /// </summary>
     private readonly List<(ulong Address, uint Size, string Name)> _functionTable = new();
-    private bool _functionTableDirty = true;
+
     private readonly object _lock = new();
     private IntPtr _hProcess;
     private bool _initialized;
@@ -595,7 +595,7 @@ public class SymbolService : IDisposable
                         _functionTable.Add((addr, sz, name));
                 }
                 _functionTable.Sort((a, b) => a.Address.CompareTo(b.Address));
-                _functionTableDirty = false;
+
             }
         }
         return results;
