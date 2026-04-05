@@ -111,3 +111,13 @@ public class PluginDebugEvent
     public ulong TraceRangeEnd { get; set; }
     public uint TraceMaxSteps { get; set; }
 }
+
+/// <summary>
+/// Script globals host for the Scripting plugin.
+/// Lives in the SDK (shared assembly) to avoid AssemblyLoadContext conflicts with Roslyn.
+/// </summary>
+public class PluginScriptHost
+{
+    public IDebuggerApi api { get; set; } = null!;
+    public Action<string> print { get; set; } = Console.WriteLine;
+}
