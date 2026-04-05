@@ -357,28 +357,22 @@ public sealed class GraphPanel : Grid
     private void OnMouseWheel(object sender, MouseWheelEventArgs e)
     {
         // Zoom relative to mouse position
+        // Transform order: translate first, then scale
+        // screenPos = (canvasPos + translate) * scale
         double factor = e.Delta > 0 ? 1.15 : 1.0 / 1.15;
         double oldScale = _scaleTransform.ScaleX;
         double newScale = Math.Clamp(oldScale * factor, 0.1, 5.0);
         if (Math.Abs(newScale - oldScale) < 0.001) { e.Handled = true; return; }
 
-        // Mouse position in container (screen) space
         var mousePos = e.GetPosition(_container);
 
-        // Point on canvas under the mouse before zoom:
-        // canvasPoint = (mousePos - translate) / oldScale
-        double cx = (mousePos.X - _translateTransform.X) / oldScale;
-        double cy = (mousePos.Y - _translateTransform.Y) / oldScale;
+        // Keep the canvas point under mouse fixed:
+        // newTranslate = oldTranslate + mousePos * (1/newScale - 1/oldScale)
+        _translateTransform.X += mousePos.X * (1.0 / newScale - 1.0 / oldScale);
+        _translateTransform.Y += mousePos.Y * (1.0 / newScale - 1.0 / oldScale);
 
-        // Apply new scale
         _scaleTransform.ScaleX = newScale;
         _scaleTransform.ScaleY = newScale;
-
-        // Adjust translate so the same canvas point stays under mouse:
-        // mousePos = canvasPoint * newScale + newTranslate
-        // newTranslate = mousePos - canvasPoint * newScale
-        _translateTransform.X = mousePos.X - cx * newScale;
-        _translateTransform.Y = mousePos.Y - cy * newScale;
 
         e.Handled = true;
     }
@@ -408,8 +402,9 @@ public sealed class GraphPanel : Grid
         if (_isPanning)
         {
             var pos = e.GetPosition(_container);
-            _translateTransform.X = _panStartX + (pos.X - _panStart.X);
-            _translateTransform.Y = _panStartY + (pos.Y - _panStart.Y);
+            double scale = _scaleTransform.ScaleX;
+            _translateTransform.X = _panStartX + (pos.X - _panStart.X) / scale;
+            _translateTransform.Y = _panStartY + (pos.Y - _panStart.Y) / scale;
         }
     }
 
@@ -629,20 +624,18 @@ public sealed class GraphPanel : Grid
     private void Zoom(double factor)
     {
         // Zoom relative to center of container
+        // Transform order: translate first, then scale
         double oldScale = _scaleTransform.ScaleX;
         double newScale = Math.Clamp(oldScale * factor, 0.1, 5.0);
 
         double centerX = _container.ActualWidth / 2;
         double centerY = _container.ActualHeight / 2;
 
-        double cx = (centerX - _translateTransform.X) / oldScale;
-        double cy = (centerY - _translateTransform.Y) / oldScale;
+        _translateTransform.X += centerX * (1.0 / newScale - 1.0 / oldScale);
+        _translateTransform.Y += centerY * (1.0 / newScale - 1.0 / oldScale);
 
         _scaleTransform.ScaleX = newScale;
         _scaleTransform.ScaleY = newScale;
-
-        _translateTransform.X = centerX - cx * newScale;
-        _translateTransform.Y = centerY - cy * newScale;
     }
 
     private void ResetZoom()
@@ -663,8 +656,9 @@ public sealed class GraphPanel : Grid
         _scaleTransform.ScaleX = scale;
         _scaleTransform.ScaleY = scale;
         // Center the graph
-        _translateTransform.X = (_container.ActualWidth - _canvas.Width * scale) / 2;
-        _translateTransform.Y = (_container.ActualHeight - _canvas.Height * scale) / 2;
+        // screenPos = (canvasPos + tx) * scale, so tx = screenCenter/scale - canvasCenter
+        _translateTransform.X = (_container.ActualWidth / scale - _canvas.Width) / 2;
+        _translateTransform.Y = (_container.ActualHeight / scale - _canvas.Height) / 2;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
