@@ -64,7 +64,8 @@ public class DebuggerApiAdapter : IDebuggerApi
         Action<ulong, string?> setAnnotation,
         Func<ulong, string?> getAnnotation,
         Func<IReadOnlyDictionary<ulong, string>> getAllAnnotations,
-        Action refreshDisasm)
+        Action refreshDisasm,
+        Action<ulong, BreakpointType>? toggleBreakpoint = null)
     {
         _pluginManager = pluginManager;
         _getIsConnected = getIsConnected;
@@ -74,7 +75,7 @@ public class DebuggerApiAdapter : IDebuggerApi
         _getIs32Bit = getIs32Bit;
 
         Memory = new MemoryApiAdapter(driver);
-        Breakpoints = new BreakpointApiAdapter(driver, getBreakpoints);
+        Breakpoints = new BreakpointApiAdapter(driver, getBreakpoints, toggleBreakpoint);
         Symbols = new SymbolApiAdapter(symbols, getTargetPid, getModules, getKernelModules);
         Process = new ProcessApiAdapter(driver);
         Log = new LogApiAdapter(log);
@@ -172,12 +173,15 @@ public class BreakpointApiAdapter : IBreakpointApi
 {
     private readonly DriverComm _driver;
     private readonly Func<System.Collections.ObjectModel.ObservableCollection<Breakpoint>> _getBreakpoints;
+    private readonly Action<ulong, BreakpointType>? _toggleBreakpoint;
 
     public BreakpointApiAdapter(DriverComm driver,
-        Func<System.Collections.ObjectModel.ObservableCollection<Breakpoint>> getBreakpoints)
+        Func<System.Collections.ObjectModel.ObservableCollection<Breakpoint>> getBreakpoints,
+        Action<ulong, BreakpointType>? toggleBreakpoint = null)
     {
         _driver = driver;
         _getBreakpoints = getBreakpoints;
+        _toggleBreakpoint = toggleBreakpoint;
     }
 
     public uint? SetBreakpoint(uint pid, uint tid, ulong address, PluginBreakpointType type, uint length = 1) =>
@@ -185,6 +189,12 @@ public class BreakpointApiAdapter : IBreakpointApi
 
     public bool RemoveBreakpoint(uint handle) =>
         _driver.RemoveBreakpoint(handle);
+
+    public void ToggleBreakpoint(ulong address, PluginBreakpointType type = PluginBreakpointType.Software)
+    {
+        if (_toggleBreakpoint != null)
+            Application.Current.Dispatcher.Invoke(() => _toggleBreakpoint(address, (BreakpointType)(int)type));
+    }
 
     public IReadOnlyList<PluginBreakpoint> GetAll() =>
         _getBreakpoints().Select(b => new PluginBreakpoint
@@ -241,6 +251,9 @@ public class SymbolApiAdapter : ISymbolApi
 
     public void RegisterFunction(ulong address, string? name, uint size = 0) =>
         _symbols.RegisterFunction(address, name, size);
+
+    public IReadOnlyList<PluginFunctionEntry> GetRegisteredFunctions() =>
+        _symbols.GetRegisteredFunctions();
 }
 
 public class ProcessApiAdapter : IProcessApi
@@ -404,6 +417,23 @@ public class UiApiAdapter : IUiApi
     public void RefreshDisassembly()
     {
         Application.Current.Dispatcher.Invoke(() => _refreshDisasm());
+    }
+
+    // Plugin data store (cross-plugin communication)
+    private static readonly Dictionary<string, object?> _pluginData = new();
+
+    public void SetPluginData(string key, object? value)
+    {
+        lock (_pluginData)
+        {
+            if (value == null) _pluginData.Remove(key);
+            else _pluginData[key] = value;
+        }
+    }
+
+    public object? GetPluginData(string key)
+    {
+        lock (_pluginData) { return _pluginData.TryGetValue(key, out var val) ? val : null; }
     }
 
     public event Action<ulong, string>? OnNoteAdded;

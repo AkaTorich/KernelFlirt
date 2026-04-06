@@ -13,4 +13,10 @@ public interface ISymbolApi
     /// Set name to null to unregister.
     /// </summary>
     void RegisterFunction(ulong address, string? name, uint size = 0);
+
+    /// <summary>
+    /// Get all user-defined function names registered via RegisterFunction.
+    /// Returns list of (address, name, size).
+    /// </summary>
+    IReadOnlyList<PluginFunctionEntry> GetRegisteredFunctions();
 }

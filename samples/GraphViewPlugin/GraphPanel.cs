@@ -44,6 +44,9 @@ public sealed class GraphPanel : Grid
         _builder = new CfgBuilder(api);
         _renderer = new GraphRenderer();
 
+        // Expose block colors for cross-plugin access (Session Manager)
+        api.UI.SetPluginData("GraphBlockColors", _blockColors);
+
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });    // toolbar
         RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // graph
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });    // status

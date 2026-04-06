@@ -1,5 +1,6 @@
 using System.IO;
 using System.Runtime.InteropServices;
+using KernelFlirt.SDK;
 using KernelFlirt.UI.Models;
 using KernelFlirt.UI.Services.Interop;
 
@@ -1142,6 +1143,19 @@ public class SymbolService : IDisposable
                 foreach (var key in staleKeys)
                     _symbolCache.Remove(key);
             }
+        }
+    }
+
+    public List<PluginFunctionEntry> GetRegisteredFunctions()
+    {
+        lock (_lock)
+        {
+            return _userFunctions.Select(kv => new PluginFunctionEntry
+            {
+                Address = kv.Key,
+                Name = kv.Value.Name,
+                Size = kv.Value.Size
+            }).ToList();
         }
     }
 

@@ -204,7 +204,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
             (addr, note) => SetAddressAnnotation(addr, note),
             addr => _addressAnnotations.TryGetValue(addr, out var n) ? n : null,
             () => (IReadOnlyDictionary<ulong, string>)AddressAnnotations,
-            () => RefreshDisasmAnnotations());
+            () => RefreshDisasmAnnotations(),
+            (addr, type) => SetBreakpointAtAddressWithType(addr, type));
 
         // Wire Continue/SingleStep callbacks so plugins can resume execution
         _pluginManager.ContinueAction = () =>

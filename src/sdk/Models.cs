@@ -44,6 +44,13 @@ public class PluginModuleInfo
     public string Name { get; set; } = "";
 }
 
+public class PluginFunctionEntry
+{
+    public ulong Address { get; set; }
+    public string Name { get; set; } = "";
+    public uint Size { get; set; }
+}
+
 public class PluginKernelModuleInfo
 {
     public ulong BaseAddress { get; set; }

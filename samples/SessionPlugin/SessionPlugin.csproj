@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net9.0-windows</TargetFramework>
-    <RootNamespace>ScriptingPlugin</RootNamespace>
+    <RootNamespace>SessionPlugin</RootNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <EnableDynamicLoading>true</EnableDynamicLoading>
@@ -14,11 +14,6 @@
       <Private>false</Private>
       <ExcludeAssets>runtime</ExcludeAssets>
     </ProjectReference>
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.12.0" />
-    <PackageReference Include="AvalonEdit" Version="6.3.0.90" />
   </ItemGroup>
 
 </Project>

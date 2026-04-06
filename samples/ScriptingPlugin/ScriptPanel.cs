@@ -3,13 +3,15 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using ICSharpCode.AvalonEdit;
+using ICSharpCode.AvalonEdit.Highlighting;
 using KernelFlirt.SDK;
 
 namespace ScriptingPlugin;
 
 /// <summary>
 /// WPF panel for the "Scripting" tab.
-/// Top: code editor (TextBox with monospace font).
+/// Top: code editor (AvalonEdit with C# syntax highlighting).
 /// Bottom: output log.
 /// Toolbar: Run, Stop, Clear, Load, Save, Reset.
 /// </summary>
@@ -17,7 +19,7 @@ public sealed class ScriptPanel : Grid
 {
     private readonly IDebuggerApi _api;
     private readonly ScriptEngine _engine;
-    private readonly TextBox _editor;
+    private readonly TextEditor _editor;
     private readonly TextBox _output;
     private readonly TextBlock _statusText;
     private CancellationTokenSource? _cts;
@@ -71,31 +73,38 @@ public sealed class ScriptPanel : Grid
         SetRow(toolbar, 0);
         Children.Add(toolbar);
 
-        // ── Row 1: Code editor ──────────────────────────────────────────────
-        _editor = new TextBox
+        // ── Row 1: Code editor (AvalonEdit) ─────────────────────────────────
+        _editor = new TextEditor
         {
             FontFamily = new FontFamily("Consolas"),
             FontSize = 13,
-            AcceptsReturn = true,
-            AcceptsTab = true,
-            TextWrapping = TextWrapping.NoWrap,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            ShowLineNumbers = true,
+            WordWrap = false,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             BorderThickness = new Thickness(1),
             Padding = new Thickness(4),
-            Text = "// C# scripting — полный доступ к IDebuggerApi\n"
-                 + "// Переменные сохраняются между запусками (REPL)\n"
-                 + "// Shift+F5 = Run, Ctrl+Enter = Run\n"
-                 + "\n"
-                 + "var regs = api.Memory.ReadRegisters(api.TargetPid, api.SelectedThreadId);\n"
-                 + "foreach (var r in regs.Where(r => !r.IsFlag))\n"
-                 + "    print($\"{r.Name,-4} = 0x{r.Value:X016}\");\n"
+            SyntaxHighlighting = LoadDarkHighlighting(),
+            Background = new SolidColorBrush(Color.FromRgb(0x1E, 0x1E, 0x1E)),
+            Foreground = new SolidColorBrush(Color.FromRgb(0xDC, 0xDC, 0xDC)),
+            LineNumbersForeground = new SolidColorBrush(Color.FromRgb(0x5A, 0x5A, 0x5A)),
         };
-        _editor.SetResourceReference(TextBox.BackgroundProperty, "PluginControlBgBrush");
-        _editor.SetResourceReference(TextBox.ForegroundProperty, "PluginFgBrush");
-        _editor.SetResourceReference(TextBox.BorderBrushProperty, "PluginBorderBrush");
-        _editor.SetResourceReference(TextBox.CaretBrushProperty, "PluginFgBrush");
-        _editor.PreviewKeyDown += OnEditorKeyDown;
+        _editor.TextArea.TextView.LinkTextForegroundBrush = new SolidColorBrush(Color.FromRgb(0x56, 0x9C, 0xD6));
+        _editor.TextArea.SelectionBrush = new SolidColorBrush(Color.FromArgb(0x80, 0x26, 0x4F, 0x78));
+        _editor.TextArea.SelectionForeground = null;
+        _editor.TextArea.TextView.CurrentLineBackground = new SolidColorBrush(Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF));
+        _editor.TextArea.TextView.CurrentLineBorder = new Pen(new SolidColorBrush(Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF)), 1);
+        _editor.SetResourceReference(TextEditor.BorderBrushProperty, "PluginBorderBrush");
+
+        _editor.Text = "// C# scripting — full access to IDebuggerApi\n"
+                      + "// Variables persist between runs (REPL)\n"
+                      + "// Shift+F5 or Ctrl+Enter = Run\n"
+                      + "\n"
+                      + "var regs = api.Memory.ReadRegisters(api.TargetPid, api.SelectedThreadId);\n"
+                      + "foreach (var r in regs.Where(r => !r.IsFlag))\n"
+                      + "    print($\"{r.Name,-4} = 0x{r.Value:X016}\");\n";
+
+        _editor.TextArea.PreviewKeyDown += OnEditorKeyDown;
 
         SetRow(_editor, 1);
         Children.Add(_editor);
@@ -209,8 +218,8 @@ public sealed class ScriptPanel : Grid
     {
         if (_isRunning) return;
 
-        var code = _editor.SelectedText.Length > 0
-            ? _editor.SelectedText   // run selected text only
+        var code = _editor.TextArea.Selection.Length > 0
+            ? _editor.TextArea.Selection.GetText()
             : _editor.Text;
 
         if (string.IsNullOrWhiteSpace(code)) return;
@@ -306,4 +315,50 @@ public sealed class ScriptPanel : Grid
         sep.SetResourceReference(Border.BackgroundProperty, "PluginBorderBrush");
         return sep;
     }
+
+    /// <summary>
+    /// Load the built-in C# highlighting and recolor it for dark background.
+    /// </summary>
+    private static IHighlightingDefinition? LoadDarkHighlighting()
+    {
+        try
+        {
+            var def = HighlightingManager.Instance.GetDefinition("C#");
+            if (def == null) return null;
+
+            // Recolor named colors for dark theme (VS Code Dark+ palette)
+            foreach (var color in def.NamedHighlightingColors)
+            {
+                var n = color.Name?.ToLowerInvariant() ?? "";
+                if (n.Contains("comment"))
+                    color.Foreground = MakeHighlightBrush(0x6A, 0x99, 0x55);
+                else if (n.Contains("string") || n.Contains("char"))
+                    color.Foreground = MakeHighlightBrush(0xCE, 0x91, 0x78);
+                else if (n.Contains("number") || n.Contains("digit"))
+                    color.Foreground = MakeHighlightBrush(0xB5, 0xCE, 0xA8);
+                else if (n.Contains("preprocess") || n.Contains("region"))
+                    color.Foreground = MakeHighlightBrush(0xC5, 0x86, 0xC0);
+                else if (n.Contains("keyword") || n.Contains("modifier") || n.Contains("access")
+                      || n.Contains("visibility") || n.Contains("type") || n.Contains("value")
+                      || n.Contains("true") || n.Contains("false") || n.Contains("null")
+                      || n.Contains("namespace") || n.Contains("reference"))
+                    color.Foreground = MakeHighlightBrush(0x56, 0x9C, 0xD6);
+                else if (n.Contains("method") || n.Contains("function"))
+                    color.Foreground = MakeHighlightBrush(0xDC, 0xDC, 0xAA);
+                else if (n.Contains("punctuation") || n.Contains("bracket") || n.Contains("operator"))
+                    color.Foreground = MakeHighlightBrush(0xDC, 0xDC, 0xDC);
+                else
+                    color.Foreground = MakeHighlightBrush(0xDC, 0xDC, 0xDC);
+            }
+
+            return def;
+        }
+        catch
+        {
+            return HighlightingManager.Instance.GetDefinition("C#");
+        }
+    }
+
+    private static ICSharpCode.AvalonEdit.Highlighting.SimpleHighlightingBrush MakeHighlightBrush(byte r, byte g, byte b)
+        => new(Color.FromRgb(r, g, b));
 }

@@ -61,6 +61,17 @@ public interface IUiApi
     /// </summary>
     void RefreshDisassembly();
 
+    /// <summary>
+    /// Store arbitrary plugin data (persisted in memory, accessible by any plugin).
+    /// Use for cross-plugin communication (e.g. graph block colors).
+    /// </summary>
+    void SetPluginData(string key, object? value);
+
+    /// <summary>
+    /// Retrieve plugin data previously stored via SetPluginData.
+    /// </summary>
+    object? GetPluginData(string key);
+
     /// <summary>Fires when user adds a note via disasm context menu.</summary>
     event Action<ulong, string>? OnNoteAdded;
 

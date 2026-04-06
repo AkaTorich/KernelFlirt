@@ -1,5 +1,54 @@
 # Changelog
 
+## v1.8.0 — 2026-04-07
+
+### New Plugin: Xrefs (Cross-References)
+
+- **Xrefs TO** — find all references to a given address across modules: `CALL`, `JMP` (direct and IAT indirect via `[rip+xxx]`), `LEA reg, [rip+xxx]`, `MOV` with RIP-relative addressing, raw pointer references in data (vtables, function pointer tables).
+- **Xrefs FROM** — find all outgoing references from a function (what it calls/references).
+- **Scope selector** — scan current module only or all loaded modules.
+- **Symbol resolution** — each xref shows source module, resolved symbol name, and full instruction text.
+- **Navigation** — double-click any xref to jump to source in disassembly. Context menu: Go to Source, Go to Target, Copy Address, Copy All Results.
+- **Cancellation** — Stop button to cancel long scans.
+- **Menu integration** — "Find Xrefs at RIP" in Plugins menu.
+
+### New Plugin: Session Manager
+
+- **Save/Load full session state** to `.kfsession` files (JSON format).
+- **Breakpoints** — saved and restored via UI toggle (updates breakpoint list, disasm markers, and driver).
+- **Annotations/Comments** — all address annotations saved and restored.
+- **User-defined functions** — function names registered via `RegisterFunction` saved with address and size.
+- **Graph block colors** — custom block colors from Graph View plugin saved as `#RRGGBB`.
+- **ASLR auto-rebase** — module table saved alongside data; on load, all addresses automatically rebased if modules shifted.
+- **Auto-naming** — save dialog defaults to `TargetName.kfsession`.
+
+### Scripting Plugin: Syntax Highlighting
+
+- **AvalonEdit code editor** — replaced plain TextBox with AvalonEdit `TextEditor` with line numbers, undo/redo, and search.
+- **Dark theme C# highlighting** — VS Code Dark+ color scheme: blue keywords (`#569CD6`), pink control flow (`#C586C0`), teal types (`#4EC9B0`), orange strings (`#CE9178`), green comments (`#6A9955`), light-green numbers (`#B5CEA8`), yellow method calls (`#DCDCAA`).
+- **Built-in C# definition recoloring** — uses AvalonEdit's built-in C# grammar with colors remapped for dark background (no XML parsing, crash-safe).
+
+### Graph View Plugin
+
+- **Fixed zoom** — zoom now correctly keeps the point under the mouse cursor stable. Previous formula was wrong for the `translate → scale` transform order, causing the graph to "fly away" on zoom in/out.
+- **Fixed pan speed** — mouse delta divided by current scale, so panning is 1:1 with cursor movement at any zoom level.
+- **Block colors exposed** — `_blockColors` dictionary published via `SetPluginData("GraphBlockColors")` for cross-plugin access (used by Session Manager).
+
+### SDK Extensions
+
+- `IBreakpointApi.ToggleBreakpoint(address, type)` — toggle breakpoint via UI (updates list, disasm markers, and driver). Used by Session Manager for correct BP restoration.
+- `ISymbolApi.GetRegisteredFunctions()` — returns all user-defined function names. New `PluginFunctionEntry` model (Address, Name, Size).
+- `IUiApi.SetPluginData(key, value)` / `GetPluginData(key)` — cross-plugin data store for runtime communication (e.g. graph colors).
+
+### Themes
+
+- **6 missing plugin tab colors** added to all 9 themes: Network Monitor, FLIRT Signatures, Scripting, Graph View, Xrefs, Exports.
+
+### Build
+
+- `build.ps1` now builds XrefsPlugin and SessionPlugin.
+- Removed unused field `SymbolService._functionTableDirty` (CS0414 warning fix).
+
 ## v1.7.1 — 2026-04-05
 
 ### New Plugin: Network Monitor
