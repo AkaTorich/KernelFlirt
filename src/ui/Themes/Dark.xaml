@@ -393,12 +393,34 @@
         <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
     </Style>
 
-    <!-- TabControl -->
+    <!-- TabControl — fixed row order (no row swapping on selection) -->
     <Style TargetType="TabControl">
         <Setter Property="Background" Value="{DynamicResource BgBrush}" />
         <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
         <Setter Property="BorderThickness" Value="0,1,0,0" />
         <Setter Property="Padding" Value="0" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TabControl">
+                    <Grid KeyboardNavigation.TabNavigation="Local" SnapsToDevicePixels="True">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <WrapPanel Grid.Row="0" IsItemsHost="True"
+                                   Orientation="Horizontal" />
+                        <Border Grid.Row="1"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <ContentPresenter x:Name="PART_SelectedContentHost"
+                                              ContentSource="SelectedContent"
+                                              Margin="{TemplateBinding Padding}" />
+                        </Border>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <Style TargetType="TabItem">

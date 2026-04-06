@@ -1217,6 +1217,17 @@ public partial class MainWindow : Window
             ["PluginGridAltRow"]  = "PluginGridAltRowBrush",
             ["PluginGroupHeader"] = "PluginGroupHeaderBrush",
             ["PluginGroupBg"]     = "PluginGroupBgBrush",
+            // Script editor
+            ["ScriptBg"]          = "ScriptBgBrush",
+            ["ScriptFg"]          = "ScriptFgBrush",
+            ["ScriptKeyword"]     = "ScriptKeywordBrush",
+            ["ScriptControl"]     = "ScriptControlBrush",
+            ["ScriptType"]        = "ScriptTypeBrush",
+            ["ScriptString"]      = "ScriptStringBrush",
+            ["ScriptComment"]     = "ScriptCommentBrush",
+            ["ScriptNumber"]      = "ScriptNumberBrush",
+            ["ScriptMethod"]      = "ScriptMethodBrush",
+            ["ScriptPunctuation"] = "ScriptPunctuationBrush",
             // ScrollBar
             ["ScrollBarBg"]           = "ScrollBarBgBrush",
             ["ScrollBarThumb"]        = "ScrollBarThumbBrush",
@@ -1275,6 +1286,13 @@ public partial class MainWindow : Window
         Map("BorderBrush",    "PluginBorderBrush");
         Map("AccentBrush",    "PluginAccentBrush");
         Map("SelectionBrush", "PluginSelectionBrush");
+        // Script editor colors (pass-through — same key name)
+        foreach (var key in new[] { "ScriptBgBrush", "ScriptFgBrush", "ScriptKeywordBrush",
+            "ScriptControlBrush", "ScriptTypeBrush", "ScriptStringBrush", "ScriptCommentBrush",
+            "ScriptNumberBrush", "ScriptMethodBrush", "ScriptPunctuationBrush" })
+        {
+            if (app.Contains(key)) rd[key] = app[key];
+        }
     }
 
     private static SolidColorBrush? TryParseBrush(Dictionary<string, string> colors, string key)

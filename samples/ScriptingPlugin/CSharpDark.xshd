@@ -1,0 +1,97 @@
+<?xml version="1.0"?>
+<SyntaxDefinition name="C#-Dark" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <Color name="Comment"       foreground="#6A9955" />
+  <Color name="String"        foreground="#CE9178" />
+  <Color name="Char"          foreground="#CE9178" />
+  <Color name="Preprocessor"  foreground="#C586C0" />
+  <Color name="Punctuation"   foreground="#DCDCDC" />
+  <Color name="NumberLiteral" foreground="#B5CEA8" />
+  <Color name="Keywords"      foreground="#569CD6" fontWeight="bold" />
+  <Color name="ControlFlow"   foreground="#C586C0" fontWeight="bold" />
+  <Color name="ValueTypes"    foreground="#569CD6" />
+  <Color name="TypeKeywords"  foreground="#4EC9B0" />
+  <Color name="Modifiers"     foreground="#569CD6" />
+  <Color name="Visibility"    foreground="#569CD6" />
+  <Color name="TrueFalse"     foreground="#569CD6" fontWeight="bold" />
+  <Color name="NullKeyword"   foreground="#569CD6" fontWeight="bold" />
+  <Color name="MethodCall"    foreground="#DCDCAA" />
+
+  <RuleSet ignoreCase="false">
+    <Span color="Comment" begin="//" />
+    <Span color="Comment" multiline="true" begin="/\*" end="\*/" />
+
+    <Span color="String">
+      <Begin>"</Begin>
+      <End>"</End>
+      <RuleSet>
+        <Span begin="\\" end="." />
+      </RuleSet>
+    </Span>
+    <Span color="String" begin="@&quot;" end="&quot;" />
+    <Span color="Char">
+      <Begin>'</Begin>
+      <End>'</End>
+      <RuleSet>
+        <Span begin="\\" end="." />
+      </RuleSet>
+    </Span>
+
+    <Span color="Preprocessor" begin="\#" />
+
+    <Rule color="NumberLiteral">\b0[xX][0-9a-fA-F_]+[uUlL]*\b</Rule>
+    <Rule color="NumberLiteral">\b[0-9][0-9_]*\.?[0-9_]*([eE][+-]?[0-9_]+)?[fFdDmM]?\b</Rule>
+
+    <Keywords color="ControlFlow">
+      <Word>if</Word><Word>else</Word><Word>switch</Word><Word>case</Word>
+      <Word>for</Word><Word>foreach</Word><Word>while</Word><Word>do</Word>
+      <Word>break</Word><Word>continue</Word><Word>return</Word><Word>yield</Word>
+      <Word>throw</Word><Word>try</Word><Word>catch</Word><Word>finally</Word>
+      <Word>goto</Word><Word>when</Word>
+    </Keywords>
+
+    <Keywords color="TrueFalse">
+      <Word>true</Word><Word>false</Word>
+    </Keywords>
+    <Keywords color="NullKeyword">
+      <Word>null</Word>
+    </Keywords>
+
+    <Keywords color="TypeKeywords">
+      <Word>class</Word><Word>struct</Word><Word>interface</Word><Word>enum</Word>
+      <Word>record</Word><Word>delegate</Word><Word>namespace</Word>
+    </Keywords>
+
+    <Keywords color="ValueTypes">
+      <Word>int</Word><Word>uint</Word><Word>long</Word><Word>ulong</Word>
+      <Word>short</Word><Word>ushort</Word><Word>byte</Word><Word>sbyte</Word>
+      <Word>float</Word><Word>double</Word><Word>decimal</Word>
+      <Word>bool</Word><Word>char</Word><Word>string</Word><Word>object</Word>
+      <Word>void</Word><Word>var</Word><Word>dynamic</Word><Word>nint</Word><Word>nuint</Word>
+    </Keywords>
+
+    <Keywords color="Modifiers">
+      <Word>static</Word><Word>readonly</Word><Word>const</Word><Word>ref</Word>
+      <Word>out</Word><Word>in</Word><Word>params</Word><Word>abstract</Word>
+      <Word>sealed</Word><Word>virtual</Word><Word>override</Word><Word>async</Word>
+      <Word>await</Word><Word>partial</Word><Word>unsafe</Word><Word>fixed</Word>
+      <Word>volatile</Word><Word>extern</Word><Word>stackalloc</Word>
+    </Keywords>
+
+    <Keywords color="Visibility">
+      <Word>public</Word><Word>private</Word><Word>protected</Word><Word>internal</Word>
+    </Keywords>
+
+    <Keywords color="Keywords">
+      <Word>using</Word><Word>new</Word><Word>this</Word><Word>base</Word>
+      <Word>is</Word><Word>as</Word><Word>typeof</Word><Word>sizeof</Word>
+      <Word>nameof</Word><Word>default</Word><Word>checked</Word><Word>unchecked</Word>
+      <Word>lock</Word><Word>event</Word><Word>implicit</Word><Word>explicit</Word>
+      <Word>operator</Word><Word>where</Word><Word>select</Word><Word>from</Word>
+      <Word>orderby</Word><Word>group</Word><Word>into</Word><Word>join</Word>
+      <Word>let</Word><Word>ascending</Word><Word>descending</Word>
+    </Keywords>
+
+    <Rule color="MethodCall">[\w]+(?=\s*\()</Rule>
+    <Rule color="Punctuation">[{}()\[\];,.]</Rule>
+  </RuleSet>
+</SyntaxDefinition>

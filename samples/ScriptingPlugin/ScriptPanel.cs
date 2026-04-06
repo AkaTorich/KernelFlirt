@@ -3,8 +3,10 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Xml;
 using ICSharpCode.AvalonEdit;
 using ICSharpCode.AvalonEdit.Highlighting;
+using ICSharpCode.AvalonEdit.Highlighting.Xshd;
 using KernelFlirt.SDK;
 
 namespace ScriptingPlugin;
@@ -84,17 +86,19 @@ public sealed class ScriptPanel : Grid
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             BorderThickness = new Thickness(1),
             Padding = new Thickness(4),
-            SyntaxHighlighting = LoadDarkHighlighting(),
-            Background = new SolidColorBrush(Color.FromRgb(0x1E, 0x1E, 0x1E)),
-            Foreground = new SolidColorBrush(Color.FromRgb(0xDC, 0xDC, 0xDC)),
-            LineNumbersForeground = new SolidColorBrush(Color.FromRgb(0x5A, 0x5A, 0x5A)),
         };
-        _editor.TextArea.TextView.LinkTextForegroundBrush = new SolidColorBrush(Color.FromRgb(0x56, 0x9C, 0xD6));
-        _editor.TextArea.SelectionBrush = new SolidColorBrush(Color.FromArgb(0x80, 0x26, 0x4F, 0x78));
-        _editor.TextArea.SelectionForeground = null;
-        _editor.TextArea.TextView.CurrentLineBackground = new SolidColorBrush(Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF));
-        _editor.TextArea.TextView.CurrentLineBorder = new Pen(new SolidColorBrush(Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF)), 1);
+        _editor.SetResourceReference(TextEditor.BackgroundProperty, "ScriptBgBrush");
+        _editor.SetResourceReference(TextEditor.ForegroundProperty, "ScriptFgBrush");
         _editor.SetResourceReference(TextEditor.BorderBrushProperty, "PluginBorderBrush");
+        // Apply syntax highlighting from theme colors (re-apply on theme change)
+        ApplyHighlighting();
+        _editor.Loaded += (_, _) => ApplyHighlighting();
+        // Re-apply when theme changes (ScriptBgBrush resource updates)
+        _editor.Resources = new ResourceDictionary();
+        var dp = System.Windows.DependencyProperty.RegisterAttached(
+            "_scriptThemeWatch" + GetHashCode(), typeof(Brush), typeof(ScriptPanel),
+            new PropertyMetadata(null, (_, _) => Dispatcher.InvokeAsync(ApplyHighlighting)));
+        _editor.SetResourceReference(dp, "ScriptKeywordBrush");
 
         _editor.Text = "// C# scripting — full access to IDebuggerApi\n"
                       + "// Variables persist between runs (REPL)\n"
@@ -317,48 +321,117 @@ public sealed class ScriptPanel : Grid
     }
 
     /// <summary>
-    /// Load the built-in C# highlighting and recolor it for dark background.
+    /// Build syntax highlighting from theme resource brushes (ScriptKeywordBrush, etc.).
     /// </summary>
-    private static IHighlightingDefinition? LoadDarkHighlighting()
+    private void ApplyHighlighting()
     {
         try
         {
-            var def = HighlightingManager.Instance.GetDefinition("C#");
-            if (def == null) return null;
-
-            // Recolor named colors for dark theme (VS Code Dark+ palette)
-            foreach (var color in def.NamedHighlightingColors)
+            string Col(string resKey, string fallback)
             {
-                var n = color.Name?.ToLowerInvariant() ?? "";
-                if (n.Contains("comment"))
-                    color.Foreground = MakeHighlightBrush(0x6A, 0x99, 0x55);
-                else if (n.Contains("string") || n.Contains("char"))
-                    color.Foreground = MakeHighlightBrush(0xCE, 0x91, 0x78);
-                else if (n.Contains("number") || n.Contains("digit"))
-                    color.Foreground = MakeHighlightBrush(0xB5, 0xCE, 0xA8);
-                else if (n.Contains("preprocess") || n.Contains("region"))
-                    color.Foreground = MakeHighlightBrush(0xC5, 0x86, 0xC0);
-                else if (n.Contains("keyword") || n.Contains("modifier") || n.Contains("access")
-                      || n.Contains("visibility") || n.Contains("type") || n.Contains("value")
-                      || n.Contains("true") || n.Contains("false") || n.Contains("null")
-                      || n.Contains("namespace") || n.Contains("reference"))
-                    color.Foreground = MakeHighlightBrush(0x56, 0x9C, 0xD6);
-                else if (n.Contains("method") || n.Contains("function"))
-                    color.Foreground = MakeHighlightBrush(0xDC, 0xDC, 0xAA);
-                else if (n.Contains("punctuation") || n.Contains("bracket") || n.Contains("operator"))
-                    color.Foreground = MakeHighlightBrush(0xDC, 0xDC, 0xDC);
-                else
-                    color.Foreground = MakeHighlightBrush(0xDC, 0xDC, 0xDC);
+                if (TryFindResource(resKey) is SolidColorBrush b)
+                    return $"#{b.Color.R:X2}{b.Color.G:X2}{b.Color.B:X2}";
+                return fallback;
             }
 
-            return def;
+            var keyword = Col("ScriptKeywordBrush", "#569CD6");
+            var control = Col("ScriptControlBrush", "#C586C0");
+            var type    = Col("ScriptTypeBrush",    "#4EC9B0");
+            var str     = Col("ScriptStringBrush",  "#CE9178");
+            var comment = Col("ScriptCommentBrush", "#6A9955");
+            var number  = Col("ScriptNumberBrush",  "#B5CEA8");
+            var method  = Col("ScriptMethodBrush",  "#DCDCAA");
+            var punct   = Col("ScriptPunctuationBrush", "#DCDCDC");
+            var fg      = Col("ScriptFgBrush",      "#DCDCDC");
+
+            var xshd = $"""
+                <?xml version="1.0"?>
+                <SyntaxDefinition name="C#-Themed" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+                  <Color name="Comment"       foreground="{comment}" />
+                  <Color name="String"        foreground="{str}" />
+                  <Color name="Preprocessor"  foreground="{control}" />
+                  <Color name="Punctuation"   foreground="{punct}" />
+                  <Color name="NumberLiteral" foreground="{number}" />
+                  <Color name="Keywords"      foreground="{keyword}" fontWeight="bold" />
+                  <Color name="ControlFlow"   foreground="{control}" fontWeight="bold" />
+                  <Color name="ValueTypes"    foreground="{keyword}" />
+                  <Color name="TypeKeywords"  foreground="{type}" />
+                  <Color name="Modifiers"     foreground="{keyword}" />
+                  <Color name="Visibility"    foreground="{keyword}" />
+                  <Color name="TrueFalse"     foreground="{keyword}" fontWeight="bold" />
+                  <Color name="NullKeyword"   foreground="{keyword}" fontWeight="bold" />
+                  <Color name="MethodCall"    foreground="{method}" />
+                  <Color name="Default"       foreground="{fg}" />
+
+                  <RuleSet ignoreCase="false">
+                    <Span color="Comment" begin="//" />
+                    <Span color="Comment" multiline="true" begin="/\*" end="\*/" />
+                    <Span color="String" begin="@&quot;" end="&quot;" />
+                    <Span color="String" begin="\$&quot;" end="&quot;" />
+                    <Span color="String" begin="\$@&quot;" end="&quot;" />
+                    <Span color="String">
+                      <Begin>"</Begin>
+                      <End>"</End>
+                      <RuleSet><Span begin="\\" end="." /></RuleSet>
+                    </Span>
+                    <Span color="String">
+                      <Begin>'</Begin>
+                      <End>'</End>
+                      <RuleSet><Span begin="\\" end="." /></RuleSet>
+                    </Span>
+                    <Span color="Preprocessor" begin="\#" />
+
+                    <Rule color="NumberLiteral">\b0[xX][0-9a-fA-F_]+[uUlL]*\b</Rule>
+                    <Rule color="NumberLiteral">\b[0-9][0-9_]*\.?[0-9_]*([eE][+-]?[0-9_]+)?[fFdDmM]?\b</Rule>
+
+                    <Keywords color="ControlFlow">
+                      <Word>if</Word><Word>else</Word><Word>switch</Word><Word>case</Word>
+                      <Word>for</Word><Word>foreach</Word><Word>while</Word><Word>do</Word>
+                      <Word>break</Word><Word>continue</Word><Word>return</Word><Word>yield</Word>
+                      <Word>throw</Word><Word>try</Word><Word>catch</Word><Word>finally</Word>
+                      <Word>goto</Word><Word>when</Word>
+                    </Keywords>
+                    <Keywords color="TrueFalse"><Word>true</Word><Word>false</Word></Keywords>
+                    <Keywords color="NullKeyword"><Word>null</Word></Keywords>
+                    <Keywords color="TypeKeywords">
+                      <Word>class</Word><Word>struct</Word><Word>interface</Word><Word>enum</Word>
+                      <Word>record</Word><Word>delegate</Word><Word>namespace</Word>
+                    </Keywords>
+                    <Keywords color="ValueTypes">
+                      <Word>int</Word><Word>uint</Word><Word>long</Word><Word>ulong</Word>
+                      <Word>short</Word><Word>ushort</Word><Word>byte</Word><Word>sbyte</Word>
+                      <Word>float</Word><Word>double</Word><Word>decimal</Word>
+                      <Word>bool</Word><Word>char</Word><Word>string</Word><Word>object</Word>
+                      <Word>void</Word><Word>var</Word><Word>dynamic</Word>
+                    </Keywords>
+                    <Keywords color="Modifiers">
+                      <Word>static</Word><Word>readonly</Word><Word>const</Word><Word>ref</Word>
+                      <Word>out</Word><Word>in</Word><Word>params</Word><Word>abstract</Word>
+                      <Word>sealed</Word><Word>virtual</Word><Word>override</Word><Word>async</Word>
+                      <Word>await</Word><Word>partial</Word><Word>unsafe</Word><Word>fixed</Word>
+                    </Keywords>
+                    <Keywords color="Visibility">
+                      <Word>public</Word><Word>private</Word><Word>protected</Word><Word>internal</Word>
+                    </Keywords>
+                    <Keywords color="Keywords">
+                      <Word>using</Word><Word>new</Word><Word>this</Word><Word>base</Word>
+                      <Word>is</Word><Word>as</Word><Word>typeof</Word><Word>sizeof</Word>
+                      <Word>nameof</Word><Word>default</Word><Word>checked</Word><Word>unchecked</Word>
+                      <Word>lock</Word><Word>event</Word><Word>implicit</Word><Word>explicit</Word>
+                      <Word>operator</Word><Word>where</Word><Word>select</Word><Word>from</Word>
+                    </Keywords>
+                    <Rule color="MethodCall">[\w]+(?=\s*\()</Rule>
+                    <Rule color="Punctuation">[()\[\];,.]</Rule>
+                  </RuleSet>
+                </SyntaxDefinition>
+                """;
+
+            using var reader = new XmlTextReader(new StringReader(xshd));
+            _editor.SyntaxHighlighting = HighlightingLoader.Load(reader, HighlightingManager.Instance);
         }
-        catch
+        catch (Exception ex)
         {
-            return HighlightingManager.Instance.GetDefinition("C#");
+            _api.Log.Error($"[Scripting] Highlighting failed: {ex.Message}");
         }
     }
-
-    private static ICSharpCode.AvalonEdit.Highlighting.SimpleHighlightingBrush MakeHighlightBrush(byte r, byte g, byte b)
-        => new(Color.FromRgb(r, g, b));
 }

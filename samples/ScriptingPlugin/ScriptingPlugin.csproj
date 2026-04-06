@@ -21,4 +21,8 @@
     <PackageReference Include="AvalonEdit" Version="6.3.0.90" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="CSharpDark.xshd" />
+  </ItemGroup>
+
 </Project>
