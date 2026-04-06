@@ -22,9 +22,9 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        LoadDecompilerHighlighting();
         if (VM.ThemeColors.Count > 0)
             ApplyThemeColors(VM.ThemeColors);
+        LoadDecompilerHighlighting();
         VM.Instructions.CollectionChanged += (_, _) => RefreshDisasmView();
         VM.DisasmAppend += (instrs, trimTop) =>
         {
@@ -128,14 +128,9 @@ public partial class MainWindow : Window
 
     private void LoadDecompilerHighlighting()
     {
-        var asm = typeof(MainWindow).Assembly;
-        using var stream = asm.GetManifestResourceStream("KernelFlirt.UI.Themes.CDecompiler.xshd");
-        if (stream != null)
-        {
-            using var reader = new XmlTextReader(stream);
-            DecompilerOutput.SyntaxHighlighting = HighlightingLoader.Load(reader, HighlightingManager.Instance);
-        }
-        DecompilerOutput.LineNumbersForeground = new SolidColorBrush(Color.FromRgb(0x60, 0x60, 0x60));
+        ApplyDecompilerHighlighting();
+        DecompilerOutput.SetResourceReference(ICSharpCode.AvalonEdit.TextEditor.BackgroundProperty, "ScriptBgBrush");
+        DecompilerOutput.SetResourceReference(ICSharpCode.AvalonEdit.TextEditor.ForegroundProperty, "ScriptFgBrush");
 
         // Context menu
         var ctx = new ContextMenu();
@@ -154,6 +149,97 @@ public partial class MainWindow : Window
         ctx.Items.Add(new Separator());
         ctx.Items.Add(copyAllItem);
         DecompilerOutput.ContextMenu = ctx;
+    }
+
+    private void ApplyDecompilerHighlighting()
+    {
+        try
+        {
+            var dict = Application.Current.Resources.MergedDictionaries[0];
+            string Col(string key, string fallback)
+            {
+                if (dict.Contains(key) && dict[key] is SolidColorBrush b)
+                    return $"#{b.Color.R:X2}{b.Color.G:X2}{b.Color.B:X2}";
+                return fallback;
+            }
+
+            var keyword = Col("ScriptKeywordBrush", "#569CD6");
+            var control = Col("ScriptControlBrush", "#C586C0");
+            var type    = Col("ScriptTypeBrush",    "#4EC9B0");
+            var str     = Col("ScriptStringBrush",  "#CE9178");
+            var comment = Col("ScriptCommentBrush", "#6A9955");
+            var number  = Col("ScriptNumberBrush",  "#B5CEA8");
+            var method  = Col("ScriptMethodBrush",  "#DCDCAA");
+            var punct   = Col("ScriptPunctuationBrush", "#DCDCDC");
+            var fg      = Col("ScriptFgBrush",      "#DCDCDC");
+
+            var xshd = $"""
+                <?xml version="1.0"?>
+                <SyntaxDefinition name="C-Themed" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+                  <Color name="Comment"       foreground="{comment}" />
+                  <Color name="String"        foreground="{str}" />
+                  <Color name="Preprocessor"  foreground="{control}" />
+                  <Color name="Punctuation"   foreground="{punct}" />
+                  <Color name="NumberLiteral" foreground="{number}" />
+                  <Color name="Keywords"      foreground="{keyword}" fontWeight="bold" />
+                  <Color name="ControlFlow"   foreground="{control}" fontWeight="bold" />
+                  <Color name="Types"         foreground="{type}" />
+                  <Color name="MethodCall"    foreground="{method}" />
+                  <Color name="Default"       foreground="{fg}" />
+
+                  <RuleSet ignoreCase="false">
+                    <Span color="Comment" begin="//" />
+                    <Span color="Comment" multiline="true" begin="/\*" end="\*/" />
+                    <Span color="String">
+                      <Begin>"</Begin>
+                      <End>"</End>
+                      <RuleSet><Span begin="\\" end="." /></RuleSet>
+                    </Span>
+                    <Span color="String">
+                      <Begin>'</Begin>
+                      <End>'</End>
+                      <RuleSet><Span begin="\\" end="." /></RuleSet>
+                    </Span>
+                    <Span color="Preprocessor" begin="\#" />
+
+                    <Rule color="NumberLiteral">\b0[xX][0-9a-fA-F]+[uUlL]*\b</Rule>
+                    <Rule color="NumberLiteral">\b[0-9][0-9]*\.?[0-9]*([eE][+-]?[0-9]+)?[fFdD]?\b</Rule>
+
+                    <Keywords color="ControlFlow">
+                      <Word>if</Word><Word>else</Word><Word>switch</Word><Word>case</Word>
+                      <Word>for</Word><Word>while</Word><Word>do</Word>
+                      <Word>break</Word><Word>continue</Word><Word>return</Word>
+                      <Word>goto</Word><Word>default</Word>
+                    </Keywords>
+                    <Keywords color="Types">
+                      <Word>void</Word><Word>int</Word><Word>unsigned</Word><Word>signed</Word>
+                      <Word>char</Word><Word>short</Word><Word>long</Word><Word>float</Word><Word>double</Word>
+                      <Word>bool</Word><Word>struct</Word><Word>union</Word><Word>enum</Word><Word>typedef</Word>
+                      <Word>const</Word><Word>static</Word><Word>extern</Word><Word>volatile</Word>
+                      <Word>inline</Word><Word>register</Word><Word>auto</Word><Word>restrict</Word>
+                      <Word>size_t</Word><Word>int8_t</Word><Word>int16_t</Word><Word>int32_t</Word><Word>int64_t</Word>
+                      <Word>uint8_t</Word><Word>uint16_t</Word><Word>uint32_t</Word><Word>uint64_t</Word>
+                      <Word>BYTE</Word><Word>WORD</Word><Word>DWORD</Word><Word>QWORD</Word>
+                      <Word>BOOL</Word><Word>HANDLE</Word><Word>PVOID</Word><Word>LPVOID</Word>
+                      <Word>HMODULE</Word><Word>FARPROC</Word><Word>LPCSTR</Word><Word>LPSTR</Word>
+                      <Word>LPCWSTR</Word><Word>LPWSTR</Word><Word>NTSTATUS</Word>
+                      <Word>NULL</Word><Word>TRUE</Word><Word>FALSE</Word>
+                    </Keywords>
+                    <Keywords color="Keywords">
+                      <Word>sizeof</Word><Word>typeof</Word><Word>alignof</Word>
+                      <Word>__cdecl</Word><Word>__stdcall</Word><Word>__fastcall</Word><Word>__thiscall</Word>
+                      <Word>__declspec</Word><Word>__attribute__</Word>
+                    </Keywords>
+                    <Rule color="MethodCall">[\w]+(?=\s*\()</Rule>
+                    <Rule color="Punctuation">[()\[\];,.*&amp;!~+-/%&lt;&gt;=|^?:]</Rule>
+                  </RuleSet>
+                </SyntaxDefinition>
+                """;
+
+            using var reader = new XmlTextReader(new System.IO.StringReader(xshd));
+            DecompilerOutput.SyntaxHighlighting = HighlightingLoader.Load(reader, HighlightingManager.Instance);
+        }
+        catch { /* fallback: no highlighting */ }
     }
 
     private void UpdateDecompilerText()
@@ -1261,6 +1347,9 @@ public partial class MainWindow : Window
         // Update plugin wrapper scopes with new plugin brush values
         foreach (var wrapper in _pluginWrappers)
             ApplyPluginResources(wrapper);
+
+        // Re-apply decompiler highlighting with new theme colors
+        ApplyDecompilerHighlighting();
     }
 
     /// <summary>

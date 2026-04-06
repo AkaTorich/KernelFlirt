@@ -860,8 +860,6 @@
                     <ae:TextEditor x:Name="DecompilerOutput"
                                    IsReadOnly="True"
                                    FontFamily="Consolas" FontSize="13"
-                                   Background="{DynamicResource BgBrush}"
-                                   Foreground="{DynamicResource FgBrush}"
                                    BorderBrush="{DynamicResource BorderBrush}"
                                    VerticalScrollBarVisibility="Auto"
                                    HorizontalScrollBarVisibility="Auto"
