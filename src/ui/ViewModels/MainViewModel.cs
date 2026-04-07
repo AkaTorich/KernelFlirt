@@ -148,6 +148,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _exceptionFilter = "";
     public RangeObservableCollection<SectionEntry> FilteredSections { get; } = [];
     private List<SectionEntry> _allSections = [];
+    public IReadOnlyList<SectionEntry> AllSections => _allSections;
     private readonly Dictionary<string, List<SectionEntry>> _pluginSections = new();
     [ObservableProperty] private string _sectionFilter = "";
 

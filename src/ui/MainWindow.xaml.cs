@@ -26,6 +26,8 @@ public partial class MainWindow : Window
             ApplyThemeColors(VM.ThemeColors);
         LoadDecompilerHighlighting();
         VM.Instructions.CollectionChanged += (_, _) => RefreshDisasmView();
+        VM.FilteredSections.CollectionChanged += (_, _) => RefreshNavBar();
+        NavBar.SizeChanged += (_, _) => RefreshNavBar();
         VM.DisasmAppend += (instrs, trimTop) =>
         {
             DisasmControl.AppendInstructions(instrs);
@@ -242,6 +244,215 @@ public partial class MainWindow : Window
         catch { /* fallback: no highlighting */ }
     }
 
+    // ── Navigation Bar (memory map) ─────────────────────────────────────
+
+    // Cached mapping: pixel X → virtual address (for click navigation)
+    private readonly List<(double X, double Width, ulong Address, string Name)> _navBarRegions = new();
+
+    /// <summary>
+    /// Rebuild the navigation bar from current modules and sections.
+    /// Called after modules/sections are loaded and on break state.
+    /// </summary>
+    internal void RefreshNavBar()
+    {
+        NavBar.Children.Clear();
+        _navBarRegions.Clear();
+
+        var modules = VM.Modules.ToList();
+        if (modules.Count == 0) return;
+
+        // Only the main module (first in list = debugged executable)
+        var mainMod = modules[0];
+        ulong minAddr = mainMod.BaseAddress;
+        ulong maxAddr = mainMod.BaseAddress + mainMod.Size;
+        ulong totalSpan = maxAddr - minAddr;
+        if (totalSpan == 0) return;
+
+        var sections = VM.AllSections
+            .Where(s => s.VirtualAddress >= minAddr && s.VirtualAddress < maxAddr && s.VirtualSize > 0)
+            .OrderBy(s => s.VirtualAddress)
+            .ToList();
+        if (sections.Count == 0) return;
+
+        double barWidth = NavBar.ActualWidth;
+        if (barWidth < 10) barWidth = 1400;
+        double barHeight = NavBar.Height;
+
+        // Pack sections side-by-side, sqrt-scaled so small sections stay visible
+        double totalWeight = 0;
+        foreach (var s in sections) totalWeight += Math.Sqrt(s.VirtualSize);
+        if (totalWeight < 0.001) return;
+
+        double xPos = 0;
+        foreach (var sec in sections)
+        {
+            double w = Math.Max(6, Math.Sqrt(sec.VirtualSize) / totalWeight * barWidth);
+
+            Brush brush;
+            uint ch = sec.Characteristics;
+            bool isCode = (ch & 0x00000020) != 0;    // IMAGE_SCN_CNT_CODE
+            bool isData = (ch & 0x00000040) != 0;    // IMAGE_SCN_CNT_INITIALIZED_DATA
+            bool isUninit = (ch & 0x00000080) != 0;   // IMAGE_SCN_CNT_UNINITIALIZED_DATA
+            bool isExec = (ch & 0x20000000) != 0;     // IMAGE_SCN_MEM_EXECUTE
+            bool isWrite = (ch & 0x80000000) != 0;    // IMAGE_SCN_MEM_WRITE
+
+            if (isCode || isExec)
+                brush = new SolidColorBrush(Color.FromRgb(0x26, 0x6C, 0xC5)); // blue = code
+            else if (isWrite && isData)
+                brush = new SolidColorBrush(Color.FromRgb(0x4E, 0x9A, 0x4E)); // green = writable data
+            else if (isData)
+                brush = new SolidColorBrush(Color.FromRgb(0x8B, 0x8B, 0x4E)); // yellow-ish = readonly data
+            else if (isUninit)
+                brush = new SolidColorBrush(Color.FromRgb(0x6E, 0x4E, 0x8B)); // purple = bss
+            else
+                brush = new SolidColorBrush(Color.FromRgb(0x50, 0x50, 0x50)); // gray = other
+
+            var rect = new System.Windows.Shapes.Rectangle
+            {
+                Width = w,
+                Height = barHeight,
+                Fill = brush,
+                ToolTip = $"{sec.ModuleName} — {sec.Name}\n0x{sec.VirtualAddress:X} size 0x{sec.VirtualSize:X}\n{sec.Flags}"
+            };
+            Canvas.SetLeft(rect, xPos);
+            Canvas.SetTop(rect, 0);
+            NavBar.Children.Add(rect);
+
+            _navBarRegions.Add((xPos, w, sec.VirtualAddress, $"{sec.ModuleName}:{sec.Name}"));
+            xPos += w;
+        }
+
+        // Helper: map a virtual address to pixel X in packed layout
+        double AddrToX(ulong addr)
+        {
+            double px = 0;
+            foreach (var s in sections)
+            {
+                double sw = Math.Max(6, Math.Sqrt(s.VirtualSize) / totalWeight * barWidth);
+                if (addr >= s.VirtualAddress && addr < s.VirtualAddress + s.VirtualSize)
+                    return px + (double)(addr - s.VirtualAddress) / s.VirtualSize * sw;
+                px += sw;
+            }
+            return -1;
+        }
+
+        // Draw RIP indicator (triangle + line) — real RIP from registers, not disasm cursor
+        var ripReg = VM.Registers.FirstOrDefault(r => r.Name == "RIP" || r.Name == "EIP");
+        var rip = ripReg?.Value ?? 0;
+        double ripX = AddrToX(rip);
+        if (ripX >= 0)
+        {
+            // Vertical line
+            var ripLine = new System.Windows.Shapes.Line
+            {
+                X1 = ripX, X2 = ripX,
+                Y1 = 0, Y2 = barHeight,
+                Stroke = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0x00)),
+                StrokeThickness = 2
+            };
+            NavBar.Children.Add(ripLine);
+
+            // Triangle marker on top
+            var triangle = new System.Windows.Shapes.Polygon
+            {
+                Fill = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0x00)),
+                Points = new PointCollection
+                {
+                    new System.Windows.Point(ripX, 0),
+                    new System.Windows.Point(ripX - 5, 6),
+                    new System.Windows.Point(ripX + 5, 6)
+                },
+                ToolTip = $"RIP = 0x{rip:X16}"
+            };
+            NavBar.Children.Add(triangle);
+        }
+
+        // Draw breakpoint markers
+        foreach (var bp in VM.Breakpoints)
+        {
+            double bpX = AddrToX(bp.Address);
+            if (bpX < 0) continue;
+            var bpLine = new System.Windows.Shapes.Line
+            {
+                X1 = bpX, X2 = bpX,
+                Y1 = 0, Y2 = barHeight,
+                Stroke = new SolidColorBrush(Color.FromRgb(0xFF, 0x30, 0x30)),
+                StrokeThickness = 1.5
+            };
+            NavBar.Children.Add(bpLine);
+        }
+
+        // Draw navigation cursor (white triangle pointing up from bottom)
+        var cursor = VM.DisasmAddress;
+        if (cursor != rip)
+        {
+            double curX = AddrToX(cursor);
+            if (curX >= 0)
+            {
+                var curTriangle = new System.Windows.Shapes.Polygon
+                {
+                    Fill = Brushes.White,
+                    Points = new PointCollection
+                    {
+                        new System.Windows.Point(curX, barHeight),
+                        new System.Windows.Point(curX - 4, barHeight - 6),
+                        new System.Windows.Point(curX + 4, barHeight - 6)
+                    },
+                    ToolTip = $"Cursor = 0x{cursor:X16}"
+                };
+                NavBar.Children.Add(curTriangle);
+            }
+        }
+    }
+
+    private void NavBar_MouseMove(object sender, MouseEventArgs e)
+    {
+        var pos = e.GetPosition(NavBar);
+        var sections = VM.AllSections;
+        foreach (var (x, w, secAddr, name) in _navBarRegions)
+        {
+            if (pos.X >= x && pos.X <= x + w)
+            {
+                var sec = sections.FirstOrDefault(s => s.VirtualAddress == secAddr);
+                if (sec != null && w > 0)
+                {
+                    double ratio = (pos.X - x) / w;
+                    ulong addr = secAddr + (ulong)(ratio * sec.VirtualSize);
+                    NavBar.ToolTip = $"{sec.ModuleName}:{sec.Name}\n0x{addr:X16}\nSection: 0x{sec.VirtualAddress:X} — 0x{sec.VirtualAddress + sec.VirtualSize:X}\n{sec.Flags}";
+                }
+                else
+                    NavBar.ToolTip = name;
+                return;
+            }
+        }
+        NavBar.ToolTip = null;
+    }
+
+    private void NavBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        var pos = e.GetPosition(NavBar);
+        var sections = VM.AllSections;
+        foreach (var (x, w, secAddr, name) in _navBarRegions)
+        {
+            if (pos.X >= x && pos.X <= x + w)
+            {
+                // Find section to get its size
+                var sec = sections.FirstOrDefault(s => s.VirtualAddress == secAddr);
+                if (sec != null && w > 0)
+                {
+                    double ratio = (pos.X - x) / w;
+                    ulong targetAddr = secAddr + (ulong)(ratio * sec.VirtualSize);
+                    VM.NavigateDisasmTo(targetAddr);
+                }
+                else
+                {
+                    VM.NavigateDisasmTo(secAddr);
+                }
+                return;
+            }
+        }
+    }
+
     private void UpdateDecompilerText()
     {
         DecompilerOutput.Text = VM.DecompiledCode ?? "";
@@ -302,6 +513,7 @@ public partial class MainWindow : Window
     {
         var rip = VM.Registers.FirstOrDefault(r => r.Name == VM.IpRegName)?.Value;
         DisasmControl.SetInstructions(VM.Instructions, rip);
+        RefreshNavBar();
     }
 
     /* ================================================================== */
