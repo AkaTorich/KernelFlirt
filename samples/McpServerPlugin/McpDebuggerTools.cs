@@ -319,6 +319,23 @@ public class McpDebuggerTools
              Obj(Prop("address", "string", "Hex base address of the PE")),
              required: ["address"]),
 
+        // ── Scripting ──────────────────────────────────────────────────────
+        Tool("execute_script",
+             "Execute a C# script in the Scripting plugin REPL. Variables persist between calls. " +
+             "Use the 'scripting_reference' tool first to learn the API. " +
+             "IMPORTANT: After decompiling, unnamed functions appear as 'module.exe+0xOFFSET'. Use this tool to name them: " +
+             "var b = api.Symbols.GetModules()[0].BaseAddress; api.Symbols.RegisterFunction(b + 0xOFFSET, \"MeaningfulName\"); api.UI.RefreshDisassembly(); " +
+             "Names will appear in disassembly and Graph View. " +
+             "Available shortcuts: api, print(), ReadMem(), WriteMem(), ReadString(), ReadPtr(), Reg(), RIP, RSP, Sym(), Addr(). " +
+             "Full API via api.Memory.*, api.Breakpoints.*, api.Symbols.*, api.Process.*, api.UI.*, api.Log.*",
+             Obj(Prop("code", "string", "C# code to execute")),
+             required: ["code"]),
+
+        Tool("scripting_reference",
+             "Get the complete C# scripting API reference — all available shortcuts, full API methods, event handlers, and code examples. " +
+             "Call this BEFORE writing any script to understand what's available.",
+             Obj()),
+
         Tool("dump_exports",
              "Parse the Export Directory of a PE/DLL at the given base address. " +
              "Shows all exported function names, ordinals, and RVAs.",
@@ -489,6 +506,10 @@ public class McpDebuggerTools
                 "read_note"                 => ExecReadNote(root),
                 "read_all_notes"            => ExecReadAllNotes(),
                 "remove_note"               => ExecRemoveNote(root),
+
+                // Scripting
+                "execute_script"            => ExecScript(root).GetAwaiter().GetResult(),
+                "scripting_reference"       => ExecScriptingReference(),
 
                 _ => $"Unknown tool: {toolName}"
             };
@@ -1888,4 +1909,142 @@ public class McpDebuggerTools
         OnUi(() => _api.UI.RefreshDisassembly());
         return $"Note removed at 0x{addr:X}";
     }
+
+    // ── Scripting ──────────────────────────────────────────────────────────
+
+    private async Task<string> ExecScript(JsonElement a)
+    {
+        var code = a.GetProperty("code").GetString()!;
+        var executor = OnUi(() => _api.UI.GetPluginData("ScriptExecute") as Func<string, Task<string>>);
+        if (executor == null)
+            return "Error: Scripting plugin not loaded or disabled.";
+        return await executor(code);
+    }
+
+    private string ExecScriptingReference() => ScriptingRef;
+
+    private const string ScriptingRef = """
+# KernelFlirt Scripting Reference
+
+C# REPL with full debugger API access. Variables persist between executions.
+
+## Shortcuts (global variables)
+
+| Shortcut | Description |
+|----------|-------------|
+| `api` | Full `IDebuggerApi` |
+| `print("text")` | Print to output |
+| `ReadMem(addr, size)` | Read bytes → `byte[]?` |
+| `WriteMem(addr, data)` | Write bytes → `bool` |
+| `ReadString(addr)` | ASCII string (max 256) |
+| `ReadString(addr, 1024)` | ASCII with custom limit |
+| `ReadWString(addr)` | Unicode (UTF-16) string |
+| `ReadPtr(addr)` | Read pointer (8/4 bytes) |
+| `ReadU32(addr)` / `ReadU64(addr)` | Read uint32/uint64 |
+| `Reg("RAX")` | Register value by name |
+| `RIP` / `RSP` | Instruction/stack pointer |
+| `Sym(addr)` | Symbol name (null if none) |
+| `Addr("module!func")` | Address by symbol name |
+
+## Full API
+
+### State
+`api.IsConnected`, `api.IsBreakState`, `api.TargetPid`, `api.SelectedThreadId`, `api.Is32Bit`
+
+### Memory (`api.Memory.*`)
+`ReadMemory(pid, addr, size)`, `WriteMemory(pid, addr, data)`, `ReadRegisters(pid, tid)`,
+`WriteRip(pid, tid, rip)`, `WriteRipAndRsp(tid, rip, rsp)`,
+`ProtectMemory(pid, addr, size, prot)`, `AllocateMemory(pid, size)`, `FreeMemory(pid, addr)`
+
+### Breakpoints (`api.Breakpoints.*`)
+`SetBreakpoint(pid, tid, addr, type)` → `uint?`, `RemoveBreakpoint(handle)`, `GetAll()`,
+`ToggleBreakpoint(addr, type)` — via UI (updates list + disasm)
+Types: `Software`, `Hardware`, `HwWrite`, `HwReadWrite`, `Memory`
+
+### Symbols (`api.Symbols.*`)
+`ResolveAddress(addr)` → string?, `ResolveNameToAddress(name)` → ulong, `GetModules()`, `GetKernelModules()`,
+`RegisterFunction(addr, name, size)` — register a user-defined function name at address. Args: ulong address, string name, uint size (size in bytes — MUST specify to avoid overlapping with next function).
+`GetRegisteredFunctions()` → list of all named functions
+
+### UI (`api.UI.*`)
+`NavigateDisassembly(addr)`, `SetAddressAnnotation(addr, text)`, `GetAllAnnotations()`,
+`RefreshDisassembly()`, `DecompileFunction(addr)`, `GetDecompiledCode()`, `DisasmGoBack()`
+
+### Execution control
+`api.Continue()`, `api.SingleStep()`, `api.StepOver()`, `api.StepOut()`,
+`api.RunToCursor(addr)`, `api.SkipInstruction()`, `api.Pause()`
+
+### Events
+`api.OnDebugEvent`, `api.OnBreakStateEntered`, `api.OnBeforeRun`
+`api.OnDebugEventFilter` — return true to suppress UI break
+
+## Examples
+
+```csharp
+// Show registers
+var regs = api.Memory.ReadRegisters(api.TargetPid, api.SelectedThreadId);
+foreach (var r in regs.Where(r => !r.IsFlag))
+    print($"{r.Name,-4} = 0x{r.Value:X016}");
+```
+
+```csharp
+// Logging breakpoint
+var target = Addr("ws2_32!send");
+api.OnDebugEventFilter += evt => {
+    if (evt.Address != target) return false;
+    var buf = ReadPtr(Reg("RDX"));
+    var len = (int)Reg("R8");
+    print($"send({len}): {Encoding.ASCII.GetString(ReadMem(buf, (uint)Math.Min(len, 128)))}");
+    return false;
+};
+api.Breakpoints.SetBreakpoint(api.TargetPid, 0, target, PluginBreakpointType.Software);
+```
+
+```csharp
+// Walk linked list
+var head = Addr("ntdll!PebLdr") + 0x10;
+var entry = ReadPtr(head);
+while (entry != head && entry != 0) {
+    print($"0x{ReadPtr(entry + 0x30):X} {ReadWString(ReadPtr(entry + 0x48 + 8))}");
+    entry = ReadPtr(entry);
+}
+```
+
+```csharp
+// Dump vtable
+var vt = ReadPtr(Reg("RCX"));
+for (int i = 0; i < 20; i++) {
+    var f = ReadPtr(vt + (ulong)(i * 8));
+    print($"[{i,2}] 0x{f:X} {Sym(f) ?? "???"}");
+}
+```
+
+## IMPORTANT: Naming unnamed functions
+
+After decompiling, unnamed functions appear as `rc4_strings.exe+0x1470` (module+offset) in disassembly and decompiled code.
+You SHOULD name them based on what they do. Use `RegisterFunction` to assign meaningful names.
+This makes all subsequent decompilation and disassembly output human-readable.
+
+**Always do this after analyzing a function's purpose via decompile.**
+
+```csharp
+// Name functions with SIZE — critical to avoid overlapping names
+var b = api.Symbols.GetModules()[0].BaseAddress;
+api.Symbols.RegisterFunction(b + 0x1000, "RC4_Init", 0x120);
+api.Symbols.RegisterFunction(b + 0x1120, "RC4_Crypt", 0x190);
+api.Symbols.RegisterFunction(b + 0x1320, "PrintString", 0x50);
+api.Symbols.RegisterFunction(b + 0x1470, "DecryptRC4String", 0x100);
+api.UI.RefreshDisassembly();
+```
+
+**CRITICAL: Always specify the size parameter!** Without size, RegisterFunction uses a default
+large range and neighboring functions will show as `FuncName+0xOffset` instead of their own name.
+Calculate size as: next function address - this function address.
+
+After naming, the function name will appear in the disassembly view and in the Graph View plugin (CFG).
+The decompiler (RetDec) may not pick up the new name, but the disassembly and graph will.
+This helps the user navigate and understand the code structure.
+
+Workflow: decompile → understand what function does → name it with size via RegisterFunction → RefreshDisassembly.
+""";
 }

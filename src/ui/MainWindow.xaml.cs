@@ -319,6 +319,28 @@ public partial class MainWindow : Window
             NavBar.Children.Add(rect);
 
             _navBarRegions.Add((xPos, w, sec.VirtualAddress, $"{sec.ModuleName}:{sec.Name}"));
+
+            // Section name label (only if wide enough to fit)
+            if (w > 20)
+            {
+                var label = new TextBlock
+                {
+                    Text = sec.Name,
+                    FontSize = 9,
+                    FontFamily = new FontFamily("Consolas"),
+                    Foreground = new SolidColorBrush(Color.FromArgb(0xCC, 0xFF, 0xFF, 0xFF)),
+                    IsHitTestVisible = false
+                };
+                label.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                double labelW = label.DesiredSize.Width;
+                if (labelW <= w - 2)
+                {
+                    Canvas.SetLeft(label, xPos + 3);
+                    Canvas.SetTop(label, (barHeight - label.DesiredSize.Height) / 2);
+                    NavBar.Children.Add(label);
+                }
+            }
+
             xPos += w;
         }
 
@@ -380,6 +402,26 @@ public partial class MainWindow : Window
                 StrokeThickness = 1.5
             };
             NavBar.Children.Add(bpLine);
+        }
+
+        // Draw bookmark markers (orange diamonds)
+        foreach (var (addr, note) in VM.AddressAnnotations)
+        {
+            double bmX = AddrToX(addr);
+            if (bmX < 0) continue;
+            var diamond = new System.Windows.Shapes.Polygon
+            {
+                Fill = new SolidColorBrush(Color.FromRgb(0xFF, 0xB3, 0x47)),
+                Points = new PointCollection
+                {
+                    new System.Windows.Point(bmX, barHeight / 2 - 4),
+                    new System.Windows.Point(bmX + 4, barHeight / 2),
+                    new System.Windows.Point(bmX, barHeight / 2 + 4),
+                    new System.Windows.Point(bmX - 4, barHeight / 2)
+                },
+                ToolTip = $"0x{addr:X}\n{note}"
+            };
+            NavBar.Children.Add(diamond);
         }
 
         // Draw navigation cursor (white triangle pointing up from bottom)

@@ -76,8 +76,9 @@ public class McpHttpServer
         var resp = ctx.Response;
 
         resp.Headers.Add("Access-Control-Allow-Origin",  "*");
-        resp.Headers.Add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-        resp.Headers.Add("Access-Control-Allow-Headers", "Content-Type, Accept");
+        resp.Headers.Add("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+        resp.Headers.Add("Access-Control-Allow-Headers", "Content-Type, Accept, Mcp-Session-Id, MCP-Protocol-Version");
+        resp.Headers.Add("Access-Control-Expose-Headers", "Mcp-Session-Id");
 
         if (req.HttpMethod == "OPTIONS")
         {
@@ -87,9 +88,29 @@ public class McpHttpServer
         }
 
         var path = req.Url?.AbsolutePath ?? "/";
+        OnActivity?.Invoke($"[{req.HttpMethod}] {path}");
 
-        if (req.HttpMethod == "GET"  && path == "/sse")     await HandleSse(ctx);
+        // Streamable HTTP (MCP 2025-06-18) — single /mcp endpoint
+        if (path == "/mcp")
+        {
+            if (req.HttpMethod == "POST") await HandleMcpPost(ctx);
+            else if (req.HttpMethod == "DELETE") { resp.StatusCode = 204; resp.Close(); }
+            else { resp.StatusCode = 405; resp.Close(); }
+        }
+        // Legacy SSE transport (deprecated but kept for backwards compat)
+        else if (req.HttpMethod == "GET"  && path == "/sse")     await HandleSse(ctx);
         else if (req.HttpMethod == "POST" && path == "/message") await HandleMessage(ctx);
+        // OAuth endpoints (dummy auto-approve for localhost)
+        else if (path == "/.well-known/oauth-authorization-server" || path == "/.well-known/oauth-authorization-server/mcp")
+            await HandleOAuthMetadata(ctx);
+        else if (path == "/.well-known/oauth-protected-resource" || path == "/.well-known/oauth-protected-resource/mcp")
+            await HandleProtectedResourceMetadata(ctx);
+        else if (path == "/register" && req.HttpMethod == "POST")
+            await HandleOAuthRegister(ctx);
+        else if (path == "/authorize")
+            await HandleOAuthAuthorize(ctx);
+        else if (path == "/token" && req.HttpMethod == "POST")
+            await HandleOAuthToken(ctx);
         else { resp.StatusCode = 404; resp.Close(); }
     }
 
@@ -156,6 +177,183 @@ public class McpHttpServer
             if (response != null)
                 session.Writer.TryWrite(response);
         });
+    }
+
+    // ── Dummy OAuth (auto-approve for localhost) ────────────────────────────
+
+    private readonly ConcurrentDictionary<string, string> _oauthClients = new(); // client_id → redirect_uri
+    private readonly ConcurrentDictionary<string, string> _oauthCodes = new();   // code → client_id
+
+    private async Task HandleOAuthMetadata(HttpListenerContext ctx)
+    {
+        var baseUrl = "http://localhost:13371";
+        var meta = JsonSerializer.Serialize(new
+        {
+            issuer = baseUrl,
+            authorization_endpoint = $"{baseUrl}/authorize",
+            token_endpoint = $"{baseUrl}/token",
+            registration_endpoint = $"{baseUrl}/register",
+            response_types_supported = new[] { "code" },
+            grant_types_supported = new[] { "authorization_code", "refresh_token" },
+            token_endpoint_auth_methods_supported = new[] { "none" },
+            code_challenge_methods_supported = new[] { "S256" },
+            scopes_supported = new[] { "mcp" }
+        });
+        await WriteJson(ctx, meta);
+        OnActivity?.Invoke("[OAuth] metadata served");
+    }
+
+    private async Task HandleProtectedResourceMetadata(HttpListenerContext ctx)
+    {
+        var baseUrl = "http://localhost:13371";
+        var meta = JsonSerializer.Serialize(new
+        {
+            resource = $"{baseUrl}/mcp",
+            authorization_servers = new[] { baseUrl },
+            bearer_methods_supported = new[] { "header" }
+        });
+        await WriteJson(ctx, meta);
+    }
+
+    private async Task HandleOAuthRegister(HttpListenerContext ctx)
+    {
+        string body;
+        using (var reader = new StreamReader(ctx.Request.InputStream, ctx.Request.ContentEncoding))
+            body = await reader.ReadToEndAsync();
+
+        var node = JsonNode.Parse(body);
+        var redirectUris = node?["redirect_uris"]?.AsArray();
+        var redirectUri = redirectUris?[0]?.GetValue<string>() ?? "http://localhost";
+
+        var clientId = Guid.NewGuid().ToString("N")[..16];
+        _oauthClients[clientId] = redirectUri;
+
+        var result = JsonSerializer.Serialize(new
+        {
+            client_id = clientId,
+            client_id_issued_at = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            token_endpoint_auth_method = "none",
+            grant_types = new[] { "authorization_code", "refresh_token" },
+            response_types = new[] { "code" },
+            redirect_uris = new[] { redirectUri }
+        });
+        ctx.Response.StatusCode = 201;
+        await WriteJson(ctx, result);
+        OnActivity?.Invoke($"[OAuth] client registered: {clientId}");
+    }
+
+    private async Task HandleOAuthAuthorize(HttpListenerContext ctx)
+    {
+        var qs = ctx.Request.QueryString;
+        var clientId = qs["client_id"] ?? "";
+        var redirectUri = qs["redirect_uri"] ?? "";
+        var state = qs["state"] ?? "";
+        var codeChallenge = qs["code_challenge"] ?? "";
+
+        // Auto-approve: generate code and redirect immediately
+        var code = Guid.NewGuid().ToString("N");
+        _oauthCodes[code] = clientId;
+
+        var separator = redirectUri.Contains('?') ? "&" : "?";
+        var location = $"{redirectUri}{separator}code={code}&state={Uri.EscapeDataString(state)}";
+
+        ctx.Response.StatusCode = 302;
+        ctx.Response.Headers.Add("Location", location);
+        ctx.Response.Close();
+        OnActivity?.Invoke($"[OAuth] auto-approved, redirecting");
+    }
+
+    private async Task HandleOAuthToken(HttpListenerContext ctx)
+    {
+        string body;
+        using (var reader = new StreamReader(ctx.Request.InputStream, ctx.Request.ContentEncoding))
+            body = await reader.ReadToEndAsync();
+
+        // Issue a dummy token
+        var token = Convert.ToBase64String(Guid.NewGuid().ToByteArray()).TrimEnd('=');
+        var result = JsonSerializer.Serialize(new
+        {
+            access_token = token,
+            token_type = "Bearer",
+            expires_in = 86400,
+            refresh_token = Convert.ToBase64String(Guid.NewGuid().ToByteArray()).TrimEnd('=')
+        });
+        await WriteJson(ctx, result);
+        OnActivity?.Invoke("[OAuth] token issued");
+    }
+
+    private async Task WriteJson(HttpListenerContext ctx, string json)
+    {
+        ctx.Response.StatusCode = 200;
+        ctx.Response.ContentType = "application/json";
+        var data = Encoding.UTF8.GetBytes(json);
+        ctx.Response.ContentLength64 = data.Length;
+        await ctx.Response.OutputStream.WriteAsync(data);
+        ctx.Response.Close();
+    }
+
+    // ── Streamable HTTP (MCP 2025-06-18) ────────────────────────────────────
+
+    private string? _mcpSessionId;
+
+    private async Task HandleMcpPost(HttpListenerContext ctx)
+    {
+        string body;
+        using (var reader = new StreamReader(ctx.Request.InputStream, ctx.Request.ContentEncoding))
+            body = await reader.ReadToEndAsync();
+
+        // Parse to check if it's a request (has id) or notification (no id)
+        JsonNode? node;
+        try { node = JsonNode.Parse(body); }
+        catch { ctx.Response.StatusCode = 400; ctx.Response.Close(); return; }
+
+        var method = node?["method"]?.GetValue<string>() ?? "";
+        var hasId = node?["id"] != null;
+
+        // Handle initialize — create session
+        if (method == "initialize")
+        {
+            _mcpSessionId = Guid.NewGuid().ToString();
+            var response = await ProcessRpc(body);
+            ctx.Response.StatusCode = 200;
+            ctx.Response.ContentType = "application/json";
+            ctx.Response.Headers.Add("Mcp-Session-Id", _mcpSessionId);
+            var data = Encoding.UTF8.GetBytes(response ?? "{}");
+            ctx.Response.ContentLength64 = data.Length;
+            await ctx.Response.OutputStream.WriteAsync(data);
+            ctx.Response.Close();
+            OnActivity?.Invoke($"[HTTP] initialize — session {_mcpSessionId[..8]}");
+            return;
+        }
+
+        // Notifications (no id) — respond 202
+        if (!hasId)
+        {
+            ctx.Response.StatusCode = 202;
+            ctx.Response.Close();
+            if (method == "initialized")
+                OnActivity?.Invoke("[HTTP] initialized");
+            return;
+        }
+
+        // Regular request — process and return JSON response
+        var result = await ProcessRpc(body);
+        ctx.Response.StatusCode = 200;
+        ctx.Response.ContentType = "application/json";
+        if (_mcpSessionId != null)
+            ctx.Response.Headers.Add("Mcp-Session-Id", _mcpSessionId);
+        var bytes = Encoding.UTF8.GetBytes(result ?? "{}");
+        ctx.Response.ContentLength64 = bytes.Length;
+        await ctx.Response.OutputStream.WriteAsync(bytes);
+        ctx.Response.Close();
+
+        if (method == "tools/call")
+        {
+            var toolName = node?["params"]?["name"]?.GetValue<string>() ?? "?";
+            OnActivity?.Invoke($"[HTTP] tools/call → {toolName}");
+        }
+        else if (method == "tools/list")
+            OnActivity?.Invoke("[HTTP] tools/list");
     }
 
     // ── JSON-RPC 2.0 dispatcher ──────────────────────────────────────────────

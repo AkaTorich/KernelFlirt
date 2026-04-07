@@ -225,7 +225,7 @@
             </Grid.RowDefinitions>
 
             <!-- Row 0: Navigation Bar (memory map) -->
-            <Canvas x:Name="NavBar" Grid.Row="0" Height="14" Background="{DynamicResource BgBrush}"
+            <Canvas x:Name="NavBar" Grid.Row="0" Height="26" Background="{DynamicResource BgBrush}"
                     SnapsToDevicePixels="True" ClipToBounds="True"
                     MouseLeftButtonDown="NavBar_MouseLeftButtonDown"
                     MouseMove="NavBar_MouseMove"
