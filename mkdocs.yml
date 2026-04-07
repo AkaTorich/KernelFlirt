@@ -1,0 +1,68 @@
+site_name: KernelFlirt
+site_description: Windows Kernel Debugger — Documentation
+site_url: https://akatorich.github.io/KernelFlirt/
+repo_url: https://github.com/AkaTorich/KernelFlirt
+repo_name: AkaTorich/KernelFlirt
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - content.code.copy
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+  font:
+    code: JetBrains Mono
+
+markdown_extensions:
+  - tables
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Quick Start: getting-started.md
+    - Architecture: architecture.md
+    - Building: building.md
+  - User Guide:
+    - Features: features.md
+    - Keyboard Shortcuts: shortcuts.md
+    - Themes: themes.md
+    - Plugins: plugins.md
+    - Navigation Bar: navbar.md
+  - SDK (EN):
+    - Plugin Development: SDK-en.md
+  - SDK (RU):
+    - Разработка плагинов: SDK-ru.md
+  - Scripting (EN):
+    - C# Scripting Reference: scripting-reference-en.md
+  - Scripting (RU):
+    - Справочник скриптинга: scripting-reference-ru.md
+  - Changelog: changelog.md

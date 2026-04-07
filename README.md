@@ -118,6 +118,20 @@ All plugins share a common SDK with access to memory, breakpoints, symbols, UI, 
 | F11 | Fullscreen |
 | Shift+F5 | Run script |
 
+## Documentation
+
+| Document | EN | RU |
+|----------|----|----|
+| **SDK & Plugin Development** | [SDK-en.md](docs/SDK-en.md) | [SDK-ru.md](docs/SDK-ru.md) |
+| **C# Scripting Reference** | [scripting-reference-en.md](docs/scripting-reference-en.md) | [scripting-reference-ru.md](docs/scripting-reference-ru.md) |
+| **Changelog** | [CHANGELOG.md](CHANGELOG.md) | |
+
+### SDK (~55 pages)
+Complete guide to building KernelFlirt plugins: project setup, all API interfaces with full parameter descriptions, data models, UI development (WPF/theming), events, threading, cross-plugin communication, persistence, anti-debug API, 4 complete example plugins, best practices.
+
+### Scripting Reference (~30 pages)
+C# REPL scripting guide: all shortcuts and API methods with parameters, 12 data models, 18+ real-world recipes (PE analysis, string decryption, IAT reconstruction, unpacker scripting, memory scanning, API tracing), tips & pitfalls.
+
 ## Building
 
 **Requirements:** Visual Studio 2022 (C++), WDK 10.0.26100.0+, .NET 9 SDK, Windows 10/11 x64
