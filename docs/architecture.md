@@ -2,17 +2,13 @@
 
 ## Overview
 
-```
-  Host machine                           VM (Windows 10, testsigning)
-┌──────────────────┐    TCP:31337    ┌──────────────────┐     IOCTL      ┌──────────────────┐
-│  KernelFlirt UI  │◄───────────────►│   KfRelay.exe    │◄──────────────►│ KernelFlirt.sys  │
-│  (WPF / .NET 9)  │  CMD+DBG ch.    │   (TCP proxy)    │  DeviceIoCtl   │ (WDM Driver)     │
-└──────────────────┘                 └──────────────────┘                └──────────────────┘
-                                     ┌──────────────────┐  SCM API
-                                     │  KfLoader.exe    │──────────────────────┘
-                                     │  (C / Console)   │  load / unload / status
-                                     └──────────────────┘
-```
+KernelFlirt is a distributed debugger split across two machines: the **host** runs the WPF user interface on .NET 9, and the **target VM** (Windows 10 with testsigning enabled) runs a kernel driver plus a small relay daemon.
+
+The host's `KernelFlirt.UI` connects to the VM over TCP on port `31337`, where `KfRelay.exe` listens for commands. The relay acts as a thin proxy — it receives JSON-RPC-style messages from the UI and translates them into `DeviceIoControl` calls against `KernelFlirt.sys`, the WDM kernel driver that does the actual memory reads/writes, breakpoint management, and debug event dispatch via an inline hook on `KdpStub`.
+
+Two logical channels are multiplexed over the single TCP connection: the **CMD channel** carries synchronous request/response traffic (read memory, set breakpoint, get registers), while the **DBG channel** streams asynchronous debug events (breakpoint hit, exception, thread start) from the driver back to the UI. This separation lets the UI pump events in parallel with active command execution without blocking.
+
+On the VM there is also `KfLoader.exe` — a small C console utility that uses the Service Control Manager (SCM) API to install, start, stop, and uninstall the kernel driver. It's only needed once per boot to get the driver loaded; after that, all communication flows through the relay.
 
 ## Components
 
