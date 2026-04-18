@@ -87,6 +87,7 @@
             <MenuItem Header="_Debug">
                 <MenuItem Header="_Attach (by PID)" Command="{Binding AttachProcessCommand}" />
                 <MenuItem Header="_Detach" Command="{Binding DetachProcessCommand}" />
+                <MenuItem Header="Re_start Sample" Command="{Binding RestartSampleCommand}" ToolTip="Relaunch the last opened sample and break at its entry point" />
                 <Separator />
                 <MenuItem Header="_Run" Command="{Binding RunCommand}" InputGestureText="F9" />
                 <MenuItem Header="_Pause" Command="{Binding PauseCommand}" InputGestureText="F12" />
@@ -174,8 +175,9 @@
 
                 <Rectangle Width="1" Fill="{DynamicResource BorderBrush}" Margin="8,2" />
 
-                <Button Content="Run" Command="{Binding RunCommand}" ToolTip="Run (F9)" Foreground="Green" />
-                <Button Content="Pause" Command="{Binding PauseCommand}" ToolTip="Pause (F12)" Foreground="Green" />
+                <Button Content="▶" Command="{Binding RunCommand}" ToolTip="Run (F9)" Foreground="Green" FontSize="14" />
+                <Button Content="🔄" Command="{Binding RestartSampleCommand}" ToolTip="Restart sample — relaunch the last opened file and break at its entry point" Foreground="Green" FontSize="14" />
+                <Button Content="⏸" Command="{Binding PauseCommand}" ToolTip="Pause (F12)" Foreground="Green" FontSize="14" />
                 <Button Content="F5" Command="{Binding ContinueExecutionCommand}" ToolTip="Continue (F5)" Foreground="Green" />
                 <Button Content="F7" Command="{Binding StepInCommand}" ToolTip="Step Into (F7)" Foreground="Green" />
                 <Button Content="F8" Command="{Binding StepOverCommand}" ToolTip="Step Over (F8)" Foreground="Green" />

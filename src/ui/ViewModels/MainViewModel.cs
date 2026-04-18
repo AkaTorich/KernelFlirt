@@ -32,6 +32,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private byte _driverOriginalByte;
     private uint _driverEntryRva;
 
+    // Last opened target — used by "Restart" to relaunch the same sample
+    private string? _lastLaunchedExePath;
+    private bool _lastLaunchedIsDriver;
+
     // Plugin address annotations — shown as "; comment" in disassembly
     private readonly Dictionary<ulong, string> _addressAnnotations = new();
     public IReadOnlyDictionary<ulong, string> AddressAnnotations => _addressAnnotations;
@@ -528,15 +532,27 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         if (dialog.IsDriverFile)
         {
+            _lastLaunchedExePath = dialog.SelectedExePath;
+            _lastLaunchedIsDriver = true;
             await OpenAndDebugDriverAsync(dialog.SelectedExePath);
             return;
         }
 
+        _lastLaunchedExePath = dialog.SelectedExePath;
+        _lastLaunchedIsDriver = false;
+        await LaunchExeAsync(dialog.SelectedExePath);
+    }
+
+    /// <summary>
+    /// Creates the remote process for <paramref name="exePath"/> suspended, runs to the PE entry
+    /// point, and populates the UI state. Shared between "Open &amp; Debug" and "Restart sample".
+    /// </summary>
+    private async Task LaunchExeAsync(string exePath)
+    {
         // Detach previous process first
         if (TargetPid != 0)
             await DetachProcess();
 
-        var exePath = dialog.SelectedExePath;
         Log($"Creating process: {exePath}");
         StatusText = "Creating remote process...";
 
@@ -827,6 +843,29 @@ public partial class MainViewModel : ObservableObject, IDisposable
         IsRunning = false;
         StatusText = $"Entry point - PID {pid} TID {SelectedThreadId}";
         Log($"Stopped at entry point of {exePath}");
+    }
+
+    [RelayCommand]
+    private async Task RestartSampleAsync()
+    {
+        if (!IsConnected || !_driver.IsRemote)
+        {
+            Log("Restart requires a remote connection (via relay)");
+            return;
+        }
+
+        if (string.IsNullOrEmpty(_lastLaunchedExePath))
+        {
+            Log("No sample has been launched yet — use Open & Debug first");
+            return;
+        }
+
+        Log($"Restarting sample: {_lastLaunchedExePath}");
+
+        if (_lastLaunchedIsDriver)
+            await OpenAndDebugDriverAsync(_lastLaunchedExePath);
+        else
+            await LaunchExeAsync(_lastLaunchedExePath);
     }
 
     private async Task OpenAndDebugDriverAsync(string sysPath)
