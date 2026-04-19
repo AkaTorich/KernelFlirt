@@ -6101,11 +6101,20 @@ public partial class MainViewModel : ObservableObject, IDisposable
         // Check user-mode modules
         var mod = modules.FirstOrDefault(m => val >= m.BaseAddress && val < m.BaseAddress + m.Size);
         if (mod != null)
-            return _symbols.ResolveAddress(pid, val, modules) ?? $"{mod.Name}+0x{val - mod.BaseAddress:X}";
+        {
+            var baseName = System.IO.Path.GetFileNameWithoutExtension(mod.Name);
+            var sym = _symbols.ResolveViaDbgHelp(val);
+            return sym != null
+                ? $"{baseName}!{sym}"
+                : $"{baseName}!+0x{val - mod.BaseAddress:X}";
+        }
         // Check kernel modules
         var kmod = kmodules.FirstOrDefault(m => val >= m.BaseAddress && val < m.BaseAddress + m.Size);
         if (kmod != null)
-            return $"{kmod.Name}+0x{val - kmod.BaseAddress:X}";
+        {
+            var baseName = System.IO.Path.GetFileNameWithoutExtension(kmod.Name);
+            return $"{baseName}!+0x{val - kmod.BaseAddress:X}";
+        }
         return null;
     }
 

@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.8.1 — 2026-04-19
+
+### Debugger UX
+
+- **Restart Sample button** — new green `🔄` toolbar button (and `Debug → Restart Sample` menu item) relaunches the last opened sample and breaks at its PE entry point without showing the file browser again. Works for both EXE and driver targets.
+- **Run / Pause as emoji** — toolbar buttons replaced text labels: Run → `▶`, Restart → `🔄`, Pause → `⏸`.
+
+### Stack Annotations
+
+- **`return to` prefix** — stack entries that are return addresses (detected by checking for CALL opcode in the 6 bytes preceding the address) are labeled `return to module!FuncName+0xOffset`, matching x64dbg/OllyDbg style.
+- **String content** — if a stack/register value points to a readable ASCII or UTF-16 string (≥3 chars), the annotation shows the string in quotes (`"s3cr3tK3y!"`). String takes priority over module+offset.
+- **`module!symbol` format** — all module annotations now use WinDbg/x64dbg notation: `ntdll!LdrInitializeThunk+0x18` instead of `ntdll.dll+0x1234`.
+
+### Register Annotations
+
+- **Annotation column** added to the Registers DataGrid — same teal color as stack, same resolution logic: string → `return to module!sym` → `module!sym` → empty.
+- **RIP / RSP / RBP excluded** — these three registers never show annotations (their context is already visible in the disassembly and stack views).
+
+### Disassembler Scroll Behavior
+
+- **Auto-scroll to RIP on break** — disassembly view scrolls to the current instruction whenever `SetInstructions` is called with a non-null RIP.
+- **Scroll-up clamped at RIP** — scrolling up past the top of the loaded content now snaps back to RIP instead of loading code above it. Disassembly only extends downward.
+
 ## v1.8.0 — 2026-04-07
 
 ### New Plugin: Xrefs (Cross-References)

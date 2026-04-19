@@ -98,20 +98,30 @@ public partial class DisasmView : UserControl
         {
             vm.DisassembleMoreDown();
         }
-        // Near top — load more up
+        // Near top while scrolling up — snap back to RIP instead of loading above
         else if (e.VerticalOffset <= 50 && e.ExtentHeight > 0 && e.VerticalChange < 0)
         {
-            // Remember scroll position to avoid jumping
-            double oldExtent = e.ExtentHeight;
-            vm.DisassembleMoreUp();
-            // After prepend, adjust scroll to keep same view position
-            Dispatcher.InvokeAsync(() =>
+            ScrollToRip();
+        }
+    }
+
+    /// <summary>Scrolls the view so the current RIP/EIP instruction is at the top.</summary>
+    public void ScrollToRip()
+    {
+        if (_currentRip == null) return;
+        for (int i = 0; i < InstructionList.Items.Count; i++)
+        {
+            if (InstructionList.Items[i] is not Border b) continue;
+            var idx = (int)b.Tag;
+            if (idx < (_instructions?.Count ?? 0) && _instructions![idx].Address == _currentRip.Value)
             {
-                double newExtent = ScrollArea.ExtentHeight;
-                double delta = newExtent - oldExtent;
-                if (delta > 0)
-                    ScrollArea.ScrollToVerticalOffset(ScrollArea.VerticalOffset + delta);
-            }, System.Windows.Threading.DispatcherPriority.Loaded);
+                Dispatcher.InvokeAsync(() =>
+                {
+                    var pos = b.TranslatePoint(new Point(0, 0), ScrollArea);
+                    ScrollArea.ScrollToVerticalOffset(ScrollArea.VerticalOffset + pos.Y);
+                }, System.Windows.Threading.DispatcherPriority.Loaded);
+                return;
+            }
         }
     }
 
@@ -132,6 +142,7 @@ public partial class DisasmView : UserControl
         InstructionList.Items.Clear();
         _selectedIndex = -1;
 
+        int ripIndex = -1;
         for (int i = 0; i < instructions.Count; i++)
         {
             var instr = instructions[i];
@@ -140,6 +151,22 @@ public partial class DisasmView : UserControl
             panel.MouseLeftButtonDown += OnLineClick;
             panel.MouseRightButtonDown += OnLineClick;
             InstructionList.Items.Add(panel);
+            if (currentRip.HasValue && instr.Address == currentRip.Value)
+                ripIndex = i;
+        }
+
+        if (ripIndex >= 0)
+        {
+            int idx = ripIndex;
+            Dispatcher.InvokeAsync(() =>
+            {
+                if (idx < InstructionList.Items.Count &&
+                    InstructionList.Items[idx] is Border ripBorder)
+                {
+                    var pos = ripBorder.TranslatePoint(new Point(0, 0), ScrollArea);
+                    ScrollArea.ScrollToVerticalOffset(ScrollArea.VerticalOffset + pos.Y);
+                }
+            }, System.Windows.Threading.DispatcherPriority.Loaded);
         }
     }
 
