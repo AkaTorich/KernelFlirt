@@ -780,6 +780,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         // Read registers
         var regs = await Task.Run(() => _driver.ReadRegisters(pid, SelectedThreadId, Is32Bit));
+        await AnnotateRegistersAsync(regs);
         Registers.ReplaceAll(regs);
 
         var rip = Registers.FirstOrDefault(r => r.Name == IpRegName);
@@ -812,18 +813,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         var stackData = stackTask.Result;
         if (stackData != null && rspReg != null)
-        {
-            var stackItems = new List<StackEntry>();
-            int sp = PointerSize;
-            string spName = SpRegName;
-            for (int i = 0; i < stackData.Length; i += sp)
-            {
-                if (i + sp > stackData.Length) break;
-                ulong val = Is32Bit ? BitConverter.ToUInt32(stackData, i) : BitConverter.ToUInt64(stackData, i);
-                stackItems.Add(new StackEntry { Offset = $"{spName}+{i:X2}", Address = FormatAddr(val) });
-            }
-            StackEntries.ReplaceAll(stackItems);
-        }
+            StackEntries.ReplaceAll(await BuildAnnotatedStackAsync(pid, stackData, SpRegName, PointerSize));
 
         var hexData = hexTask.Result;
         if (hexData != null) HexData = hexData;
@@ -1079,6 +1069,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             });
             regs.AddRange(Register.ExpandFlags(evtRegs.Rflags));
         }
+        await AnnotateRegistersAsync(regs);
         Registers.ReplaceAll(regs);
 
         if (evtRip != 0)
@@ -1125,9 +1116,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
             {
                 if (i + sp > stackData.Length) break;
                 ulong val = Is32Bit ? BitConverter.ToUInt32(stackData, i) : BitConverter.ToUInt64(stackData, i);
-                var annotation = ResolveStackValue(TargetPid, val, sysModList, sysKmodList);
-                if (annotation == null && val != 0)
-                    annotation = await TryReadStringAtAsync(TargetPid, val);
+                var str2 = val != 0 ? await TryReadStringAtAsync(TargetPid, val) : null;
+                string? annotation;
+                if (str2 != null) { annotation = str2; }
+                else { annotation = ResolveStackValue(TargetPid, val, sysModList, sysKmodList); if (annotation != null && await IsReturnAddressAsync(TargetPid, val)) annotation = $"return to {annotation}"; }
                 stackItems.Add(new StackEntry { Offset = $"{spName}+{i:X2}", Address = FormatAddr(val), Annotation = annotation });
             }
             StackEntries.ReplaceAll(stackItems);
@@ -1430,6 +1422,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         // 8. Read RCX → SERVICE_TABLE_ENTRY[0].lpServiceProc
         var regs = _driver.ReadRegisters(svcPid, SelectedThreadId, Is32Bit);
+        await AnnotateRegistersAsync(regs);
         Registers.ReplaceAll(regs);
         var rcxReg = regs.FirstOrDefault(r => r.Name == (Is32Bit ? "ECX" : "RCX"));
 
@@ -1589,6 +1582,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         Log("Reading registers...");
         var tid = SelectedThreadId;
         var regs = await Task.Run(() => _driver.ReadRegisters(pid, tid, Is32Bit));
+        await AnnotateRegistersAsync(regs);
         Registers.ReplaceAll(regs);
         Log($"Got {regs.Count} registers");
 
@@ -1658,10 +1652,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
             {
                 if (i + sp > stackData.Length) break;
                 ulong val = Is32Bit ? BitConverter.ToUInt32(stackData, i) : BitConverter.ToUInt64(stackData, i);
-                var annotation = ResolveStackValue(pid, val, moduleList, kmodList);
-                if (annotation == null && val != 0)
-                    annotation = await TryReadStringAtAsync(pid, val);
-                stackItems.Add(new StackEntry { Offset = $"{spName}+{i:X2}", Address = FormatAddr(val), Annotation = annotation });
+                var strA = val != 0 ? await TryReadStringAtAsync(pid, val) : null;
+                string? annotA;
+                if (strA != null) { annotA = strA; }
+                else { annotA = ResolveStackValue(pid, val, moduleList, kmodList); if (annotA != null && await IsReturnAddressAsync(pid, val)) annotA = $"return to {annotA}"; }
+                stackItems.Add(new StackEntry { Offset = $"{spName}+{i:X2}", Address = FormatAddr(val), Annotation = annotA });
             }
             StackEntries.ReplaceAll(stackItems);
         }
@@ -2940,6 +2935,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         var tid = SelectedThreadId;
         var regs = await Task.Run(() => _driver.ReadRegisters(pid, tid, Is32Bit));
+        await AnnotateRegistersAsync(regs);
         Registers.ReplaceAll(regs);
 
         var rip = Registers.FirstOrDefault(r => r.Name == IpRegName);
@@ -4403,6 +4399,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             if (oldRegs.TryGetValue(reg.Name, out var prev))
                 reg.PreviousValue = prev;
         }
+        await AnnotateRegistersAsync(regs);
         Registers.ReplaceAll(regs);
 
         NavigateToRip();
@@ -4606,6 +4603,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             if (oldRegs.TryGetValue(reg.Name, out var prev))
                 reg.PreviousValue = prev;
         }
+        await AnnotateRegistersAsync(regs);
         Registers.ReplaceAll(regs);
     }
 
@@ -6025,12 +6023,76 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             if (i + sp > data.Length) break;
             ulong val = Is32Bit ? BitConverter.ToUInt32(data, i) : BitConverter.ToUInt64(data, i);
-            var annotation = ResolveStackValue(pid, val, moduleList, kmodList);
-            if (annotation == null && val != 0)
-                annotation = await TryReadStringAtAsync(pid, val);
-            items.Add(new StackEntry { Offset = $"{spName}+{i:X2}", Address = FormatAddr(val), Annotation = annotation });
+            var strB = val != 0 ? await TryReadStringAtAsync(pid, val) : null;
+            string? annotB;
+            if (strB != null) { annotB = strB; }
+            else { annotB = ResolveStackValue(pid, val, moduleList, kmodList); if (annotB != null && await IsReturnAddressAsync(pid, val)) annotB = $"return to {annotB}"; }
+            items.Add(new StackEntry { Offset = $"{spName}+{i:X2}", Address = FormatAddr(val), Annotation = annotB });
         }
         StackEntries.ReplaceAll(items);
+    }
+
+    private async Task AnnotateRegistersAsync(IEnumerable<Register> regs)
+    {
+        var moduleList = Modules.ToList();
+        var kmodList = KernelModules.ToList();
+        var pid = TargetPid;
+        foreach (var reg in regs)
+        {
+            if (reg.IsFlag || reg.Value == 0 ||
+                reg.Name is "RIP" or "EIP" or "RSP" or "ESP" or "RBP" or "EBP")
+            {
+                reg.Annotation = null;
+                continue;
+            }
+            var str = await TryReadStringAtAsync(pid, reg.Value);
+            if (str != null) { reg.Annotation = str; continue; }
+            var sym = ResolveStackValue(pid, reg.Value, moduleList, kmodList);
+            if (sym != null && await IsReturnAddressAsync(pid, reg.Value))
+                sym = $"return to {sym}";
+            reg.Annotation = sym;
+        }
+    }
+
+    private async Task<List<StackEntry>> BuildAnnotatedStackAsync(uint pid, byte[] stackData, string spName, int pointerSize)
+    {
+        var moduleList = Modules.ToList();
+        var kmodList = KernelModules.ToList();
+        var items = new List<StackEntry>();
+        for (int i = 0; i < stackData.Length; i += pointerSize)
+        {
+            if (i + pointerSize > stackData.Length) break;
+            ulong val = pointerSize == 4 ? BitConverter.ToUInt32(stackData, i) : BitConverter.ToUInt64(stackData, i);
+            var str = val != 0 ? await TryReadStringAtAsync(pid, val) : null;
+            if (str != null)
+            {
+                items.Add(new StackEntry { Offset = $"{spName}+{i:X2}", Address = FormatAddr(val), Annotation = str });
+                continue;
+            }
+            var sym = ResolveStackValue(pid, val, moduleList, kmodList);
+            if (sym != null && await IsReturnAddressAsync(pid, val))
+                sym = $"return to {sym}";
+            items.Add(new StackEntry { Offset = $"{spName}+{i:X2}", Address = FormatAddr(val), Annotation = sym });
+        }
+        return items;
+    }
+
+    // Checks if the bytes immediately before `addr` look like a CALL instruction.
+    private async Task<bool> IsReturnAddressAsync(uint pid, ulong addr)
+    {
+        if (addr < 6) return false;
+        var buf = await Task.Run(() => _driver.ReadMemory(pid, addr - 6, 6));
+        if (buf == null || buf.Length < 6) return false;
+        // buf[0]=addr-6, buf[1]=addr-5, ..., buf[5]=addr-1
+        // E8 xx xx xx xx  (5-byte near CALL)
+        if (buf[1] == 0xE8) return true;
+        // FF /2 — indirect CALL, various lengths (2–6 bytes)
+        for (int off = 0; off < 5; off++)
+        {
+            if (buf[off] == 0xFF && ((buf[off + 1] >> 3) & 7) == 2)
+                return true;
+        }
+        return false;
     }
 
     private string? ResolveStackValue(uint pid, ulong val, List<ModuleInfo> modules, List<KernelModuleInfo> kmodules)
@@ -6232,18 +6294,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         var stackData = stackTask.Result;
         if (stackData != null && rspReg != null)
-        {
-            var stackItems = new List<StackEntry>();
-            int sp = PointerSize;
-            string spName = SpRegName;
-            for (int i = 0; i < stackData.Length; i += sp)
-            {
-                if (i + sp > stackData.Length) break;
-                ulong val = Is32Bit ? BitConverter.ToUInt32(stackData, i) : BitConverter.ToUInt64(stackData, i);
-                stackItems.Add(new StackEntry { Offset = $"{spName}+{i:X2}", Address = FormatAddr(val) });
-            }
-            StackEntries.ReplaceAll(stackItems);
-        }
+            StackEntries.ReplaceAll(await BuildAnnotatedStackAsync(TargetPid, stackData, SpRegName, PointerSize));
 
         var hexData = hexTask.Result;
         if (hexData != null) HexData = hexData;
@@ -6364,6 +6415,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             if (oldRegs.TryGetValue(reg.Name, out var prev))
                 reg.PreviousValue = prev;
         }
+        await AnnotateRegistersAsync(regs);
         Registers.ReplaceAll(regs);
 
         NavigateToRip();

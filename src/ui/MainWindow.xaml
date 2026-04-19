@@ -282,7 +282,7 @@
                                             </Style>
                                         </DataGridTextColumn.ElementStyle>
                                     </DataGridTextColumn>
-                                    <DataGridTextColumn Header="Value" Width="*" Binding="{Binding ValueHex}">
+                                    <DataGridTextColumn Header="Value" Width="140" Binding="{Binding ValueHex}">
                                         <DataGridTextColumn.ElementStyle>
                                             <Style TargetType="TextBlock">
                                                 <Style.Triggers>
@@ -290,6 +290,13 @@
                                                         <Setter Property="Foreground" Value="{DynamicResource ValueChangedBrush}" />
                                                     </DataTrigger>
                                                 </Style.Triggers>
+                                            </Style>
+                                        </DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Annotation" Width="*" Binding="{Binding Annotation}">
+                                        <DataGridTextColumn.ElementStyle>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{DynamicResource StackAnnotationBrush}" />
                                             </Style>
                                         </DataGridTextColumn.ElementStyle>
                                     </DataGridTextColumn>
