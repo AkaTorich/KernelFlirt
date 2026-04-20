@@ -18,12 +18,46 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, List<TabItem>> _pluginTabs = [];
     private readonly Dictionary<string, List<MenuItem>> _pluginMenuItems = [];
     private string? _currentPluginName;
+    private Services.CommandConsole? _console;
+    private readonly List<string> _consoleHistory = [];
+    private int _consoleHistoryIdx = -1;
+
+    public record ConsoleCmd(string Name, string Hint);
+    private static readonly ConsoleCmd[] _allCmds =
+    [
+        new("g",       "continue execution"),
+        new("go",      "continue execution (alias for g)"),
+        new("t",       "step into"),
+        new("sti",     "step into (alias)"),
+        new("p",       "step over"),
+        new("sto",     "step over (alias)"),
+        new("bp",      "bp <expr>          set software breakpoint"),
+        new("bc",      "bc <expr>          clear breakpoint at addr"),
+        new("bl",      "list breakpoints"),
+        new("d",       "d <expr>           follow in Hex Dump"),
+        new("dump",    "dump <expr>        follow in Hex Dump"),
+        new("dis",     "dis <expr>         navigate Disassembly"),
+        new("u",       "u <expr>           navigate Disassembly"),
+        new("r",       "r <reg>[=<expr>]   read/write register"),
+        new("?",       "? <expr>           evaluate expression"),
+        new("eval",    "eval <expr>        evaluate expression"),
+        new("findall", "findall <pattern>  binary search"),
+        new("find",    "find <pattern>     binary search (alias)"),
+        new("clear",   "clear output"),
+    ];
 
     public MainWindow()
     {
         InitializeComponent();
         if (VM.ThemeColors.Count > 0)
             ApplyThemeColors(VM.ThemeColors);
+        ApplyPersistedLayout();
+        SetupFlagsGrid();
+        StackList.Tag = _stackCols;
+        _console = new Services.CommandConsole(VM);
+        // AddHandler with handledEventsToo so we intercept wheel even if a ScrollViewer
+        // upstream marked it Handled (the default tunneling route misses some cases).
+        AddHandler(PreviewMouseWheelEvent, new MouseWheelEventHandler(OnCtrlMouseWheel), true);
         LoadDecompilerHighlighting();
         VM.Instructions.CollectionChanged += (_, _) => RefreshDisasmView();
         VM.FilteredSections.CollectionChanged += (_, _) => RefreshNavBar();
@@ -500,8 +534,352 @@ public partial class MainWindow : Window
         DecompilerOutput.Text = VM.DecompiledCode ?? "";
     }
 
+    private void ApplyPersistedLayout()
+    {
+        var scr = System.Windows.SystemParameters.VirtualScreenWidth;
+        var scrH = System.Windows.SystemParameters.VirtualScreenHeight;
+        if (VM.UiWindowWidth is { } w && w >= 400 && w <= scr + 200) Width = w;
+        if (VM.UiWindowHeight is { } h && h >= 300 && h <= scrH + 200) Height = h;
+        if (VM.UiWindowLeft is { } l && VM.UiWindowTop is { } t &&
+            l > -2000 && t > -2000 && l < scr && t < scrH)
+        {
+            WindowStartupLocation = WindowStartupLocation.Manual;
+            Left = l;
+            Top = t;
+        }
+        if (VM.UiZoomDisasm is { } zd) SetPanelScale("Disasm", zd);
+        if (VM.UiZoomRegisters is { } zr) SetPanelScale("Registers", zr);
+        if (VM.UiZoomHex is { } zh) SetPanelScale("Hex", zh);
+        if (VM.UiZoomStack is { } zs) SetPanelScale("Stack", zs);
+        ApplyDockLayout();
+        Loaded += (_, _) =>
+        {
+            if (VM.UiWindowState == "Maximized") WindowState = WindowState.Maximized;
+        };
+    }
+
+    private void OnCtrlMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if ((Keyboard.Modifiers & ModifierKeys.Control) != ModifierKeys.Control) return;
+        var panel = FindPanelUnderCursor();
+        if (panel == null) return;
+        SetPanelScale(panel, GetPanelZoom(panel) + (e.Delta > 0 ? 0.1 : -0.1));
+        e.Handled = true;
+    }
+
+    private string? FindPanelUnderCursor()
+    {
+        var pos = Mouse.GetPosition(this);
+        var hit = InputHitTest(pos) as DependencyObject;
+        while (hit != null)
+        {
+            if (hit is Controls.DisasmView) return "Disasm";
+            if (hit is Controls.HexDumpView) return "Hex";
+            if (hit is System.Windows.Controls.ListBox lb && lb.Name == "StackList") return "Stack";
+            if (hit is System.Windows.Controls.DataGrid dg && dg.Name == "RegistersGrid") return "Registers";
+            if (hit is FrameworkElement fe && fe.Name == "FlagsGrid") return "Registers";
+            hit = System.Windows.Media.VisualTreeHelper.GetParent(hit);
+        }
+        return null;
+    }
+
+    private const double BaseFont = 11.0;
+
+    private double GetPanelZoom(string name)
+    {
+        double fs = name switch
+        {
+            "Disasm" => DisasmControl.LineFontSize,
+            "Hex" => HexDumpControl.LineFontSize,
+            "Registers" => (double)RegistersPanel.GetValue(System.Windows.Documents.TextElement.FontSizeProperty),
+            "Stack" => Resources["StackFontSize"] is double s ? s : 11.0,
+            _ => BaseFont,
+        };
+        double baseFs = name == "Stack" ? 11.0 : BaseFont;
+        return fs / baseFs;
+    }
+
+    private void ApplyDockLayout()
+    {
+        if (VM.UiTopRowRatio is { } v && v > 0) TopRow.Height = new GridLength(v, GridUnitType.Star);
+        if (VM.UiBotRowRatio is { } v2 && v2 > 0) BottomRow.Height = new GridLength(v2, GridUnitType.Star);
+        if (VM.UiTopLeftRatio is { } v3 && v3 > 0) TopLeftCol.Width = new GridLength(v3, GridUnitType.Star);
+        if (VM.UiTopRightRatio is { } v4 && v4 > 0) TopRightCol.Width = new GridLength(v4, GridUnitType.Star);
+        if (VM.UiBotLeftRatio is { } v5 && v5 > 0) BotLeftCol.Width = new GridLength(v5, GridUnitType.Star);
+        if (VM.UiBotRightRatio is { } v6 && v6 > 0) BotRightCol.Width = new GridLength(v6, GridUnitType.Star);
+
+        // Panel column widths
+        if (VM.UiColDisasmBp is { } cdb && cdb > 0) DragColumn(0, cdb - DisasmControl.BpColWidth);
+        if (VM.UiColDisasmAddr is { } cda && cda > 0) DragColumn(1, cda - DisasmControl.AddrColWidth);
+        if (VM.UiColDisasmBytes is { } cdy && cdy > 0) DragColumn(2, cdy - DisasmControl.BytesColWidth);
+        if (VM.UiColHexAddr is { } cha && cha > 0) { HexDumpControl.AddressColWidth = cha; }
+        if (VM.UiColHexHex is { } chh && chh > 0) { HexDumpControl.HexColWidth = chh; }
+        if (VM.UiColStackOffset is { } cso && cso > 0)
+        {
+            _stackCols.OffsetW = new GridLength(cso);
+            StackOffsetCol.Width = new GridLength(cso);
+        }
+        if (VM.UiColStackAddr is { } csa && csa > 0)
+        {
+            _stackCols.AddrW = new GridLength(csa);
+            StackAddrCol.Width = new GridLength(csa);
+        }
+        if (VM.UiColRegName is { } crn && crn > 0)
+        {
+            RegistersGrid.Columns[0].Width = new System.Windows.Controls.DataGridLength(crn);
+            RegNameCol.Width = new GridLength(crn);
+        }
+        if (VM.UiColRegVal is { } crv && crv > 0)
+        {
+            RegistersGrid.Columns[1].Width = new System.Windows.Controls.DataGridLength(crv);
+            RegValCol.Width = new GridLength(crv);
+        }
+    }
+
+    // helper to access DisasmView internal DragColumn (reflection-free — make method public in DisasmView)
+    private void DragColumn(int idx, double delta) => DisasmControl.DragColumnPublic(idx, delta);
+
+    private void SetPanelScale(string name, double s)
+    {
+        s = Math.Round(Math.Clamp(s, 0.5, 6.0), 2);
+        switch (name)
+        {
+            case "Disasm":
+                DisasmControl.LineFontSize = BaseFont * s;
+                break;
+            case "Hex":
+                HexDumpControl.LineFontSize = BaseFont * s;
+                break;
+            case "Registers":
+                System.Windows.Documents.TextElement.SetFontSize(RegistersPanel, BaseFont * s);
+                break;
+            case "Stack":
+                Resources["StackFontSize"] = 11.0 * s;
+                break;
+        }
+    }
+
+    private void SetupFlagsGrid()
+    {
+        var all = System.Windows.Data.CollectionViewSource.GetDefaultView(VM.Registers);
+        // Main grid: hide flags
+        all.Filter = o => o is Models.Register r && !r.IsFlag;
+        // Flags-only view for ItemsControl
+        var flagsView = new System.Windows.Data.CollectionViewSource { Source = VM.Registers };
+        flagsView.View.Filter = o => o is Models.Register r && r.IsFlag;
+        FlagsGrid.ItemsSource = flagsView.View;
+        VM.Registers.CollectionChanged += (_, _) =>
+        {
+            all.Refresh();
+            flagsView.View.Refresh();
+        };
+    }
+
+    public class ColumnWidths : System.ComponentModel.INotifyPropertyChanged
+    {
+        private GridLength _offsetW = new(60);
+        private GridLength _addrW = new(160);
+        public GridLength OffsetW { get => _offsetW; set { _offsetW = value; PropertyChanged?.Invoke(this, new(nameof(OffsetW))); } }
+        public GridLength AddrW { get => _addrW; set { _addrW = value; PropertyChanged?.Invoke(this, new(nameof(AddrW))); } }
+        public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+    }
+    private readonly ColumnWidths _stackCols = new();
+
+    private void OnStackSplitterDrag0(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
+    {
+        double w = Math.Max(20, _stackCols.OffsetW.Value + e.HorizontalChange);
+        _stackCols.OffsetW = new GridLength(w);
+        StackOffsetCol.Width = new GridLength(w);
+    }
+
+    private void OnStackSplitterDrag1(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
+    {
+        double w = Math.Max(20, _stackCols.AddrW.Value + e.HorizontalChange);
+        _stackCols.AddrW = new GridLength(w);
+        StackAddrCol.Width = new GridLength(w);
+    }
+
+    private void OnRegSplitterDrag0(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
+    {
+        double w = Math.Max(30, RegistersGrid.Columns[0].ActualWidth + e.HorizontalChange);
+        RegistersGrid.Columns[0].Width = new System.Windows.Controls.DataGridLength(w);
+        RegNameCol.Width = new GridLength(w);
+    }
+
+    private void OnRegSplitterDrag1(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
+    {
+        double w = Math.Max(30, RegistersGrid.Columns[1].ActualWidth + e.HorizontalChange);
+        RegistersGrid.Columns[1].Width = new System.Windows.Controls.DataGridLength(w);
+        RegValCol.Width = new GridLength(w);
+    }
+
+    private async void OnConsoleKeyDown(object sender, KeyEventArgs e)
+    {
+        if (_console == null) return;
+
+        bool popupOpen = ConsolePopup.IsOpen;
+
+        if (e.Key == Key.Enter)
+        {
+            ConsolePopup.IsOpen = false;
+            var line = ConsoleInput.Text;
+            if (!string.IsNullOrWhiteSpace(line))
+            {
+                _consoleHistory.Add(line);
+                _consoleHistoryIdx = _consoleHistory.Count;
+                var result = await _console.ExecuteAsync(line);
+                ConsoleOutput.Text = result;
+                ConsoleInput.Clear();
+            }
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Tab)
+        {
+            // Accept highlighted suggestion (or first one)
+            if (popupOpen && ConsoleSuggestions.Items.Count > 0)
+            {
+                if (ConsoleSuggestions.SelectedItem is not ConsoleCmd sel)
+                    sel = (ConsoleCmd)ConsoleSuggestions.Items[0]!;
+                AcceptSuggestion(sel);
+                e.Handled = true;
+            }
+        }
+        else if (e.Key == Key.Up)
+        {
+            if (popupOpen && ConsoleSuggestions.Items.Count > 0)
+            {
+                int i = ConsoleSuggestions.SelectedIndex;
+                ConsoleSuggestions.SelectedIndex = i <= 0 ? ConsoleSuggestions.Items.Count - 1 : i - 1;
+                ConsoleSuggestions.ScrollIntoView(ConsoleSuggestions.SelectedItem);
+                e.Handled = true;
+                return;
+            }
+            if (_consoleHistory.Count > 0 && _consoleHistoryIdx > 0)
+            {
+                _consoleHistoryIdx--;
+                ConsoleInput.Text = _consoleHistory[_consoleHistoryIdx];
+                ConsoleInput.CaretIndex = ConsoleInput.Text.Length;
+            }
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Down)
+        {
+            if (popupOpen && ConsoleSuggestions.Items.Count > 0)
+            {
+                int i = ConsoleSuggestions.SelectedIndex;
+                ConsoleSuggestions.SelectedIndex = i >= ConsoleSuggestions.Items.Count - 1 ? 0 : i + 1;
+                ConsoleSuggestions.ScrollIntoView(ConsoleSuggestions.SelectedItem);
+                e.Handled = true;
+                return;
+            }
+            if (_consoleHistoryIdx < _consoleHistory.Count - 1)
+            {
+                _consoleHistoryIdx++;
+                ConsoleInput.Text = _consoleHistory[_consoleHistoryIdx];
+                ConsoleInput.CaretIndex = ConsoleInput.Text.Length;
+            }
+            else
+            {
+                _consoleHistoryIdx = _consoleHistory.Count;
+                ConsoleInput.Clear();
+            }
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape)
+        {
+            if (popupOpen) { ConsolePopup.IsOpen = false; e.Handled = true; return; }
+            ConsoleInput.Clear();
+            Keyboard.ClearFocus();
+            e.Handled = true;
+        }
+    }
+
+    private void OnConsoleTextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        var text = ConsoleInput.Text;
+        ConsoleHint.Visibility = string.IsNullOrEmpty(text) ? Visibility.Visible : Visibility.Collapsed;
+
+        // Only suggest command name — first word before space
+        int spIdx = text.IndexOf(' ');
+        string typed = spIdx < 0 ? text.TrimStart() : "";
+        if (string.IsNullOrWhiteSpace(typed))
+        {
+            // Empty input → show all
+            ConsoleSuggestions.ItemsSource = _allCmds;
+            ConsolePopup.IsOpen = ConsoleInput.IsFocused;
+            ConsoleSuggestions.SelectedIndex = -1;
+            return;
+        }
+        if (spIdx >= 0) { ConsolePopup.IsOpen = false; return; }
+        var matches = _allCmds.Where(c => c.Name.StartsWith(typed, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (matches.Length == 0) { ConsolePopup.IsOpen = false; return; }
+        ConsoleSuggestions.ItemsSource = matches;
+        ConsoleSuggestions.SelectedIndex = 0;
+        ConsolePopup.IsOpen = true;
+    }
+
+    private void OnConsoleLostFocus(object sender, RoutedEventArgs e)
+    {
+        // Close popup unless focus moved into the popup itself
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (!ConsoleInput.IsKeyboardFocusWithin && !ConsoleSuggestions.IsKeyboardFocusWithin)
+                ConsolePopup.IsOpen = false;
+        }), System.Windows.Threading.DispatcherPriority.Background);
+    }
+
+    private void OnSuggestionPicked(object sender, MouseButtonEventArgs e)
+    {
+        if (ConsoleSuggestions.SelectedItem is ConsoleCmd cmd)
+            AcceptSuggestion(cmd);
+    }
+
+    private void AcceptSuggestion(ConsoleCmd cmd)
+    {
+        // If the command takes an argument, add a trailing space; otherwise plain
+        bool wantsArg = cmd.Hint.Contains("<");
+        ConsoleInput.Text = wantsArg ? cmd.Name + " " : cmd.Name;
+        ConsoleInput.CaretIndex = ConsoleInput.Text.Length;
+        ConsolePopup.IsOpen = false;
+        ConsoleInput.Focus();
+    }
+
+    private void OnFlagClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.DataContext is Models.Register reg)
+            VM.ToggleFlag(reg);
+    }
+
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        // ":" focuses the command console (like vim). Skip if user is already typing in a TextBox.
+        if (e.Key == Key.OemSemicolon && (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift
+            && Keyboard.FocusedElement is not TextBox)
+        {
+            ConsoleInput.Focus();
+            e.Handled = true;
+            return;
+        }
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+        {
+            double? delta = null;
+            bool reset = false;
+            if (e.Key == Key.OemPlus || e.Key == Key.Add) delta = 0.1;
+            else if (e.Key == Key.OemMinus || e.Key == Key.Subtract) delta = -0.1;
+            else if (e.Key == Key.D0 || e.Key == Key.NumPad0) reset = true;
+
+            if (delta.HasValue || reset)
+            {
+                var panel = FindPanelUnderCursor();
+                if (panel != null)
+                {
+                    if (reset) SetPanelScale(panel, 1.0);
+                    else SetPanelScale(panel, GetPanelZoom(panel) + delta!.Value);
+                    e.Handled = true;
+                    return;
+                }
+            }
+        }
         if (e.Key == Key.F2 || e.SystemKey == Key.F2)
         {
             ulong addr = GetSelectedAddressFromActiveTab();
@@ -1772,7 +2150,54 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        PersistLayout();
         VM.Dispose();
         base.OnClosed(e);
+    }
+
+    private void PersistLayout()
+    {
+        try
+        {
+            if (WindowState == WindowState.Normal)
+            {
+                VM.UiWindowLeft = Left;
+                VM.UiWindowTop = Top;
+                VM.UiWindowWidth = Width;
+                VM.UiWindowHeight = Height;
+            }
+            else if (!double.IsNaN(RestoreBounds.Width) && RestoreBounds.Width > 0)
+            {
+                VM.UiWindowLeft = RestoreBounds.Left;
+                VM.UiWindowTop = RestoreBounds.Top;
+                VM.UiWindowWidth = RestoreBounds.Width;
+                VM.UiWindowHeight = RestoreBounds.Height;
+            }
+            VM.UiWindowState = WindowState == WindowState.Maximized ? "Maximized" : "Normal";
+            VM.UiFontSize = FontSize;
+            VM.UiZoomDisasm = GetPanelZoom("Disasm");
+            VM.UiZoomRegisters = GetPanelZoom("Registers");
+            VM.UiZoomHex = GetPanelZoom("Hex");
+            VM.UiZoomStack = GetPanelZoom("Stack");
+            // Splitter ratios — save as star values from ActualHeight/ActualWidth
+            VM.UiTopRowRatio = TopRow.ActualHeight > 0 ? TopRow.ActualHeight : null;
+            VM.UiBotRowRatio = BottomRow.ActualHeight > 0 ? BottomRow.ActualHeight : null;
+            VM.UiTopLeftRatio = TopLeftCol.ActualWidth > 0 ? TopLeftCol.ActualWidth : null;
+            VM.UiTopRightRatio = TopRightCol.ActualWidth > 0 ? TopRightCol.ActualWidth : null;
+            VM.UiBotLeftRatio = BotLeftCol.ActualWidth > 0 ? BotLeftCol.ActualWidth : null;
+            VM.UiBotRightRatio = BotRightCol.ActualWidth > 0 ? BotRightCol.ActualWidth : null;
+            // Panel column widths
+            VM.UiColDisasmBp = DisasmControl.BpColWidth;
+            VM.UiColDisasmAddr = DisasmControl.AddrColWidth;
+            VM.UiColDisasmBytes = DisasmControl.BytesColWidth;
+            VM.UiColHexAddr = HexDumpControl.AddressColWidth;
+            VM.UiColHexHex = HexDumpControl.HexColWidth;
+            VM.UiColStackOffset = _stackCols.OffsetW.Value;
+            VM.UiColStackAddr = _stackCols.AddrW.Value;
+            VM.UiColRegName = RegistersGrid.Columns[0].ActualWidth;
+            VM.UiColRegVal = RegistersGrid.Columns[1].ActualWidth;
+            VM.PersistLayout();
+        }
+        catch { /* ignore */ }
     }
 }

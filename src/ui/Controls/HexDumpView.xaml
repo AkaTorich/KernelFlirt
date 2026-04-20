@@ -1,16 +1,46 @@
 <UserControl x:Class="KernelFlirt.UI.Controls.HexDumpView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             FontFamily="Consolas" FontSize="13"
+             FontFamily="Lucida Console" FontSize="11"
              Background="{DynamicResource BgBrush}"
              Foreground="{DynamicResource FgBrush}">
 
     <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
-        <ScrollViewer x:Name="ScrollArea"
-                      HorizontalScrollBarVisibility="Auto"
-                      VerticalScrollBarVisibility="Auto"
-                      Background="{DynamicResource BgBrush}">
-            <ItemsControl x:Name="LineList" />
-        </ScrollViewer>
+        <Grid>
+            <ScrollViewer x:Name="ScrollArea"
+                          HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Auto"
+                          Background="{DynamicResource BgBrush}">
+                <ItemsControl x:Name="LineList" />
+            </ScrollViewer>
+            <Grid x:Name="HexColumnOverlay" IsHitTestVisible="True" HorizontalAlignment="Left">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="150"/>
+                    <ColumnDefinition Width="340"/>
+                </Grid.ColumnDefinitions>
+                <Thumb Grid.Column="0" Width="6" HorizontalAlignment="Right" Cursor="SizeWE"
+                       DragDelta="OnHexSplitterDrag0">
+                    <Thumb.Template>
+                        <ControlTemplate TargetType="Thumb">
+                            <Grid Background="Transparent">
+                                <Line X1="3" Y1="0" X2="3" Y2="10000" Stroke="#8899A0"
+                                      StrokeThickness="1" StrokeDashArray="2 2" SnapsToDevicePixels="True"/>
+                            </Grid>
+                        </ControlTemplate>
+                    </Thumb.Template>
+                </Thumb>
+                <Thumb Grid.Column="1" Width="6" HorizontalAlignment="Right" Cursor="SizeWE"
+                       DragDelta="OnHexSplitterDrag1">
+                    <Thumb.Template>
+                        <ControlTemplate TargetType="Thumb">
+                            <Grid Background="Transparent">
+                                <Line X1="3" Y1="0" X2="3" Y2="10000" Stroke="#8899A0"
+                                      StrokeThickness="1" StrokeDashArray="2 2" SnapsToDevicePixels="True"/>
+                            </Grid>
+                        </ControlTemplate>
+                    </Thumb.Template>
+                </Thumb>
+            </Grid>
+        </Grid>
     </Border>
 </UserControl>

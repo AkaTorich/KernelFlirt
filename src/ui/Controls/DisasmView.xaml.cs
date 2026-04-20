@@ -79,6 +79,86 @@ public partial class DisasmView : UserControl
         Focusable = true;
     }
 
+    // Shared column widths — bound to every instruction row Grid
+    public double BpColWidth { get; set; } = 22;
+    public double AddrColWidth { get; set; } = 170;
+    public double BytesColWidth { get; set; } = 230;
+
+    private void OnSplitterDrag0(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e) => DragColumn(0, e.HorizontalChange);
+    private void OnSplitterDrag1(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e) => DragColumn(1, e.HorizontalChange);
+    private void OnSplitterDrag2(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e) => DragColumn(2, e.HorizontalChange);
+
+    public void DragColumnPublic(int colIndex, double delta) => DragColumn(colIndex, delta);
+
+    private void DragColumn(int colIndex, double delta)
+    {
+        var cols = ColumnHeader.ColumnDefinitions;
+        double newW = Math.Max(20, cols[colIndex].Width.Value + delta);
+        cols[colIndex].Width = new GridLength(newW);
+        switch (colIndex)
+        {
+            case 0: BpColWidth = newW; break;
+            case 1: AddrColWidth = newW; break;
+            case 2: BytesColWidth = newW; break;
+        }
+        ApplyColumnWidths();
+    }
+
+    private void ApplyColumnWidths()
+    {
+        foreach (var item in InstructionList.Items)
+        {
+            if (item is Border b && b.Child is Grid g && g.ColumnDefinitions.Count >= 4)
+            {
+                g.ColumnDefinitions[0].Width = new GridLength(BpColWidth);
+                g.ColumnDefinitions[1].Width = new GridLength(AddrColWidth);
+                g.ColumnDefinitions[2].Width = new GridLength(BytesColWidth);
+            }
+        }
+    }
+
+    public static readonly DependencyProperty LineFontSizeProperty = DependencyProperty.Register(
+        nameof(LineFontSize), typeof(double), typeof(DisasmView),
+        new PropertyMetadata(11.0, OnLineFontSizeChanged));
+
+    public double LineFontSize
+    {
+        get => (double)GetValue(LineFontSizeProperty);
+        set => SetValue(LineFontSizeProperty, value);
+    }
+
+    private static void OnLineFontSizeChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is DisasmView v) v.ApplyLineFontSize();
+    }
+
+    private void ApplyLineFontSize()
+    {
+        double fs = LineFontSize;
+        foreach (var item in InstructionList.Items)
+        {
+            if (item is Border b && b.Child is Grid g)
+            {
+                foreach (var child in g.Children)
+                {
+                    if (child is TextBlock tb)
+                    {
+                        tb.FontSize = fs;
+                        foreach (var inl in tb.Inlines)
+                        {
+                            if (inl is Run r) r.FontSize = fs;
+                            else if (inl is InlineUIContainer iuc && iuc.Child is TextBlock sym)
+                                sym.FontSize = fs;
+                        }
+                        tb.InvalidateMeasure();
+                    }
+                }
+                b.InvalidateMeasure();
+            }
+        }
+        InstructionList.InvalidateMeasure();
+    }
+
     private void OnKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Space && _selectedIndex >= 0)
@@ -220,59 +300,62 @@ public partial class DisasmView : UserControl
 
     private Border CreateInstructionLine(Instruction instr, ulong? currentRip)
     {
-        var textBlock = new TextBlock { FontFamily = new FontFamily("Consolas"), FontSize = 13 };
+        TextBlock MakeCellTb() => new()
+        {
+            FontFamily = new FontFamily("Lucida Console"),
+            FontSize = LineFontSize,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        };
 
-        // Breakpoint marker column (2 chars wide)
+        // BP column
+        var bpTb = MakeCellTb();
         if (instr.HasBreakpoint)
-        {
-            textBlock.Inlines.Add(new Run("● ") { Foreground = BpMarkerColor, FontWeight = FontWeights.Bold });
-        }
-        else
-        {
-            textBlock.Inlines.Add(new Run("  ") { Foreground = PunctuationColor });
-        }
+            bpTb.Inlines.Add(new Run("●") { Foreground = BpMarkerColor, FontWeight = FontWeights.Bold });
 
-        // Address column: show symbol label if available, otherwise hex address
+        // Address column
+        var addrTb = MakeCellTb();
         if (!string.IsNullOrEmpty(instr.AddressLabel))
         {
-            // Clickable symbol name with context menu
             var symInline = CreateSymbolInline(instr.AddressLabel, instr.Address);
-            textBlock.Inlines.Add(symInline);
-            // Pad to align with hex address width (17 chars + 2 spaces)
-            int pad = 19 - Math.Min(instr.AddressLabel.Length, 19);
-            if (pad > 0) textBlock.Inlines.Add(new Run(new string(' ', pad)));
+            addrTb.Inlines.Add(symInline);
         }
         else
         {
-            string addrStr = FormatAddress(instr.Address);
-            textBlock.Inlines.Add(new Run(addrStr + "  ") { Foreground = AddressColor });
+            addrTb.Inlines.Add(new Run(FormatAddress(instr.Address)) { Foreground = AddressColor });
         }
 
-        // Bytes: 48 89 5C 24 08 (padded to 30 chars)
-        string bytesStr = instr.BytesHex;
-        if (bytesStr.Length < 30) bytesStr = bytesStr.PadRight(30);
-        else if (bytesStr.Length > 30) bytesStr = bytesStr[..27] + "...";
-        textBlock.Inlines.Add(new Run(bytesStr + " ") { Foreground = BytesColor });
+        // Bytes column
+        var bytesTb = MakeCellTb();
+        bytesTb.Inlines.Add(new Run(instr.BytesHex) { Foreground = BytesColor });
 
-        // Mnemonic with per-token highlighting (branch targets show symbol names)
-        AddHighlightedMnemonic(textBlock, instr);
-
-        // Symbol comment (like x64dbg/OllyDbg style)
+        // Mnemonic + operands + comment
+        var mnemTb = MakeCellTb();
+        AddHighlightedMnemonic(mnemTb, instr);
         if (!string.IsNullOrEmpty(instr.Comment))
         {
             string? displayComment = instr.Comment;
-            // If branch target symbol is already shown in operands, strip it from comment
-            // and show only the plugin annotation part (after " | ")
             if (!string.IsNullOrEmpty(instr.BranchTargetSymbol) && displayComment.Contains(" | "))
                 displayComment = displayComment[(displayComment.IndexOf(" | ") + 3)..];
             else if (!string.IsNullOrEmpty(instr.BranchTargetSymbol))
                 displayComment = null;
-
             if (!string.IsNullOrEmpty(displayComment))
-                textBlock.Inlines.Add(new Run($"  ; {displayComment}") { Foreground = CommentColor });
+                mnemTb.Inlines.Add(new Run($"  ; {displayComment}") { Foreground = CommentColor });
         }
 
-        // Background color for breakpoint line or current instruction
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(BpColWidth) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(AddrColWidth) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(BytesColWidth) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        Grid.SetColumn(bpTb, 0);
+        Grid.SetColumn(addrTb, 1);
+        Grid.SetColumn(bytesTb, 2);
+        Grid.SetColumn(mnemTb, 3);
+        grid.Children.Add(bpTb);
+        grid.Children.Add(addrTb);
+        grid.Children.Add(bytesTb);
+        grid.Children.Add(mnemTb);
+
         Brush bgBrush;
         if (instr.IsCurrentInstruction || (currentRip.HasValue && instr.Address == currentRip.Value))
             bgBrush = CurrentLineColor;
@@ -283,12 +366,11 @@ public partial class DisasmView : UserControl
 
         var border = new Border
         {
-            Child = textBlock,
+            Child = grid,
             Background = bgBrush,
             Padding = new Thickness(4, 1, 4, 1),
             BorderThickness = new Thickness(0),
         };
-
         return border;
     }
 
@@ -309,8 +391,8 @@ public partial class DisasmView : UserControl
         var symText = new TextBlock
         {
             Text = symbolName,
-            FontFamily = new FontFamily("Consolas"),
-            FontSize = 13,
+            FontFamily = new FontFamily("Lucida Console"),
+            FontSize = LineFontSize,
             Foreground = FunctionColor,
             Cursor = Cursors.Hand,
             TextDecorations = TextDecorations.Underline,

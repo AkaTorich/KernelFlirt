@@ -13,7 +13,7 @@
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource BgBrush}"
         Foreground="{DynamicResource FgBrush}"
-        FontFamily="Consolas" FontSize="13"
+        FontFamily="Segoe UI" FontSize="12"
         PreviewKeyDown="Window_PreviewKeyDown">
 
     <Window.DataContext>
@@ -24,6 +24,9 @@
         <conv:HexValueConverter x:Key="HexConv" />
         <conv:BoolToVisibilityConverter x:Key="BoolVisConv" />
         <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolVisConv" />
+
+        <!-- Per-panel font sizes (changed at runtime via Ctrl+±/wheel) -->
+        <sys:Double x:Key="StackFontSize" xmlns:sys="clr-namespace:System;assembly=mscorlib">11</sys:Double>
 
         <!-- Cell style that overrides selection colors and shows BP red -->
         <Style x:Key="BpCellStyle" TargetType="DataGridCell">
@@ -236,22 +239,32 @@
                 <Button Command="{Binding DisconnectKernelCommand}"
                         ToolTip="Disconnect from kernel driver"
                         Visibility="{Binding IsConnected, Converter={StaticResource BoolVisConv}}"
-                        Content="Disconnect" />
+                        Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/Menu/disconnect.svg" Width="20" Height="20"/>
+                </Button>
 
                 <Rectangle Width="1" Fill="{DynamicResource BorderBrush}" Margin="8,2" />
 
                 <TextBlock Text="PID:" VerticalAlignment="Center" Margin="4,0" />
                 <TextBox x:Name="PidBox" Width="80" VerticalAlignment="Center"
                          Text="{Binding TargetPid, UpdateSourceTrigger=PropertyChanged}" />
-                <Button Command="{Binding ToggleAttachCommand}">
+                <Button Command="{Binding ToggleAttachCommand}" Padding="3">
                     <Button.Style>
                         <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-                            <Setter Property="Content" Value="Attach" />
                             <Setter Property="ToolTip" Value="Attach to process by PID" />
+                            <Setter Property="Content">
+                                <Setter.Value>
+                                    <svgc:SvgViewbox Source="/Resources/Icons/attach-process.svg" Width="20" Height="20"/>
+                                </Setter.Value>
+                            </Setter>
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding IsDebugHookActive}" Value="True">
-                                    <Setter Property="Content" Value="Detach" />
                                     <Setter Property="ToolTip" Value="Detach from process" />
+                                    <Setter Property="Content">
+                                        <Setter.Value>
+                                            <svgc:SvgViewbox Source="/Resources/Icons/Menu/detach.svg" Width="20" Height="20"/>
+                                        </Setter.Value>
+                                    </Setter>
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
@@ -329,14 +342,70 @@
                 </TextBlock>
             </StatusBarItem>
         </StatusBar>
+        <!-- Command Console (OllyDbg/x64dbg-style) — sits above the status bar -->
+        <Border DockPanel.Dock="Bottom" Background="{DynamicResource BgLightBrush}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0"
+                Padding="4,2">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Left" Text="Command:" FontWeight="SemiBold"
+                           VerticalAlignment="Center" Margin="2,0,6,0"/>
+                <TextBlock DockPanel.Dock="Right" x:Name="ConsoleOutput"
+                           Foreground="{DynamicResource StackAnnotationBrush}"
+                           VerticalAlignment="Center" Margin="6,0,4,0"
+                           TextTrimming="CharacterEllipsis"/>
+                <Grid>
+                    <TextBox x:Name="ConsoleInput" FontFamily="Lucida Console" FontSize="11"
+                             Background="{DynamicResource BgBrush}" Foreground="{DynamicResource FgBrush}"
+                             BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                             Padding="4,2" VerticalContentAlignment="Center"
+                             TextChanged="OnConsoleTextChanged"
+                             KeyDown="OnConsoleKeyDown"
+                             LostFocus="OnConsoleLostFocus"
+                             ToolTip="Enter command (g/t/p/bp/bc/bl/d/r/?/dis/u/findall). Press : to focus."/>
+                    <!-- Ghost-text hint (faded), shown when input is empty -->
+                    <TextBlock x:Name="ConsoleHint" IsHitTestVisible="False"
+                               Foreground="{DynamicResource FgDimBrush}" Opacity="0.5"
+                               FontFamily="Lucida Console" FontSize="11"
+                               VerticalAlignment="Center" Margin="6,0,0,0"
+                               Text="g · t · p · bp · bc · bl · d · dis · r · ? · findall  (press : to focus)"/>
+                    <!-- Autocomplete popup -->
+                    <Popup x:Name="ConsolePopup" PlacementTarget="{Binding ElementName=ConsoleInput}"
+                           Placement="Top" StaysOpen="False" AllowsTransparency="True"
+                           Focusable="False">
+                        <Border Background="{DynamicResource BgLightBrush}"
+                                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                Padding="0" MinWidth="340">
+                            <ListBox x:Name="ConsoleSuggestions" BorderThickness="0"
+                                     FontFamily="Lucida Console" FontSize="11"
+                                     Background="{DynamicResource BgLightBrush}"
+                                     MaxHeight="220"
+                                     PreviewMouseLeftButtonUp="OnSuggestionPicked">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding Name}" FontWeight="Bold"
+                                                       Foreground="{DynamicResource MnemonicBrush}"
+                                                       MinWidth="80" Margin="4,2,8,2"/>
+                                            <TextBlock Text="{Binding Hint}"
+                                                       Foreground="{DynamicResource FgDimBrush}"
+                                                       Margin="0,2,4,2"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Border>
+                    </Popup>
+                </Grid>
+            </DockPanel>
+        </Border>
 
         <!-- Main Content -->
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="3*" />
+                <RowDefinition x:Name="TopRow" Height="3*" />
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="1.5*" />
+                <RowDefinition x:Name="BottomRow" Height="1.5*" />
             </Grid.RowDefinitions>
 
             <!-- Row 0: Navigation Bar (memory map) -->
@@ -360,9 +429,9 @@
                     </TabItem.Header>
                     <Grid>
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="3*" />
+                            <ColumnDefinition x:Name="TopLeftCol" Width="3*" />
                             <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="1.2*" />
+                            <ColumnDefinition x:Name="TopRightCol" Width="1.2*" />
                         </Grid.ColumnDefinitions>
 
                         <ctrl:DisasmView x:Name="DisasmControl" Grid.Column="0" />
@@ -371,10 +440,46 @@
                                       HorizontalAlignment="Center" VerticalAlignment="Stretch" />
 
                         <!-- Registers -->
-                        <DockPanel Grid.Column="2">
+                        <DockPanel Grid.Column="2" x:Name="RegistersPanel">
                             <Border DockPanel.Dock="Top" Background="{DynamicResource ToolbarBgBrush}" Padding="4,2">
                                 <TextBlock Text="Registers" FontWeight="SemiBold" />
                             </Border>
+                            <!-- Flags grid at bottom -->
+                            <Border DockPanel.Dock="Bottom" Background="{DynamicResource BgBrush}"
+                                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1,1,1,1" Padding="4">
+                                <ItemsControl x:Name="FlagsGrid">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <UniformGrid Columns="3" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Padding="5,2" Margin="1" Background="{DynamicResource BgLightBrush}"
+                                                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                                    MouseLeftButtonDown="OnFlagClick" Cursor="Hand">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding Name}" FontWeight="Bold" MinWidth="22"
+                                                               Foreground="{DynamicResource RegisterBrush}" />
+                                                    <TextBlock Text="{Binding Value}" FontWeight="Bold" Margin="4,0,0,0">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Foreground" Value="{DynamicResource FgBrush}"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding Value}" Value="1">
+                                                                        <Setter Property="Foreground" Value="#FF5370"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Border>
+                            <Grid>
                             <DataGrid x:Name="RegistersGrid" ItemsSource="{Binding Registers}" IsReadOnly="True"
                                       AutoGenerateColumns="False" HeadersVisibility="None"
                                       BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
@@ -421,6 +526,36 @@
                                     </DataGridTextColumn>
                                 </DataGrid.Columns>
                             </DataGrid>
+                            <!-- Column resize overlay for Registers -->
+                            <Grid x:Name="RegColumnOverlay" IsHitTestVisible="True" HorizontalAlignment="Left">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition x:Name="RegNameCol" Width="60"/>
+                                    <ColumnDefinition x:Name="RegValCol" Width="140"/>
+                                </Grid.ColumnDefinitions>
+                                <Thumb Grid.Column="0" Width="6" HorizontalAlignment="Right" Cursor="SizeWE"
+                                       DragDelta="OnRegSplitterDrag0">
+                                    <Thumb.Template>
+                                        <ControlTemplate TargetType="Thumb">
+                                            <Grid Background="Transparent">
+                                                <Line X1="3" Y1="0" X2="3" Y2="10000" Stroke="#8899A0"
+                                                      StrokeThickness="1" StrokeDashArray="2 2" SnapsToDevicePixels="True"/>
+                                            </Grid>
+                                        </ControlTemplate>
+                                    </Thumb.Template>
+                                </Thumb>
+                                <Thumb Grid.Column="1" Width="6" HorizontalAlignment="Right" Cursor="SizeWE"
+                                       DragDelta="OnRegSplitterDrag1">
+                                    <Thumb.Template>
+                                        <ControlTemplate TargetType="Thumb">
+                                            <Grid Background="Transparent">
+                                                <Line X1="3" Y1="0" X2="3" Y2="10000" Stroke="#8899A0"
+                                                      StrokeThickness="1" StrokeDashArray="2 2" SnapsToDevicePixels="True"/>
+                                            </Grid>
+                                        </ControlTemplate>
+                                    </Thumb.Template>
+                                </Thumb>
+                            </Grid>
+                            </Grid>
                         </DockPanel>
                     </Grid>
                 </TabItem>
@@ -1080,7 +1215,7 @@
                     </Border>
                     <ae:TextEditor x:Name="DecompilerOutput"
                                    IsReadOnly="True"
-                                   FontFamily="Consolas" FontSize="13"
+                                   FontFamily="Lucida Console" FontSize="11"
                                    BorderBrush="{DynamicResource BorderBrush}"
                                    VerticalScrollBarVisibility="Auto"
                                    HorizontalScrollBarVisibility="Auto"
@@ -1121,9 +1256,9 @@
             <!-- Bottom: Hex Dump (left) + Stack (right) -->
             <Grid Grid.Row="3">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="3*" />
+                    <ColumnDefinition x:Name="BotLeftCol" Width="3*" />
                     <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="1.2*" />
+                    <ColumnDefinition x:Name="BotRightCol" Width="1.2*" />
                 </Grid.ColumnDefinitions>
 
                 <!-- Hex Dump -->
@@ -1148,25 +1283,76 @@
                     <Border DockPanel.Dock="Top" Background="{DynamicResource ToolbarBgBrush}" Padding="4,2">
                         <TextBlock Text="Stack" FontWeight="SemiBold" />
                     </Border>
-                    <ListBox x:Name="StackList" ItemsSource="{Binding StackEntries}"
-                             BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate DataType="{x:Type models:StackEntry}">
-                                <TextBlock FontFamily="Consolas" FontSize="12">
-                                    <Run Text="{Binding Offset, Mode=OneWay}" Foreground="{DynamicResource StackOffsetBrush}" />
-                                    <Run Text="  " /><Run Text="{Binding Address, Mode=OneWay}" Foreground="{DynamicResource StackAddressBrush}" />
-                                    <Run Text="{Binding Annotation, Mode=OneWay, TargetNullValue=''}" Foreground="{DynamicResource StackAnnotationBrush}" />
-                                </TextBlock>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                        <ListBox.ContextMenu>
-                            <ContextMenu>
-                                <MenuItem Header="Follow in Dump" Click="OnStackFollowInDump" />
-                                <MenuItem Header="Follow in Disassembler" Click="OnStackFollowInDisasm" />
-                                <MenuItem Header="Copy" Click="OnStackCopy" />
-                            </ContextMenu>
-                        </ListBox.ContextMenu>
-                    </ListBox>
+                    <Grid>
+                        <ListBox x:Name="StackList" ItemsSource="{Binding StackEntries}"
+                                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                 HorizontalContentAlignment="Stretch">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                                    <Setter Property="Padding" Value="4,1"/>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate DataType="{x:Type models:StackEntry}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="{Binding Tag.OffsetW, RelativeSource={RelativeSource AncestorType=ListBox}}"/>
+                                            <ColumnDefinition Width="{Binding Tag.AddrW, RelativeSource={RelativeSource AncestorType=ListBox}}"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding Offset}" FontFamily="Lucida Console"
+                                                   FontSize="{DynamicResource StackFontSize}"
+                                                   Foreground="{DynamicResource StackOffsetBrush}"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding Address}" FontFamily="Lucida Console"
+                                                   FontSize="{DynamicResource StackFontSize}"
+                                                   Foreground="{DynamicResource StackAddressBrush}"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding Annotation, TargetNullValue=''}"
+                                                   FontFamily="Lucida Console" FontSize="{DynamicResource StackFontSize}"
+                                                   Foreground="{DynamicResource StackAnnotationBrush}"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                            <ListBox.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Follow in Dump" Click="OnStackFollowInDump" />
+                                    <MenuItem Header="Follow in Disassembler" Click="OnStackFollowInDisasm" />
+                                    <MenuItem Header="Copy" Click="OnStackCopy" />
+                                </ContextMenu>
+                            </ListBox.ContextMenu>
+                        </ListBox>
+                        <!-- Column resize overlay -->
+                        <Grid x:Name="StackColumnOverlay" IsHitTestVisible="True" HorizontalAlignment="Left">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition x:Name="StackOffsetCol" Width="60"/>
+                                <ColumnDefinition x:Name="StackAddrCol" Width="160"/>
+                            </Grid.ColumnDefinitions>
+                            <Thumb Grid.Column="0" Width="6" HorizontalAlignment="Right" Cursor="SizeWE"
+                                   DragDelta="OnStackSplitterDrag0">
+                                <Thumb.Template>
+                                    <ControlTemplate TargetType="Thumb">
+                                        <Grid Background="Transparent">
+                                            <Line X1="3" Y1="0" X2="3" Y2="10000" Stroke="#8899A0"
+                                                  StrokeThickness="1" StrokeDashArray="2 2" SnapsToDevicePixels="True"/>
+                                        </Grid>
+                                    </ControlTemplate>
+                                </Thumb.Template>
+                            </Thumb>
+                            <Thumb Grid.Column="1" Width="6" HorizontalAlignment="Right" Cursor="SizeWE"
+                                   DragDelta="OnStackSplitterDrag1">
+                                <Thumb.Template>
+                                    <ControlTemplate TargetType="Thumb">
+                                        <Grid Background="Transparent">
+                                            <Line X1="3" Y1="0" X2="3" Y2="10000" Stroke="#8899A0"
+                                                  StrokeThickness="1" StrokeDashArray="2 2" SnapsToDevicePixels="True"/>
+                                        </Grid>
+                                    </ControlTemplate>
+                                </Thumb.Template>
+                            </Thumb>
+                        </Grid>
+                    </Grid>
                 </DockPanel>
             </Grid>
         </Grid>

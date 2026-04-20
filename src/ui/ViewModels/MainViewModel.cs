@@ -297,6 +297,45 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private string _lastConnectAddress = "";
     public Dictionary<string, string> ThemeColors { get; set; } = new();
 
+    // Persisted UI layout (window position/size, font scale)
+    public double? UiWindowLeft { get; set; }
+    public double? UiWindowTop { get; set; }
+    public double? UiWindowWidth { get; set; }
+    public double? UiWindowHeight { get; set; }
+    public string? UiWindowState { get; set; }
+    public double? UiFontSize { get; set; }
+    public double? UiZoomDisasm { get; set; }
+    public double? UiZoomRegisters { get; set; }
+    public double? UiZoomHex { get; set; }
+    public double? UiZoomStack { get; set; }
+    // Splitter sizes (star-unit ratios) for main docks
+    public double? UiTopRowRatio { get; set; }
+    public double? UiBotRowRatio { get; set; }
+    public double? UiTopLeftRatio { get; set; }
+    public double? UiTopRightRatio { get; set; }
+    public double? UiBotLeftRatio { get; set; }
+    public double? UiBotRightRatio { get; set; }
+    // Column widths (absolute px) inside each panel
+    public double? UiColDisasmBp { get; set; }
+    public double? UiColDisasmAddr { get; set; }
+    public double? UiColDisasmBytes { get; set; }
+    public double? UiColHexAddr { get; set; }
+    public double? UiColHexHex { get; set; }
+    public double? UiColStackOffset { get; set; }
+    public double? UiColStackAddr { get; set; }
+    public double? UiColRegName { get; set; }
+    public double? UiColRegVal { get; set; }
+    public void PersistLayout() => SaveSettings();
+
+    private static bool TryParseDouble(string line, string prefix, out double value)
+    {
+        value = 0;
+        if (!line.StartsWith(prefix, StringComparison.Ordinal)) return false;
+        return double.TryParse(line[prefix.Length..],
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out value);
+    }
+
     private void LoadSettings()
     {
         try
@@ -310,6 +349,31 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     _lastConnectAddress = line["LastConnect=".Length..];
                 else if (line.StartsWith("DisabledPlugins=", StringComparison.Ordinal))
                     _disabledPlugins = line["DisabledPlugins=".Length..];
+                else if (line.StartsWith("Ui.WindowLeft=", StringComparison.Ordinal) && double.TryParse(line["Ui.WindowLeft=".Length..], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var wl)) UiWindowLeft = wl;
+                else if (line.StartsWith("Ui.WindowTop=", StringComparison.Ordinal) && double.TryParse(line["Ui.WindowTop=".Length..], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var wt)) UiWindowTop = wt;
+                else if (line.StartsWith("Ui.WindowWidth=", StringComparison.Ordinal) && double.TryParse(line["Ui.WindowWidth=".Length..], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var ww)) UiWindowWidth = ww;
+                else if (line.StartsWith("Ui.WindowHeight=", StringComparison.Ordinal) && double.TryParse(line["Ui.WindowHeight=".Length..], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var wh)) UiWindowHeight = wh;
+                else if (line.StartsWith("Ui.WindowState=", StringComparison.Ordinal)) UiWindowState = line["Ui.WindowState=".Length..];
+                else if (line.StartsWith("Ui.FontSize=", StringComparison.Ordinal) && double.TryParse(line["Ui.FontSize=".Length..], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var fs)) UiFontSize = fs;
+                else if (line.StartsWith("Ui.Zoom.Disasm=", StringComparison.Ordinal) && double.TryParse(line["Ui.Zoom.Disasm=".Length..], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var zd)) UiZoomDisasm = zd;
+                else if (line.StartsWith("Ui.Zoom.Registers=", StringComparison.Ordinal) && double.TryParse(line["Ui.Zoom.Registers=".Length..], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var zr)) UiZoomRegisters = zr;
+                else if (line.StartsWith("Ui.Zoom.Hex=", StringComparison.Ordinal) && double.TryParse(line["Ui.Zoom.Hex=".Length..], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var zh)) UiZoomHex = zh;
+                else if (line.StartsWith("Ui.Zoom.Stack=", StringComparison.Ordinal) && double.TryParse(line["Ui.Zoom.Stack=".Length..], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var zs)) UiZoomStack = zs;
+                else if (TryParseDouble(line, "Ui.Row.Top=", out var vtr)) UiTopRowRatio = vtr;
+                else if (TryParseDouble(line, "Ui.Row.Bot=", out var vbr)) UiBotRowRatio = vbr;
+                else if (TryParseDouble(line, "Ui.Col.TopLeft=", out var vtl)) UiTopLeftRatio = vtl;
+                else if (TryParseDouble(line, "Ui.Col.TopRight=", out var vtrg)) UiTopRightRatio = vtrg;
+                else if (TryParseDouble(line, "Ui.Col.BotLeft=", out var vbl)) UiBotLeftRatio = vbl;
+                else if (TryParseDouble(line, "Ui.Col.BotRight=", out var vbrg)) UiBotRightRatio = vbrg;
+                else if (TryParseDouble(line, "Ui.Col.Disasm.Bp=", out var vdb)) UiColDisasmBp = vdb;
+                else if (TryParseDouble(line, "Ui.Col.Disasm.Addr=", out var vda)) UiColDisasmAddr = vda;
+                else if (TryParseDouble(line, "Ui.Col.Disasm.Bytes=", out var vdby)) UiColDisasmBytes = vdby;
+                else if (TryParseDouble(line, "Ui.Col.Hex.Addr=", out var vha)) UiColHexAddr = vha;
+                else if (TryParseDouble(line, "Ui.Col.Hex.Hex=", out var vhh)) UiColHexHex = vhh;
+                else if (TryParseDouble(line, "Ui.Col.Stack.Offset=", out var vso)) UiColStackOffset = vso;
+                else if (TryParseDouble(line, "Ui.Col.Stack.Addr=", out var vsa)) UiColStackAddr = vsa;
+                else if (TryParseDouble(line, "Ui.Col.Reg.Name=", out var vrn)) UiColRegName = vrn;
+                else if (TryParseDouble(line, "Ui.Col.Reg.Val=", out var vrv)) UiColRegVal = vrv;
                 else if (line.StartsWith("Color.", StringComparison.Ordinal))
                 {
                     var eq = line.IndexOf('=');
@@ -336,6 +400,32 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 .Where(p => !p.Enabled).Select(p => p.Plugin.Name));
             if (!string.IsNullOrEmpty(disabled))
                 sb.AppendLine($"DisabledPlugins={disabled}");
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            if (UiWindowLeft is { } uiL) sb.AppendLine($"Ui.WindowLeft={uiL.ToString(inv)}");
+            if (UiWindowTop is { } uiT) sb.AppendLine($"Ui.WindowTop={uiT.ToString(inv)}");
+            if (UiWindowWidth is { } uiW) sb.AppendLine($"Ui.WindowWidth={uiW.ToString(inv)}");
+            if (UiWindowHeight is { } uiH) sb.AppendLine($"Ui.WindowHeight={uiH.ToString(inv)}");
+            if (!string.IsNullOrEmpty(UiWindowState)) sb.AppendLine($"Ui.WindowState={UiWindowState}");
+            if (UiFontSize is { } uiF) sb.AppendLine($"Ui.FontSize={uiF.ToString(inv)}");
+            if (UiZoomDisasm is { } zd) sb.AppendLine($"Ui.Zoom.Disasm={zd.ToString(inv)}");
+            if (UiZoomRegisters is { } zr) sb.AppendLine($"Ui.Zoom.Registers={zr.ToString(inv)}");
+            if (UiZoomHex is { } zh) sb.AppendLine($"Ui.Zoom.Hex={zh.ToString(inv)}");
+            if (UiZoomStack is { } zs) sb.AppendLine($"Ui.Zoom.Stack={zs.ToString(inv)}");
+            if (UiTopRowRatio is { } vtr) sb.AppendLine($"Ui.Row.Top={vtr.ToString(inv)}");
+            if (UiBotRowRatio is { } vbr) sb.AppendLine($"Ui.Row.Bot={vbr.ToString(inv)}");
+            if (UiTopLeftRatio is { } vtl) sb.AppendLine($"Ui.Col.TopLeft={vtl.ToString(inv)}");
+            if (UiTopRightRatio is { } vtrg) sb.AppendLine($"Ui.Col.TopRight={vtrg.ToString(inv)}");
+            if (UiBotLeftRatio is { } vbl) sb.AppendLine($"Ui.Col.BotLeft={vbl.ToString(inv)}");
+            if (UiBotRightRatio is { } vbrg) sb.AppendLine($"Ui.Col.BotRight={vbrg.ToString(inv)}");
+            if (UiColDisasmBp is { } vdb) sb.AppendLine($"Ui.Col.Disasm.Bp={vdb.ToString(inv)}");
+            if (UiColDisasmAddr is { } vda) sb.AppendLine($"Ui.Col.Disasm.Addr={vda.ToString(inv)}");
+            if (UiColDisasmBytes is { } vdby) sb.AppendLine($"Ui.Col.Disasm.Bytes={vdby.ToString(inv)}");
+            if (UiColHexAddr is { } vha) sb.AppendLine($"Ui.Col.Hex.Addr={vha.ToString(inv)}");
+            if (UiColHexHex is { } vhh) sb.AppendLine($"Ui.Col.Hex.Hex={vhh.ToString(inv)}");
+            if (UiColStackOffset is { } vso) sb.AppendLine($"Ui.Col.Stack.Offset={vso.ToString(inv)}");
+            if (UiColStackAddr is { } vsa) sb.AppendLine($"Ui.Col.Stack.Addr={vsa.ToString(inv)}");
+            if (UiColRegName is { } vrn) sb.AppendLine($"Ui.Col.Reg.Name={vrn.ToString(inv)}");
+            if (UiColRegVal is { } vrv) sb.AppendLine($"Ui.Col.Reg.Val={vrv.ToString(inv)}");
             foreach (var (key, val) in ThemeColors)
                 sb.AppendLine($"Color.{key}={val}");
             File.WriteAllText(SettingsFile, sb.ToString());
@@ -3330,6 +3420,41 @@ public partial class MainViewModel : ObservableObject, IDisposable
         Log($"Follow in dump: {address:X16}");
     }
 
+    /// <summary>Public wrapper for command console.</summary>
+    public void FollowAddressInDump(ulong address) => FollowInDump(address);
+
+    /// <summary>Read 8 bytes from target memory and return as qword (0 on failure).</summary>
+    public ulong ReadQwordAt(ulong address)
+    {
+        if (!IsConnected || TargetPid == 0) return 0;
+        try
+        {
+            var data = _driver.ReadMemory(TargetPid, address, 8u);
+            if (data == null || data.Length < 8) return 0;
+            return BitConverter.ToUInt64(data, 0);
+        }
+        catch { return 0; }
+    }
+
+    /// <summary>Resolve a module!symbol pair to address (0 if not found).</summary>
+    public ulong ResolveSymbolName(string moduleName, string symbol)
+    {
+        try
+        {
+            return _symbols.ResolveNameToAddress($"{moduleName}!{symbol}");
+        }
+        catch { return 0; }
+    }
+
+    /// <summary>Remove a breakpoint by its kernel handle.</summary>
+    public void RemoveBreakpointByHandle(uint handle)
+    {
+        if (!IsConnected) return;
+        try { _driver.RemoveBreakpoint(handle); } catch { }
+        var bp = Breakpoints.FirstOrDefault(b => b.Handle == handle);
+        if (bp != null) Breakpoints.Remove(bp);
+    }
+
     /// <summary>
     /// Reads and displays UNWIND_INFO for an exception entry.
     /// </summary>
@@ -3565,7 +3690,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         WriteRegisterValue(reg.Name, reg.Value - 1);
     }
 
-    private void WriteRegisterValue(string regName, ulong newValue)
+    public void WriteRegisterValue(string regName, ulong newValue)
     {
         var pid = TargetPid;
         var tid = SelectedThreadId;

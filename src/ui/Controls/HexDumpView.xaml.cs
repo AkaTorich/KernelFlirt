@@ -36,6 +36,44 @@ public partial class HexDumpView : UserControl
         InitializeComponent();
     }
 
+    public static readonly DependencyProperty LineFontSizeProperty = DependencyProperty.Register(
+        nameof(LineFontSize), typeof(double), typeof(HexDumpView),
+        new PropertyMetadata(11.0, OnLineFontSizeChanged));
+
+    public double LineFontSize
+    {
+        get => (double)GetValue(LineFontSizeProperty);
+        set => SetValue(LineFontSizeProperty, value);
+    }
+
+    private static void OnLineFontSizeChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is HexDumpView v) v.ApplyLineFontSize();
+    }
+
+    private void ApplyLineFontSize()
+    {
+        double fs = LineFontSize;
+        foreach (var item in LineList.Items)
+        {
+            if (item is Border b && b.Child is Grid g)
+            {
+                foreach (var child in g.Children)
+                {
+                    if (child is TextBlock tb)
+                    {
+                        tb.FontSize = fs;
+                        foreach (var inl in tb.Inlines)
+                            if (inl is Run r) r.FontSize = fs;
+                        tb.InvalidateMeasure();
+                    }
+                }
+                b.InvalidateMeasure();
+            }
+        }
+        LineList.InvalidateMeasure();
+    }
+
     private MainViewModel? GetViewModel()
         => Window.GetWindow(this)?.DataContext as MainViewModel;
 
@@ -89,14 +127,19 @@ public partial class HexDumpView : UserControl
 
     private Border CreateLine(int lineIdx, int offset, ulong lineAddr, bool hasBp)
     {
-        var tb = new TextBlock { FontFamily = new FontFamily("Consolas"), FontSize = 13 };
+        TextBlock MakeTb() => new()
+        {
+            FontFamily = new FontFamily("Lucida Console"),
+            FontSize = LineFontSize,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        };
 
-        // === Address column ===
-        var addrRun = new Run($"{lineAddr:X16}  ") { Foreground = AddressColor };
-        addrRun.MouseRightButtonDown += (s, e) => {SelectLine(lineIdx); };
-        tb.Inlines.Add(addrRun);
+        var addrTb = MakeTb();
+        var addrRun = new Run($"{lineAddr:X16}") { Foreground = AddressColor };
+        addrRun.MouseRightButtonDown += (s, e) => { SelectLine(lineIdx); };
+        addrTb.Inlines.Add(addrRun);
 
-        // === Hex bytes column ===
+        var hexTb = MakeTb();
         int bytesInLine = Math.Min(16, _data!.Length - offset);
         for (int j = 0; j < 16; j++)
         {
@@ -114,14 +157,12 @@ public partial class HexDumpView : UserControl
             {
                 hexRun = new Run("   ");
             }
-            hexRun.MouseRightButtonDown += (s, e) => {SelectLine(lineIdx); };
-            tb.Inlines.Add(hexRun);
-            if (j == 7) tb.Inlines.Add(new Run(" "));
+            hexRun.MouseRightButtonDown += (s, e) => { SelectLine(lineIdx); };
+            hexTb.Inlines.Add(hexRun);
+            if (j == 7) hexTb.Inlines.Add(new Run(" "));
         }
 
-        tb.Inlines.Add(new Run(" "));
-
-        // === ASCII column ===
+        var asciiTb = MakeTb();
         var asciiSb = new StringBuilder(16);
         for (int j = 0; j < bytesInLine; j++)
         {
@@ -129,23 +170,53 @@ public partial class HexDumpView : UserControl
             asciiSb.Append(b >= 0x20 && b < 0x7F ? (char)b : '.');
         }
         var asciiRun = new Run(asciiSb.ToString()) { Foreground = AsciiColor };
-        asciiRun.MouseRightButtonDown += (s, e) => {SelectLine(lineIdx); };
-        tb.Inlines.Add(asciiRun);
+        asciiRun.MouseRightButtonDown += (s, e) => { SelectLine(lineIdx); };
+        asciiTb.Inlines.Add(asciiRun);
+
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(AddressColWidth) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(HexColWidth) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        Grid.SetColumn(addrTb, 0);
+        Grid.SetColumn(hexTb, 1);
+        Grid.SetColumn(asciiTb, 2);
+        grid.Children.Add(addrTb);
+        grid.Children.Add(hexTb);
+        grid.Children.Add(asciiTb);
 
         Brush bgBrush = hasBp ? BpLineColor : Brushes.Transparent;
 
         var border = new Border
         {
-            Child = tb,
+            Child = grid,
             Background = bgBrush,
             Padding = new Thickness(4, 1, 4, 1),
             BorderThickness = new Thickness(0),
         };
-
-        // Context menu per line
         border.ContextMenu = BuildContextMenu();
-
         return border;
+    }
+
+    public double AddressColWidth { get; set; } = 150;
+    public double HexColWidth { get; set; } = 340;
+
+    private void OnHexSplitterDrag0(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e) => DragHexCol(0, e.HorizontalChange);
+    private void OnHexSplitterDrag1(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e) => DragHexCol(1, e.HorizontalChange);
+
+    private void DragHexCol(int idx, double delta)
+    {
+        var cols = HexColumnOverlay.ColumnDefinitions;
+        double newW = Math.Max(30, cols[idx].Width.Value + delta);
+        cols[idx].Width = new GridLength(newW);
+        if (idx == 0) AddressColWidth = newW; else HexColWidth = newW;
+        foreach (var item in LineList.Items)
+        {
+            if (item is Border b && b.Child is Grid g && g.ColumnDefinitions.Count >= 3)
+            {
+                g.ColumnDefinitions[0].Width = new GridLength(AddressColWidth);
+                g.ColumnDefinitions[1].Width = new GridLength(HexColWidth);
+            }
+        }
     }
 
     private ContextMenu BuildContextMenu()
