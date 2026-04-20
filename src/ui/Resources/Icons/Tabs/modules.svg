@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="modBase" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#A5D8FF"/>
+      <stop offset="50%" stop-color="#1976D2"/>
+      <stop offset="100%" stop-color="#0A2E5C"/>
+    </linearGradient>
+    <linearGradient id="modGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFF" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#FFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="modSh"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <!-- 3 stacked DLL-like cards with 3D offset -->
+  <g transform="translate(4,1)">
+    <rect x="0" y="0" width="10" height="4" rx="0.5" fill="#000" opacity="0.35" filter="url(#modSh)" transform="translate(0.2,0.3)"/>
+    <rect x="0" y="0" width="10" height="4" rx="0.5" fill="url(#modBase)" stroke="#061A36" stroke-width="0.4"/>
+    <text x="5" y="3" text-anchor="middle" font-family="monospace" font-size="2.3" font-weight="bold" fill="#FFF">.dll</text>
+    <rect x="0.3" y="0.3" width="9.4" height="1.2" rx="0.3" fill="url(#modGloss)"/>
+  </g>
+  <g transform="translate(3,6)">
+    <rect x="0" y="0" width="10" height="4" rx="0.5" fill="#000" opacity="0.35" filter="url(#modSh)" transform="translate(0.2,0.3)"/>
+    <rect x="0" y="0" width="10" height="4" rx="0.5" fill="url(#modBase)" stroke="#061A36" stroke-width="0.4"/>
+    <text x="5" y="3" text-anchor="middle" font-family="monospace" font-size="2.3" font-weight="bold" fill="#FFF">.exe</text>
+    <rect x="0.3" y="0.3" width="9.4" height="1.2" rx="0.3" fill="url(#modGloss)"/>
+  </g>
+  <g transform="translate(2,11)">
+    <rect x="0" y="0" width="10" height="4" rx="0.5" fill="#000" opacity="0.35" filter="url(#modSh)" transform="translate(0.2,0.3)"/>
+    <rect x="0" y="0" width="10" height="4" rx="0.5" fill="url(#modBase)" stroke="#061A36" stroke-width="0.4"/>
+    <text x="5" y="3" text-anchor="middle" font-family="monospace" font-size="2.3" font-weight="bold" fill="#FFF">.dll</text>
+    <rect x="0.3" y="0.3" width="9.4" height="1.2" rx="0.3" fill="url(#modGloss)"/>
+  </g>
+</svg>

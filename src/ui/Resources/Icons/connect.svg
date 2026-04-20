@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="cnBolt" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FF6B6B"/>
+      <stop offset="45%" stop-color="#E53935"/>
+      <stop offset="100%" stop-color="#7A0000"/>
+    </linearGradient>
+    <linearGradient id="cnGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="cnSh"><feGaussianBlur stdDeviation="0.4"/></filter>
+  </defs>
+  <!-- Shadow -->
+  <path d="M9.5 1 L3 9 H7 L5.5 15 L12.5 6.5 H8.5 Z"
+        fill="#000" opacity="0.45" filter="url(#cnSh)" transform="translate(0.3,0.4)"/>
+  <!-- Main bolt body -->
+  <path d="M9.5 1 L3 9 H7 L5.5 15 L12.5 6.5 H8.5 Z"
+        fill="url(#cnBolt)" stroke="#3A0000" stroke-width="0.6" stroke-linejoin="round"/>
+  <!-- Gloss highlight on upper half -->
+  <path d="M9 1.5 L3.8 8.2 H6.5 L6 10 L9 6.5 L8.5 5 Z"
+        fill="url(#cnGloss)"/>
+  <!-- Inner bright edge on left side -->
+  <path d="M9.3 1.5 L3.7 8.7 H5" fill="none" stroke="#FFD0D0" stroke-width="0.35" opacity="0.7"/>
+</svg>

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="pauseBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#FFE48A"/>
+      <stop offset="45%" stop-color="#F0B030"/>
+      <stop offset="100%" stop-color="#9F6A10"/>
+    </linearGradient>
+    <linearGradient id="pauseGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#FFFFFF" stop-opacity="0.75"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="pauseShadow"><feGaussianBlur stdDeviation="0.35"/></filter>
+  </defs>
+  <g filter="url(#pauseShadow)" opacity="0.35" transform="translate(0.3,0.4)">
+    <rect x="3"  y="2.2" width="3.2" height="11.6" rx="0.8" fill="#000"/>
+    <rect x="9.8" y="2.2" width="3.2" height="11.6" rx="0.8" fill="#000"/>
+  </g>
+  <rect x="3"  y="2.2" width="3.2" height="11.6" rx="0.8" fill="url(#pauseBody)" stroke="#7B4A08" stroke-width="0.55"/>
+  <rect x="9.8" y="2.2" width="3.2" height="11.6" rx="0.8" fill="url(#pauseBody)" stroke="#7B4A08" stroke-width="0.55"/>
+  <rect x="3"  y="2.2" width="3.2" height="5.5"  rx="0.8" fill="url(#pauseGloss)"/>
+  <rect x="9.8" y="2.2" width="3.2" height="5.5"  rx="0.8" fill="url(#pauseGloss)"/>
+</svg>

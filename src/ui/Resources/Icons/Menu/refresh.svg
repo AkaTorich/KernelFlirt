@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="rfBase" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#81D4FA"/><stop offset="50%" stop-color="#039BE5"/><stop offset="100%" stop-color="#01579B"/></linearGradient>
+  </defs>
+  <path d="M3 8 A5 5 0 1 1 8 13 L8 11 L5.5 13 L8 15 L8 13"
+        fill="none" stroke="url(#rfBase)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M13 8 A5 5 0 0 0 8 3 L8 1 L5.5 3 L8 5" fill="none" stroke="url(#rfBase)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

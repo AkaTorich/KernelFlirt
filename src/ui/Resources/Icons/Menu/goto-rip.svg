@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="grBase" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FFEB3B"/><stop offset="100%" stop-color="#B8860B"/></linearGradient>
+  </defs>
+  <!-- code lines -->
+  <rect x="4" y="2" width="10" height="1" fill="#888"/>
+  <rect x="4" y="4" width="10" height="1" fill="#888"/>
+  <rect x="4" y="6" width="10" height="1" fill="#888"/>
+  <rect x="4" y="8" width="10" height="1.2" fill="#FFEB3B" opacity="0.4"/>
+  <rect x="4" y="10" width="10" height="1" fill="#888"/>
+  <rect x="4" y="12" width="10" height="1" fill="#888"/>
+  <rect x="4" y="14" width="10" height="1" fill="#888"/>
+  <!-- RIP arrow -->
+  <path d="M0 6 L3 8.6 L0 11 L1 8.6 Z" fill="url(#grBase)" stroke="#5C3900" stroke-width="0.4"/>
+  <text x="1.5" y="9.5" font-family="monospace" font-size="2" font-weight="bold" fill="#5C3900">R</text>
+</svg>

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <radialGradient id="wwBody" cx="0.35" cy="0.32" r="0.85">
+      <stop offset="0%"  stop-color="#FFD890"/>
+      <stop offset="35%" stop-color="#F0922E"/>
+      <stop offset="100%" stop-color="#7A3F05"/>
+    </radialGradient>
+    <filter id="wwShadow"><feGaussianBlur stdDeviation="0.4"/></filter>
+  </defs>
+  <circle cx="8" cy="8" r="5.4" fill="#000" opacity="0.4" filter="url(#wwShadow)" transform="translate(0.3,0.5)"/>
+  <circle cx="8" cy="8" r="5.4" fill="url(#wwBody)" stroke="#5A2C03" stroke-width="0.55"/>
+  <ellipse cx="6.3" cy="5.3" rx="3.2" ry="1.8" fill="#FFFFFF" fill-opacity="0.55"/>
+  <ellipse cx="5.8" cy="4.8" rx="1.6" ry="0.7" fill="#FFFFFF" fill-opacity="0.85"/>
+  <text x="8" y="11" font-family="Arial Black, sans-serif" font-size="5" font-weight="900"
+        fill="#FFFFFF" text-anchor="middle" stroke="#5A2C03" stroke-width="0.3">W</text>
+</svg>

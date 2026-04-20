@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="rtcBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#7EE085"/>
+      <stop offset="45%" stop-color="#3EAF3E"/>
+      <stop offset="100%" stop-color="#1E7A1E"/>
+    </linearGradient>
+    <linearGradient id="rtcGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#FFFFFF" stop-opacity="0.75"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="rtcShadow"><feGaussianBlur stdDeviation="0.35"/></filter>
+    <clipPath id="rtcClip"><path d="M1.5 5 h4 V3 L10 8 L5.5 13 V11 H1.5 Z"/></clipPath>
+  </defs>
+  <!-- arrow -->
+  <path d="M1.5 5 h4 V3 L10 8 L5.5 13 V11 H1.5 Z"
+        fill="#000" opacity="0.35" filter="url(#rtcShadow)" transform="translate(0.3,0.4)"/>
+  <path d="M1.5 5 h4 V3 L10 8 L5.5 13 V11 H1.5 Z"
+        fill="url(#rtcBody)" stroke="#155C15" stroke-width="0.55" stroke-linejoin="round"/>
+  <g clip-path="url(#rtcClip)"><ellipse cx="5" cy="4" rx="6" ry="2.5" fill="url(#rtcGloss)"/></g>
+  <!-- cursor bar (target) -->
+  <rect x="12.5" y="2.5" width="2.2" height="11" rx="0.5" fill="#E53935" stroke="#7A1B1B" stroke-width="0.4"/>
+  <rect x="12.5" y="2.5" width="2.2" height="5.5" rx="0.5" fill="url(#rtcGloss)"/>
+</svg>

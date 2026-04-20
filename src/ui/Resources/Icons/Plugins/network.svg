@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <radialGradient id="nwGlobe" cx="0.4" cy="0.3">
+      <stop offset="0%" stop-color="#A5E8FF"/>
+      <stop offset="60%" stop-color="#00838F"/>
+      <stop offset="100%" stop-color="#002A35"/>
+    </radialGradient>
+    <linearGradient id="nwGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="nwSh"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <circle cx="8" cy="8" r="6.2" fill="#000" opacity="0.35" filter="url(#nwSh)" transform="translate(0.2,0.3)"/>
+  <circle cx="8" cy="8" r="6.2" fill="url(#nwGlobe)" stroke="#001A22" stroke-width="0.5"/>
+  <!-- meridians -->
+  <ellipse cx="8" cy="8" rx="2.5" ry="6.2" fill="none" stroke="#FFFFFF" stroke-width="0.35" opacity="0.75"/>
+  <ellipse cx="8" cy="8" rx="5" ry="6.2" fill="none" stroke="#FFFFFF" stroke-width="0.35" opacity="0.55"/>
+  <line x1="8" y1="1.8" x2="8" y2="14.2" stroke="#FFFFFF" stroke-width="0.35" opacity="0.75"/>
+  <!-- parallels -->
+  <line x1="1.8" y1="8" x2="14.2" y2="8" stroke="#FFFFFF" stroke-width="0.35" opacity="0.75"/>
+  <path d="M2.5 5 Q8 4 13.5 5" fill="none" stroke="#FFFFFF" stroke-width="0.35" opacity="0.55"/>
+  <path d="M2.5 11 Q8 12 13.5 11" fill="none" stroke="#FFFFFF" stroke-width="0.35" opacity="0.55"/>
+  <!-- packets -->
+  <circle cx="4" cy="5" r="0.6" fill="#FFD54F"/>
+  <circle cx="12" cy="5" r="0.6" fill="#7FE87F"/>
+  <circle cx="6" cy="12" r="0.6" fill="#FF8A65"/>
+  <!-- gloss -->
+  <ellipse cx="6" cy="4" rx="3" ry="1.2" fill="url(#nwGloss)"/>
+</svg>

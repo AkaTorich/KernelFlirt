@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="spBase" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FFD54F"/><stop offset="100%" stop-color="#E65100"/></linearGradient>
+  </defs>
+  <!-- folder -->
+  <path d="M1.5 4 H5 L6.3 5.3 H14.5 V13 H1.5 Z" fill="url(#spBase)" stroke="#4A2900" stroke-width="0.5" stroke-linejoin="round"/>
+  <!-- function symbol inside -->
+  <text x="8" y="11.5" text-anchor="middle" font-family="Georgia" font-size="6" font-style="italic" font-weight="bold" fill="#4A148C">ƒ</text>
+</svg>

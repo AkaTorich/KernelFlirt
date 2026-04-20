@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="csTop" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFEB3B"/><stop offset="100%" stop-color="#B8860B"/>
+    </linearGradient>
+    <linearGradient id="cs2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#A5D8FF"/><stop offset="100%" stop-color="#1976D2"/>
+    </linearGradient>
+    <linearGradient id="cs3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#C5E1A5"/><stop offset="100%" stop-color="#388E3C"/>
+    </linearGradient>
+    <linearGradient id="cs4" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#CE93D8"/><stop offset="100%" stop-color="#6A1B9A"/>
+    </linearGradient>
+    <linearGradient id="csGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFF" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#FFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="csSh"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <!-- stack frames from bottom up -->
+  <rect x="1.5" y="12" width="13" height="2.5" rx="0.3" fill="#000" opacity="0.35" filter="url(#csSh)" transform="translate(0.2,0.3)"/>
+  <rect x="1.5" y="12" width="13" height="2.5" rx="0.3" fill="url(#cs4)" stroke="#3A0A5A" stroke-width="0.3"/>
+  <rect x="1.8" y="12.2" width="12.4" height="0.8" rx="0.2" fill="url(#csGloss)"/>
+
+  <rect x="1.5" y="9" width="13" height="2.5" rx="0.3" fill="url(#cs3)" stroke="#1A4A20" stroke-width="0.3"/>
+  <rect x="1.8" y="9.2" width="12.4" height="0.8" rx="0.2" fill="url(#csGloss)"/>
+
+  <rect x="1.5" y="6" width="13" height="2.5" rx="0.3" fill="url(#cs2)" stroke="#061A36" stroke-width="0.3"/>
+  <rect x="1.8" y="6.2" width="12.4" height="0.8" rx="0.2" fill="url(#csGloss)"/>
+
+  <!-- top frame (current) - highlighted -->
+  <rect x="1.5" y="3" width="13" height="2.5" rx="0.3" fill="url(#csTop)" stroke="#5C3900" stroke-width="0.4"/>
+  <rect x="1.8" y="3.2" width="12.4" height="0.8" rx="0.2" fill="url(#csGloss)"/>
+
+  <!-- arrow pointing to top frame -->
+  <path d="M0 4.2 L1.3 3.5 L1.3 4.9 Z" fill="#FFEB3B" stroke="#5C3900" stroke-width="0.25"/>
+</svg>

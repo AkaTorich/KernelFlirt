@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="exArr" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FFB0B0"/><stop offset="100%" stop-color="#B71C1C"/></linearGradient>
+    <linearGradient id="exDoor" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#CFD8DC"/><stop offset="100%" stop-color="#37474F"/></linearGradient>
+  </defs>
+  <!-- door frame -->
+  <rect x="8" y="2" width="6" height="12" rx="0.5" fill="url(#exDoor)" stroke="#263238" stroke-width="0.5"/>
+  <rect x="9" y="3" width="4" height="10" fill="#1A1A1A"/>
+  <circle cx="12" cy="8" r="0.4" fill="#FFD54F"/>
+  <!-- exit arrow -->
+  <rect x="1" y="7" width="6" height="2" fill="url(#exArr)" stroke="#4A0000" stroke-width="0.35"/>
+  <path d="M5 5 L9 8 L5 11 Z" fill="url(#exArr)" stroke="#4A0000" stroke-width="0.4" stroke-linejoin="round"/>
+</svg>

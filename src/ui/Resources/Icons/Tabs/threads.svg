@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="thrBase" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2A2A2A"/><stop offset="100%" stop-color="#000"/>
+    </linearGradient>
+    <filter id="thrSh"><feGaussianBlur stdDeviation="0.3"/></filter>
+    <linearGradient id="thrGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFF" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#FFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="1.5" y="2" width="13" height="12" rx="0.8" fill="#000" opacity="0.35" filter="url(#thrSh)" transform="translate(0.2,0.3)"/>
+  <rect x="1.5" y="2" width="13" height="12" rx="0.8" fill="url(#thrBase)" stroke="#4FC3F7" stroke-width="0.4"/>
+  <!-- 3 timeline threads (parallel lines with dots = execution ticks) -->
+  <line x1="2.5" y1="4.5" x2="14" y2="4.5" stroke="#4FC3F7" stroke-width="0.5"/>
+  <line x1="2.5" y1="8" x2="14" y2="8" stroke="#7FE87F" stroke-width="0.5"/>
+  <line x1="2.5" y1="11.5" x2="14" y2="11.5" stroke="#FF8A65" stroke-width="0.5"/>
+  <!-- ticks on thread 1 (blue) -->
+  <g fill="#4FC3F7">
+    <circle cx="3.5" cy="4.5" r="0.7"/><circle cx="5.5" cy="4.5" r="0.7"/>
+    <circle cx="8" cy="4.5" r="0.7"/><circle cx="11" cy="4.5" r="0.7"/>
+    <circle cx="13" cy="4.5" r="0.7"/>
+  </g>
+  <!-- ticks on thread 2 (green) -->
+  <g fill="#7FE87F">
+    <circle cx="4" cy="8" r="0.7"/><circle cx="7" cy="8" r="0.7"/>
+    <circle cx="9" cy="8" r="0.7"/><circle cx="12.5" cy="8" r="0.7"/>
+  </g>
+  <!-- ticks on thread 3 (orange) — with one highlighted (current) -->
+  <g fill="#FF8A65">
+    <circle cx="3.5" cy="11.5" r="0.7"/><circle cx="6" cy="11.5" r="0.7"/>
+    <circle cx="11" cy="11.5" r="0.7"/><circle cx="13.5" cy="11.5" r="0.7"/>
+  </g>
+  <circle cx="9" cy="11.5" r="1.1" fill="#FFEB3B" stroke="#B8860B" stroke-width="0.3"/>
+  <rect x="1.8" y="2.3" width="12.4" height="2.5" rx="0.4" fill="url(#thrGloss)"/>
+</svg>

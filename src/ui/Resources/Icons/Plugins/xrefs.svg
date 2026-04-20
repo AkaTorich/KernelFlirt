@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="xrBase" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#6FB8FF"/>
+      <stop offset="100%" stop-color="#1E5F9C"/>
+    </linearGradient>
+    <linearGradient id="xrGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="xrSh"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <!-- center node -->
+  <circle cx="8" cy="8" r="2.2" fill="#000" opacity="0.35" filter="url(#xrSh)" transform="translate(0.2,0.3)"/>
+  <circle cx="8" cy="8" r="2.2" fill="url(#xrBase)" stroke="#14487E" stroke-width="0.4"/>
+  <!-- 4 incoming arrows -->
+  <path d="M1 2 L5.5 6.5 M5.5 6.5 L4 6.2 M5.5 6.5 L5.2 5" stroke="#2E7D32" stroke-width="0.9" fill="none" stroke-linecap="round"/>
+  <path d="M15 2 L10.5 6.5 M10.5 6.5 L12 6.2 M10.5 6.5 L10.8 5" stroke="#E65100" stroke-width="0.9" fill="none" stroke-linecap="round"/>
+  <path d="M1 14 L5.5 9.5 M5.5 9.5 L4 9.8 M5.5 9.5 L5.2 11" stroke="#AD1457" stroke-width="0.9" fill="none" stroke-linecap="round"/>
+  <path d="M15 14 L10.5 9.5 M10.5 9.5 L12 9.8 M10.5 9.5 L10.8 11" stroke="#6A1B9A" stroke-width="0.9" fill="none" stroke-linecap="round"/>
+  <ellipse cx="8" cy="7" rx="1.8" ry="0.8" fill="url(#xrGloss)"/>
+</svg>

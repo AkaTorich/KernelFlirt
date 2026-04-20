@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="expArrow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFB0B0"/>
+      <stop offset="50%" stop-color="#E53935"/>
+      <stop offset="100%" stop-color="#4A0000"/>
+    </linearGradient>
+    <linearGradient id="expBox" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#424242"/>
+      <stop offset="100%" stop-color="#000"/>
+    </linearGradient>
+    <linearGradient id="expGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFF" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#FFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="expSh"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <!-- source box -->
+  <rect x="2" y="2" width="6" height="12" rx="0.6" fill="#000" opacity="0.35" filter="url(#expSh)" transform="translate(0.2,0.3)"/>
+  <rect x="2" y="2" width="6" height="12" rx="0.6" fill="url(#expBox)" stroke="#444" stroke-width="0.4"/>
+  <g fill="#FFB0B0">
+    <rect x="3" y="3.5" width="4" height="0.6"/>
+    <rect x="3" y="5.5" width="4" height="0.6"/>
+    <rect x="3" y="7.5" width="4" height="0.6"/>
+    <rect x="3" y="9.5" width="4" height="0.6"/>
+    <rect x="3" y="11.5" width="4" height="0.6"/>
+  </g>
+  <!-- arrow going OUT of box -->
+  <rect x="9" y="7" width="6" height="2" fill="#000" opacity="0.4" filter="url(#expSh)" transform="translate(0.2,0.3)"/>
+  <rect x="9" y="7" width="6" height="2" fill="url(#expArrow)" stroke="#3A0000" stroke-width="0.35"/>
+  <path d="M13 5 L16 8 L13 11 Z"
+        fill="#000" opacity="0.4" filter="url(#expSh)" transform="translate(0.2,0.3)"/>
+  <path d="M13 5 L16 8 L13 11 Z"
+        fill="url(#expArrow)" stroke="#3A0000" stroke-width="0.4" stroke-linejoin="round"/>
+  <rect x="9" y="7.1" width="4" height="0.7" fill="url(#expGloss)"/>
+</svg>

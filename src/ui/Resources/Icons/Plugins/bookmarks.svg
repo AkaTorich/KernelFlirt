@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="bmBase" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFD54F"/>
+      <stop offset="50%" stop-color="#FF8F00"/>
+      <stop offset="100%" stop-color="#8B4513"/>
+    </linearGradient>
+    <linearGradient id="bmGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.75"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="bmSh"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <!-- ribbon bookmark -->
+  <path d="M4 1.5 H12 V14.5 L8 11.5 L4 14.5 Z"
+        fill="#000" opacity="0.35" filter="url(#bmSh)" transform="translate(0.3,0.3)"/>
+  <path d="M4 1.5 H12 V14.5 L8 11.5 L4 14.5 Z"
+        fill="url(#bmBase)" stroke="#4A2900" stroke-width="0.5" stroke-linejoin="round"/>
+  <!-- gloss on left half -->
+  <path d="M4.3 1.8 H7.8 V13 L4.3 13 Z" fill="url(#bmGloss)"/>
+  <!-- star mark -->
+  <path d="M8 4.5 L8.6 6 L10.2 6.1 L9 7.2 L9.4 8.8 L8 7.9 L6.6 8.8 L7 7.2 L5.8 6.1 L7.4 6 Z"
+        fill="#FFFFFF" stroke="#4A2900" stroke-width="0.25"/>
+</svg>

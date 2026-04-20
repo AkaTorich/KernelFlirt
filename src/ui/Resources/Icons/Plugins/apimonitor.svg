@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="amBase" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#B0D8FF"/>
+      <stop offset="100%" stop-color="#26415E"/>
+    </linearGradient>
+    <linearGradient id="amGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="amSh"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <!-- monitor frame -->
+  <rect x="1.5" y="2" width="13" height="9" rx="1" fill="#000" opacity="0.35" filter="url(#amSh)" transform="translate(0.2,0.3)"/>
+  <rect x="1.5" y="2" width="13" height="9" rx="1" fill="url(#amBase)" stroke="#14487E" stroke-width="0.5"/>
+  <!-- stand -->
+  <rect x="6.5" y="11" width="3" height="1.5" fill="#26415E"/>
+  <rect x="4.5" y="12.5" width="7" height="1.3" rx="0.4" fill="#26415E" stroke="#14487E" stroke-width="0.3"/>
+  <!-- screen content: API call traces -->
+  <rect x="3" y="3.5" width="5" height="0.8" rx="0.2" fill="#7FE87F"/>
+  <rect x="9" y="3.5" width="4" height="0.8" rx="0.2" fill="#FFD54F"/>
+  <rect x="3" y="5" width="7" height="0.8" rx="0.2" fill="#7FE87F"/>
+  <rect x="11" y="5" width="2" height="0.8" rx="0.2" fill="#FFD54F"/>
+  <rect x="3" y="6.5" width="4" height="0.8" rx="0.2" fill="#FF8A65"/>
+  <rect x="8" y="6.5" width="5" height="0.8" rx="0.2" fill="#FFD54F"/>
+  <rect x="3" y="8" width="6" height="0.8" rx="0.2" fill="#7FE87F"/>
+  <!-- screen gloss -->
+  <rect x="1.8" y="2.3" width="12.4" height="3" rx="0.5" fill="url(#amGloss)"/>
+</svg>

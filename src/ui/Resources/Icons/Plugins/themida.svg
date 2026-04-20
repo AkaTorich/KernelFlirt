@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="thBox" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#BCAAA4"/>
+      <stop offset="100%" stop-color="#3E2723"/>
+    </linearGradient>
+    <linearGradient id="thLid" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#D7CCC8"/>
+      <stop offset="100%" stop-color="#5D4037"/>
+    </linearGradient>
+    <linearGradient id="thGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="thSh"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <!-- open box bottom -->
+  <path d="M2 7 H14 V14 H2 Z"
+        fill="#000" opacity="0.35" filter="url(#thSh)" transform="translate(0.2,0.3)"/>
+  <path d="M2 7 H14 V14 H2 Z" fill="url(#thBox)" stroke="#1A0A08" stroke-width="0.4"/>
+  <!-- open lid (tilted back) -->
+  <path d="M2 7 L4 3 H12 L14 7 Z" fill="url(#thLid)" stroke="#1A0A08" stroke-width="0.4" stroke-linejoin="round"/>
+  <!-- PE emerging -->
+  <rect x="5.5" y="4.5" width="5" height="6" rx="0.3" fill="#42A5F5" stroke="#0D47A1" stroke-width="0.3"/>
+  <text x="8" y="8.5" text-anchor="middle" font-family="monospace" font-size="2.2" fill="#FFFFFF" font-weight="bold">PE</text>
+  <!-- lid gloss -->
+  <path d="M3 6.7 L4.3 3.5 H11.7 L13 6.7 Q8 5 3 6.7 Z" fill="url(#thGloss)"/>
+  <!-- sparkles (unpacked) -->
+  <circle cx="3.5" cy="9" r="0.35" fill="#FFD54F"/>
+  <circle cx="12.5" cy="10" r="0.35" fill="#FFD54F"/>
+  <circle cx="4" cy="12" r="0.3" fill="#FFEB3B"/>
+  <circle cx="12" cy="12.5" r="0.3" fill="#FFEB3B"/>
+</svg>

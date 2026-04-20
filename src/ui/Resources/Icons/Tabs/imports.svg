@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="impArrow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#A5E8A5"/>
+      <stop offset="50%" stop-color="#43A047"/>
+      <stop offset="100%" stop-color="#1B3B1D"/>
+    </linearGradient>
+    <linearGradient id="impBox" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#424242"/>
+      <stop offset="100%" stop-color="#000"/>
+    </linearGradient>
+    <linearGradient id="impGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFF" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#FFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="impSh"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <!-- target box (our module) -->
+  <rect x="8" y="2" width="6" height="12" rx="0.6" fill="#000" opacity="0.35" filter="url(#impSh)" transform="translate(0.2,0.3)"/>
+  <rect x="8" y="2" width="6" height="12" rx="0.6" fill="url(#impBox)" stroke="#444" stroke-width="0.4"/>
+  <!-- arrow shaft pointing INTO box -->
+  <rect x="1" y="7" width="6" height="2" fill="#000" opacity="0.4" filter="url(#impSh)" transform="translate(0.2,0.3)"/>
+  <rect x="1" y="7" width="6" height="2" fill="url(#impArrow)" stroke="#0F2A10" stroke-width="0.35"/>
+  <!-- arrowhead into box -->
+  <path d="M5 5 L9 8 L5 11 Z"
+        fill="#000" opacity="0.4" filter="url(#impSh)" transform="translate(0.2,0.3)"/>
+  <path d="M5 5 L9 8 L5 11 Z"
+        fill="url(#impArrow)" stroke="#0F2A10" stroke-width="0.4" stroke-linejoin="round"/>
+  <!-- gloss on shaft -->
+  <rect x="1" y="7.1" width="4" height="0.7" fill="url(#impGloss)"/>
+  <!-- rows in box -->
+  <g fill="#7FE87F">
+    <rect x="9" y="3.5" width="4" height="0.6"/>
+    <rect x="9" y="5.5" width="4" height="0.6"/>
+    <rect x="9" y="7.5" width="4" height="0.6"/>
+    <rect x="9" y="9.5" width="4" height="0.6"/>
+    <rect x="9" y="11.5" width="4" height="0.6"/>
+  </g>
+</svg>

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="svBase" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#B0BEC5"/><stop offset="100%" stop-color="#263238"/></linearGradient>
+    <linearGradient id="svGloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FFF" stop-opacity="0.8"/><stop offset="100%" stop-color="#FFF" stop-opacity="0"/></linearGradient>
+  </defs>
+  <!-- gear -->
+  <path d="M8 1 L9.3 2.3 L11 2 L11.5 3.7 L13 4.5 L12.8 6.3 L14 7.5 L12.8 8.7 L13 10.5 L11.5 11.3 L11 13 L9.3 12.7 L8 14 L6.7 12.7 L5 13 L4.5 11.3 L3 10.5 L3.2 8.7 L2 7.5 L3.2 6.3 L3 4.5 L4.5 3.7 L5 2 L6.7 2.3 Z"
+        fill="url(#svBase)" stroke="#0A1418" stroke-width="0.5" stroke-linejoin="round"/>
+  <circle cx="8" cy="7.5" r="3" fill="#1A2A32" stroke="#0A1418" stroke-width="0.4"/>
+  <circle cx="8" cy="7.5" r="1.5" fill="#4FC3F7"/>
+  <path d="M5 3 Q8 1.5 11 3 Q10 4.5 8 4.3 Q6 4.5 5 3 Z" fill="url(#svGloss)"/>
+</svg>

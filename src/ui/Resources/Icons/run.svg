@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <!-- main body gradient: light green on top → dark green on bottom -->
+    <linearGradient id="runBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#7EE085"/>
+      <stop offset="45%" stop-color="#3EAF3E"/>
+      <stop offset="100%" stop-color="#1E7A1E"/>
+    </linearGradient>
+    <!-- glossy top highlight: white fade -->
+    <linearGradient id="runGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#FFFFFF" stop-opacity="0.75"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <!-- triangle clip so highlight follows the arrow shape -->
+    <clipPath id="runClip">
+      <path d="M2.5 4.2 h5 V2.3 L13.2 8 L7.5 13.7 V11.8 H2.5 Z"/>
+    </clipPath>
+    <!-- soft drop shadow -->
+    <filter id="runShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- shadow -->
+  <path d="M2.5 4.2 h5 V2.3 L13.2 8 L7.5 13.7 V11.8 H2.5 Z"
+        fill="#000" opacity="0.35" filter="url(#runShadow)" transform="translate(0.3,0.4)"/>
+
+  <!-- body -->
+  <path d="M2.5 4.2 h5 V2.3 L13.2 8 L7.5 13.7 V11.8 H2.5 Z"
+        fill="url(#runBody)" stroke="#155C15" stroke-width="0.55" stroke-linejoin="round"/>
+
+  <!-- glossy top half -->
+  <g clip-path="url(#runClip)">
+    <ellipse cx="7.5" cy="3.5" rx="7" ry="3" fill="url(#runGloss)"/>
+  </g>
+
+  <!-- tiny specular highlight -->
+  <path d="M3.2 4.7 h3.6" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="0.55" stroke-linecap="round"/>
+</svg>

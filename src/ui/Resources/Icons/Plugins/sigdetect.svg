@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="sgBase" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFE0B2"/>
+      <stop offset="100%" stop-color="#BF360C"/>
+    </linearGradient>
+    <linearGradient id="sgGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="sgSh"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <!-- barcode-like panel -->
+  <rect x="1.5" y="3" width="13" height="10" rx="0.8" fill="#000" opacity="0.35" filter="url(#sgSh)" transform="translate(0.2,0.3)"/>
+  <rect x="1.5" y="3" width="13" height="10" rx="0.8" fill="url(#sgBase)" stroke="#4A0F00" stroke-width="0.5"/>
+  <!-- hex bytes -->
+  <g fill="#1A0500" font-family="monospace" font-size="2" font-weight="bold">
+    <text x="2.5" y="6.5">4D 5A</text>
+    <text x="2.5" y="9.5">50 45</text>
+    <text x="2.5" y="12">00 00</text>
+  </g>
+  <!-- magnifying check -->
+  <circle cx="11.5" cy="6" r="2.2" fill="#FFFFFF" stroke="#4A0F00" stroke-width="0.5" fill-opacity="0.95"/>
+  <path d="M10.3 6 L11.2 6.9 L12.8 5.2" fill="none" stroke="#2E7D32" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- gloss -->
+  <rect x="1.8" y="3.3" width="12.4" height="2.5" rx="0.4" fill="url(#sgGloss)"/>
+</svg>

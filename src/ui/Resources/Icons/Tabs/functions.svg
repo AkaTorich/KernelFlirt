@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="fnBase" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#CE93D8"/>
+      <stop offset="50%" stop-color="#8E24AA"/>
+      <stop offset="100%" stop-color="#3A1050"/>
+    </linearGradient>
+    <linearGradient id="fnGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFF" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#FFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="fnSh"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <!-- purple tile with f(x) -->
+  <rect x="1.5" y="2" width="13" height="12" rx="1.5" fill="#000" opacity="0.4" filter="url(#fnSh)" transform="translate(0.2,0.3)"/>
+  <rect x="1.5" y="2" width="13" height="12" rx="1.5" fill="url(#fnBase)" stroke="#200838" stroke-width="0.5"/>
+  <!-- f(x) big typography -->
+  <text x="8" y="11" text-anchor="middle" font-family="Georgia, serif" font-size="9"
+        font-style="italic" font-weight="bold" fill="#FFF">ƒ</text>
+  <text x="11.5" y="11.5" font-family="Georgia, serif" font-size="4.5"
+        font-style="italic" fill="#FFD54F">(x)</text>
+  <rect x="1.8" y="2.3" width="12.4" height="3" rx="1" fill="url(#fnGloss)"/>
+</svg>

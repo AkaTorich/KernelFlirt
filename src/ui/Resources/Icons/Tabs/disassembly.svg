@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="daBase" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2A2A2A"/><stop offset="100%" stop-color="#000"/>
+    </linearGradient>
+    <linearGradient id="daGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFF" stop-opacity="0.3"/><stop offset="100%" stop-color="#FFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="daSh"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <rect x="1.5" y="2" width="13" height="12" rx="0.8" fill="#000" opacity="0.35" filter="url(#daSh)" transform="translate(0.2,0.3)"/>
+  <rect x="1.5" y="2" width="13" height="12" rx="0.8" fill="url(#daBase)" stroke="#4FC3F7" stroke-width="0.4"/>
+  <!-- address column (cyan) -->
+  <rect x="2.5" y="3.3" width="3" height="0.8" fill="#4FC3F7"/>
+  <rect x="2.5" y="5" width="3" height="0.8" fill="#4FC3F7"/>
+  <rect x="2.5" y="6.7" width="3" height="0.8" fill="#4FC3F7"/>
+  <rect x="2.5" y="8.4" width="3" height="0.8" fill="#4FC3F7"/>
+  <rect x="2.5" y="10.1" width="3" height="0.8" fill="#4FC3F7"/>
+  <rect x="2.5" y="11.8" width="3" height="0.8" fill="#4FC3F7"/>
+  <!-- bytes (gray) -->
+  <rect x="6" y="3.3" width="2.5" height="0.8" fill="#888"/>
+  <rect x="6" y="5" width="2.5" height="0.8" fill="#888"/>
+  <rect x="6" y="6.7" width="2.5" height="0.8" fill="#888"/>
+  <rect x="6" y="8.4" width="2.5" height="0.8" fill="#888"/>
+  <rect x="6" y="10.1" width="2.5" height="0.8" fill="#888"/>
+  <rect x="6" y="11.8" width="2.5" height="0.8" fill="#888"/>
+  <!-- mnemonics (yellow/green) -->
+  <rect x="9" y="3.3" width="4.5" height="0.8" fill="#FFEB3B"/>
+  <rect x="9" y="5" width="3.5" height="0.8" fill="#7FE87F"/>
+  <rect x="9" y="6.7" width="4" height="0.8" fill="#FFEB3B"/>
+  <rect x="9" y="8.4" width="3" height="0.8" fill="#FF8A65"/>
+  <rect x="9" y="10.1" width="4.2" height="0.8" fill="#7FE87F"/>
+  <rect x="9" y="11.8" width="3.5" height="0.8" fill="#FFEB3B"/>
+  <!-- RIP arrow -->
+  <path d="M1 7.8 L2.2 7.1 L2.2 8.5 Z" fill="#FFEB3B" stroke="#B8860B" stroke-width="0.2"/>
+  <rect x="1.8" y="2.3" width="12.4" height="3" rx="0.4" fill="url(#daGloss)"/>
+</svg>

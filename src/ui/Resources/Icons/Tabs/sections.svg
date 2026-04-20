@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="secText" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#81C784"/><stop offset="100%" stop-color="#1B5E20"/>
+    </linearGradient>
+    <linearGradient id="secData" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#64B5F6"/><stop offset="100%" stop-color="#0D47A1"/>
+    </linearGradient>
+    <linearGradient id="secRdata" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFB74D"/><stop offset="100%" stop-color="#E65100"/>
+    </linearGradient>
+    <linearGradient id="secRsrc" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#BA68C8"/><stop offset="100%" stop-color="#4A148C"/>
+    </linearGradient>
+    <linearGradient id="secGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFF" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#FFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="secSh"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <!-- segmented memory bar (horizontal stack) -->
+  <rect x="1" y="4" width="14" height="8" rx="0.6" fill="#000" opacity="0.35" filter="url(#secSh)" transform="translate(0.2,0.3)"/>
+  <g stroke="#000" stroke-width="0.5">
+    <rect x="1" y="4" width="4" height="8" fill="url(#secText)"/>
+    <rect x="5" y="4" width="3.5" height="8" fill="url(#secData)"/>
+    <rect x="8.5" y="4" width="4" height="8" fill="url(#secRdata)"/>
+    <rect x="12.5" y="4" width="2.5" height="8" fill="url(#secRsrc)"/>
+  </g>
+  <!-- section labels -->
+  <text x="3" y="8.7" text-anchor="middle" font-family="monospace" font-size="2" font-weight="bold" fill="#FFF">.text</text>
+  <text x="6.75" y="8.7" text-anchor="middle" font-family="monospace" font-size="2" font-weight="bold" fill="#FFF">.data</text>
+  <text x="10.5" y="8.7" text-anchor="middle" font-family="monospace" font-size="2" font-weight="bold" fill="#FFF">.rdata</text>
+  <text x="13.75" y="8.7" text-anchor="middle" font-family="monospace" font-size="1.8" font-weight="bold" fill="#FFF">.rsrc</text>
+  <!-- overall outline -->
+  <rect x="1" y="4" width="14" height="8" rx="0.6" fill="none" stroke="#222" stroke-width="0.6"/>
+  <!-- gloss -->
+  <rect x="1.3" y="4.3" width="13.4" height="2.3" rx="0.4" fill="url(#secGloss)"/>
+</svg>

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <radialGradient id="flBase" cx="0.5" cy="0.3">
+      <stop offset="0%" stop-color="#FFB0D0"/>
+      <stop offset="60%" stop-color="#E91E63"/>
+      <stop offset="100%" stop-color="#5D0027"/>
+    </radialGradient>
+    <linearGradient id="flGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="flSh"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <!-- fingerprint loops -->
+  <circle cx="8" cy="8" r="6.5" fill="#000" opacity="0.35" filter="url(#flSh)" transform="translate(0.2,0.3)"/>
+  <circle cx="8" cy="8" r="6.5" fill="url(#flBase)" stroke="#4A0020" stroke-width="0.4"/>
+  <!-- concentric arcs to look like fingerprint -->
+  <g fill="none" stroke="#FFFFFF" stroke-width="0.55" stroke-linecap="round" opacity="0.85">
+    <path d="M4 8 Q4 5.5 8 5.5 Q12 5.5 12 8"/>
+    <path d="M5 8.5 Q5 6.5 8 6.5 Q11 6.5 11 8.5"/>
+    <path d="M6 9 Q6 7.5 8 7.5 Q10 7.5 10 9"/>
+    <path d="M4.5 10.5 Q6 12 8 12 Q10 12 11.5 10.5"/>
+  </g>
+  <ellipse cx="8" cy="5.5" rx="4" ry="1.5" fill="url(#flGloss)"/>
+</svg>

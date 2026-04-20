@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="soArrow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#9ED2FF"/>
+      <stop offset="45%" stop-color="#4A9FE8"/>
+      <stop offset="100%" stop-color="#1E5F9C"/>
+    </linearGradient>
+    <linearGradient id="soGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#FFFFFF" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="soBox" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#3A3A1A"/>
+      <stop offset="100%" stop-color="#2A2A0A"/>
+    </linearGradient>
+    <filter id="soShadow"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <!-- Function block being SKIPPED (we step over it) -->
+  <rect x="4" y="5" width="8" height="6" rx="0.8"
+        fill="#000" opacity="0.25" filter="url(#soShadow)" transform="translate(0.2,0.3)"/>
+  <rect x="4" y="5" width="8" height="6" rx="0.8"
+        fill="url(#soBox)" stroke="#5A5A1A" stroke-width="0.5" opacity="0.8"/>
+  <text x="8" y="9.2" text-anchor="middle" font-family="monospace" font-size="3.5"
+        fill="#BBBB44" font-weight="bold" opacity="0.7">f( )</text>
+  <!-- Arc OVER the box: from left to right -->
+  <!-- shadow arc -->
+  <path d="M2 8 Q2 1 8 1 Q14 1 14 8"
+        fill="none" stroke="#000" stroke-width="1.8" stroke-opacity="0.3"
+        filter="url(#soShadow)" transform="translate(0.2,0.3)"/>
+  <path d="M2 8 Q2 1 8 1 Q14 1 14 8"
+        fill="none" stroke="url(#soArrow)" stroke-width="1.6"
+        stroke-linecap="round"/>
+  <!-- Arrowhead at right end pointing DOWN -->
+  <path d="M11.5 6.5 L14.5 8.5 L12.5 10.5 Z"
+        fill="#000" opacity="0.3" filter="url(#soShadow)" transform="translate(0.2,0.3)"/>
+  <path d="M11.5 6.5 L14.5 8.5 L12.5 10.5 Z"
+        fill="url(#soArrow)" stroke="#14487E" stroke-width="0.4" stroke-linejoin="round"/>
+  <!-- Landing line after the box -->
+  <rect x="3" y="12.5" width="10" height="1.5" rx="0.4"
+        fill="#667788" opacity="0.9"/>
+  <!-- Gloss on arc top -->
+  <path d="M5 3.5 Q8 1.5 11 3.5"
+        fill="none" stroke="url(#soGloss)" stroke-width="0.8"/>
+</svg>

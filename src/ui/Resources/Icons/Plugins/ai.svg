@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <radialGradient id="aiBrain" cx="0.5" cy="0.3">
+      <stop offset="0%" stop-color="#E1BEE7"/>
+      <stop offset="60%" stop-color="#AB47BC"/>
+      <stop offset="100%" stop-color="#4A148C"/>
+    </radialGradient>
+    <linearGradient id="aiGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="aiSh"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <!-- brain/chip hybrid -->
+  <rect x="3" y="3" width="10" height="10" rx="2" fill="#000" opacity="0.35" filter="url(#aiSh)" transform="translate(0.2,0.3)"/>
+  <rect x="3" y="3" width="10" height="10" rx="2" fill="url(#aiBrain)" stroke="#2A006A" stroke-width="0.5"/>
+  <!-- chip pins -->
+  <g fill="#1A0A4A">
+    <rect x="1.5" y="5" width="1.5" height="0.6"/>
+    <rect x="1.5" y="7.7" width="1.5" height="0.6"/>
+    <rect x="1.5" y="10.4" width="1.5" height="0.6"/>
+    <rect x="13" y="5" width="1.5" height="0.6"/>
+    <rect x="13" y="7.7" width="1.5" height="0.6"/>
+    <rect x="13" y="10.4" width="1.5" height="0.6"/>
+  </g>
+  <!-- neural network nodes -->
+  <g fill="#FFEB3B">
+    <circle cx="5.5" cy="5.5" r="0.7"/>
+    <circle cx="5.5" cy="10.5" r="0.7"/>
+    <circle cx="8" cy="8" r="0.9"/>
+    <circle cx="10.5" cy="5.5" r="0.7"/>
+    <circle cx="10.5" cy="10.5" r="0.7"/>
+  </g>
+  <!-- connections -->
+  <g stroke="#FFFFFF" stroke-width="0.3" opacity="0.8">
+    <line x1="5.5" y1="5.5" x2="8" y2="8"/>
+    <line x1="5.5" y1="10.5" x2="8" y2="8"/>
+    <line x1="10.5" y1="5.5" x2="8" y2="8"/>
+    <line x1="10.5" y1="10.5" x2="8" y2="8"/>
+  </g>
+  <!-- gloss -->
+  <rect x="3.3" y="3.3" width="9.4" height="3" rx="1" fill="url(#aiGloss)"/>
+</svg>

@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="peBase" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#E1F5FE"/>
+      <stop offset="60%" stop-color="#90A4AE"/>
+      <stop offset="100%" stop-color="#37474F"/>
+    </linearGradient>
+    <linearGradient id="peGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="peSh"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <!-- document with folded corner -->
+  <path d="M3 1.5 H10.5 L13 4 V14.5 H3 Z"
+        fill="#000" opacity="0.35" filter="url(#peSh)" transform="translate(0.3,0.3)"/>
+  <path d="M3 1.5 H10.5 L13 4 V14.5 H3 Z"
+        fill="url(#peBase)" stroke="#263238" stroke-width="0.5" stroke-linejoin="round"/>
+  <!-- folded corner -->
+  <path d="M10.5 1.5 V4 H13 Z" fill="#CFD8DC" stroke="#263238" stroke-width="0.4"/>
+  <!-- PE header -->
+  <rect x="4.5" y="6" width="7" height="1" rx="0.2" fill="#1976D2"/>
+  <text x="8" y="6.9" text-anchor="middle" font-family="monospace" font-size="0.9" fill="#FFFFFF" font-weight="bold">PE</text>
+  <!-- section rows -->
+  <rect x="4.5" y="8" width="7" height="0.7" rx="0.15" fill="#66BB6A"/>
+  <rect x="4.5" y="9.2" width="7" height="0.7" rx="0.15" fill="#FFA726"/>
+  <rect x="4.5" y="10.4" width="7" height="0.7" rx="0.15" fill="#EF5350"/>
+  <rect x="4.5" y="11.6" width="4.5" height="0.7" rx="0.15" fill="#AB47BC"/>
+  <!-- hammer tool overlay (build) -->
+  <rect x="9" y="10.5" width="4" height="1" rx="0.2" fill="#5D4037" transform="rotate(-35 11 11)"/>
+  <rect x="8" y="10.5" width="1.5" height="2.5" rx="0.2" fill="#795548" transform="rotate(-35 8.75 11.75)"/>
+  <!-- gloss -->
+  <path d="M3.3 1.8 H10.3 V4 Q8 3 3.3 3.8 Z" fill="url(#peGloss)"/>
+</svg>

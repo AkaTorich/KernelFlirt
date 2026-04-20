@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="scBase" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#CE93D8"/><stop offset="100%" stop-color="#4A148C"/></linearGradient>
+  </defs>
+  <rect x="2" y="3" width="11" height="10" rx="0.8" fill="url(#scBase)" stroke="#200838" stroke-width="0.5"/>
+  <text x="7.5" y="11" text-anchor="middle" font-family="Georgia" font-size="7" font-style="italic" font-weight="bold" fill="#FFF" opacity="0.5">ƒ</text>
+  <!-- trash badge -->
+  <g transform="translate(10,9)">
+    <rect x="-2" y="-1" width="4" height="0.8" rx="0.1" fill="#FFF"/>
+    <rect x="-1.5" y="-0.2" width="3" height="3.3" rx="0.2" fill="#E53935" stroke="#4A0000" stroke-width="0.3"/>
+    <line x1="-0.7" y1="0.5" x2="-0.7" y2="2.5" stroke="#FFF" stroke-width="0.25"/>
+    <line x1="0" y1="0.5" x2="0" y2="2.5" stroke="#FFF" stroke-width="0.25"/>
+    <line x1="0.7" y1="0.5" x2="0.7" y2="2.5" stroke="#FFF" stroke-width="0.25"/>
+  </g>
+</svg>

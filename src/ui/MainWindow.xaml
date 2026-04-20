@@ -6,6 +6,7 @@
         xmlns:ctrl="clr-namespace:KernelFlirt.UI.Controls"
         xmlns:ae="http://icsharpcode.net/sharpdevelop/avalonedit"
         xmlns:models="clr-namespace:KernelFlirt.UI.Models"
+        xmlns:svgc="http://sharpvectors.codeplex.com/svgc/"
         Icon="icon.ico"
         Title="KernelFlirt - Kernel Debugger"
         Width="1400" Height="900"
@@ -76,78 +77,162 @@
         <!-- Menu Bar -->
         <Menu DockPanel.Dock="Top" Background="{DynamicResource BgLightBrush}">
             <MenuItem Header="_File">
-                <MenuItem Header="_Open Process..." Command="{Binding OpenProcessCommand}" />
-                <MenuItem Header="Open &amp; _Debug (.exe)..." Command="{Binding OpenAndDebugCommand}" />
-                <MenuItem Header="Debug _Service..." Command="{Binding DebugServiceCommand}" />
-                <MenuItem Header="_Connect Kernel..." Command="{Binding ConnectKernelCommand}" />
-                <MenuItem Header="_Disconnect" Command="{Binding DisconnectKernelCommand}" />
+                <MenuItem Header="_Open Process..." Command="{Binding OpenProcessCommand}">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/attach-process.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Open &amp; _Debug (.exe)..." Command="{Binding OpenAndDebugCommand}">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/open-file.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Debug _Service..." Command="{Binding DebugServiceCommand}">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/Menu/service.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Connect Kernel..." Command="{Binding ConnectKernelCommand}">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/connect.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Disconnect" Command="{Binding DisconnectKernelCommand}">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/Menu/disconnect.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
                 <Separator />
-                <MenuItem Header="E_xit" Click="OnExitClick" />
+                <MenuItem Header="E_xit" Click="OnExitClick">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/Menu/exit.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
             </MenuItem>
             <MenuItem Header="_Debug">
-                <MenuItem Header="_Attach (by PID)" Command="{Binding AttachProcessCommand}" />
-                <MenuItem Header="_Detach" Command="{Binding DetachProcessCommand}" />
-                <MenuItem Header="Re_start Sample" Command="{Binding RestartSampleCommand}" ToolTip="Relaunch the last opened sample and break at its entry point" />
+                <MenuItem Header="_Attach (by PID)" Command="{Binding AttachProcessCommand}">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/attach-process.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Detach" Command="{Binding DetachProcessCommand}">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/Menu/detach.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Re_start Sample" Command="{Binding RestartSampleCommand}" ToolTip="Relaunch the last opened sample and break at its entry point">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/restart.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
                 <Separator />
-                <MenuItem Header="_Run" Command="{Binding RunCommand}" InputGestureText="F9" />
-                <MenuItem Header="_Pause" Command="{Binding PauseCommand}" InputGestureText="F12" />
-                <MenuItem Header="_Continue" Command="{Binding ContinueExecutionCommand}" InputGestureText="F5" />
+                <MenuItem Header="_Run" Command="{Binding RunCommand}" InputGestureText="F9">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/run.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Pause" Command="{Binding PauseCommand}" InputGestureText="F12">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/pause.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Continue" Command="{Binding ContinueExecutionCommand}" InputGestureText="F5">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/continue.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
                 <Separator />
-                <MenuItem Header="Step _Into" Command="{Binding StepInCommand}" InputGestureText="F7" />
-                <MenuItem Header="Step _Over" Command="{Binding StepOverCommand}" InputGestureText="F8" />
-                <MenuItem Header="Step O_ut" Command="{Binding StepOutCommand}" InputGestureText="Ctrl+F9" />
-                <MenuItem Header="S_kip Instruction" Command="{Binding SkipInstructionCommand}" InputGestureText="Ctrl+F8" />
-                <MenuItem Header="Run to _Cursor" Command="{Binding RunToCursorCommand}" InputGestureText="F4" />
+                <MenuItem Header="Step _Into" Command="{Binding StepInCommand}" InputGestureText="F7">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/step-into.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Step _Over" Command="{Binding StepOverCommand}" InputGestureText="F8">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/step-over.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Step O_ut" Command="{Binding StepOutCommand}" InputGestureText="Ctrl+F9">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/step-out.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="S_kip Instruction" Command="{Binding SkipInstructionCommand}" InputGestureText="Ctrl+F8">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/Menu/skip.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Run to _Cursor" Command="{Binding RunToCursorCommand}" InputGestureText="F4">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/run-to-cursor.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
                 <Separator />
-                <MenuItem Header="Toggle _Breakpoint" Command="{Binding ToggleBreakpointCommand}" InputGestureText="F2" />
-                <MenuItem Header="Toggle _HW Breakpoint" Command="{Binding ToggleHwBreakpointCommand}" />
-                <MenuItem Header="Toggle HW _Write Watch" Command="{Binding ToggleHwWriteBreakpointCommand}" />
-                <MenuItem Header="Toggle HW _R/W Watch" Command="{Binding ToggleHwRwBreakpointCommand}" />
-                <MenuItem Header="Toggle _Memory Breakpoint" Command="{Binding ToggleMemoryBreakpointCommand}" />
-                <MenuItem Header="Set _Conditional Breakpoint..." Command="{Binding SetConditionalBreakpointCommand}" />
-                <MenuItem Header="Set _Log Breakpoint..." Command="{Binding SetLogBreakpointCommand}" />
-                <MenuItem Header="Remove _All Breakpoints" Command="{Binding RemoveAllBreakpointsCommand}" />
+                <MenuItem Header="Toggle _Breakpoint" Command="{Binding ToggleBreakpointCommand}" InputGestureText="F2">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/breakpoint.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Toggle _HW Breakpoint" Command="{Binding ToggleHwBreakpointCommand}">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/breakpoint-hw.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Toggle HW _Write Watch" Command="{Binding ToggleHwWriteBreakpointCommand}">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/breakpoint-write.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Toggle HW _R/W Watch" Command="{Binding ToggleHwRwBreakpointCommand}">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/breakpoint-rw.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Toggle _Memory Breakpoint" Command="{Binding ToggleMemoryBreakpointCommand}">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/breakpoint-mem.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Set _Conditional Breakpoint..." Command="{Binding SetConditionalBreakpointCommand}">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/Menu/bp-cond.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Set _Log Breakpoint..." Command="{Binding SetLogBreakpointCommand}">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/Menu/bp-log.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Remove _All Breakpoints" Command="{Binding RemoveAllBreakpointsCommand}">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/Menu/bp-remove-all.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
                 <Separator />
             </MenuItem>
             <MenuItem Header="_Search">
-                <MenuItem Header="_Binary Pattern..." Command="{Binding SearchBinaryCommand}" InputGestureText="Ctrl+F" />
-                <MenuItem Header="_String References..." Command="{Binding SearchStringsCommand}" />
-                <MenuItem Header="_Intermodular Calls" Command="{Binding SearchIntermodularCallsCommand}" />
+                <MenuItem Header="_Binary Pattern..." Command="{Binding SearchBinaryCommand}" InputGestureText="Ctrl+F">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/Tabs/search.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_String References..." Command="{Binding SearchStringsCommand}">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/Menu/search-string.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Intermodular Calls" Command="{Binding SearchIntermodularCallsCommand}">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/Menu/search-intermod.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
             </MenuItem>
             <MenuItem Header="_View">
-                <MenuItem Header="_Refresh All" Click="OnRefreshAllClick" />
-                <MenuItem Header="Go to _RIP" Command="{Binding GoToRipCommand}" InputGestureText="Ctrl+G" />
-                <MenuItem Header="Add _Bookmark..." Command="{Binding AddBookmarkCommand}" />
+                <MenuItem Header="_Refresh All" Click="OnRefreshAllClick">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/Menu/refresh.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Go to _RIP" Command="{Binding GoToRipCommand}" InputGestureText="Ctrl+G">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/Menu/goto-rip.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Add _Bookmark..." Command="{Binding AddBookmarkCommand}">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/Plugins/bookmarks.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
                 <Separator />
-                <MenuItem Header="Refresh _SEH Chain" Click="OnRefreshSehClick" />
-                <MenuItem Header="Restore All _Patches" Command="{Binding RestoreAllPatchesCommand}" />
+                <MenuItem Header="Refresh _SEH Chain" Click="OnRefreshSehClick">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/Menu/refresh-seh.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Restore All _Patches" Command="{Binding RestoreAllPatchesCommand}">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/Menu/restore-patches.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
                 <Separator />
-                <MenuItem Header="_Fullscreen" Click="OnToggleFullscreen" InputGestureText="F11" />
-                <MenuItem Header="_Settings..." Click="OnSettingsClick" />
+                <MenuItem Header="_Fullscreen" Click="OnToggleFullscreen" InputGestureText="F11">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/Menu/fullscreen.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Settings..." Click="OnSettingsClick">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/Menu/settings.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
             </MenuItem>
             <MenuItem Header="_Symbols">
-                <MenuItem Header="_Load All Symbols" Command="{Binding LoadAllSymbolsCommand}" />
-                <MenuItem Header="Set Symbol _Path..." Command="{Binding SetSymbolPathCommand}" />
+                <MenuItem Header="_Load All Symbols" Command="{Binding LoadAllSymbolsCommand}">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/Menu/symbol-load.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Set Symbol _Path..." Command="{Binding SetSymbolPathCommand}">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/Menu/symbol-path.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
                 <Separator />
-                <MenuItem Header="_Clear Symbol Cache" Command="{Binding ClearSymbolCacheCommand}" />
+                <MenuItem Header="_Clear Symbol Cache" Command="{Binding ClearSymbolCacheCommand}">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/Menu/symbol-clear.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
             </MenuItem>
             <MenuItem Header="_Plugins" x:Name="PluginsMenu" />
             <MenuItem Header="_Help">
-                <MenuItem Header="_About" Click="OnAboutClick" />
+                <MenuItem Header="_About" Click="OnAboutClick">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/Menu/about.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
             </MenuItem>
         </Menu>
 
         <!-- Toolbar -->
         <Border DockPanel.Dock="Top" Background="{DynamicResource ToolbarBgBrush}" Padding="4,2">
             <WrapPanel>
-                <Button Content="⊕" Command="{Binding OpenProcessCommand}"
-                        ToolTip="Attach to process" FontSize="14" Padding="6,2" />
-                <Button Content="📂" Command="{Binding OpenAndDebugCommand}"
-                        ToolTip="Open and debug .exe" FontSize="13" Padding="6,2" />
+                <Button Command="{Binding OpenProcessCommand}"
+                        ToolTip="Attach to process" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/attach-process.svg" Width="20" Height="20"/>
+                </Button>
+                <Button Command="{Binding OpenAndDebugCommand}"
+                        ToolTip="Open and debug .exe" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/open-file.svg" Width="20" Height="20"/>
+                </Button>
                 <Button Command="{Binding ConnectKernelCommand}"
                         ToolTip="Connect to kernel driver"
                         Visibility="{Binding IsConnected, Converter={StaticResource InverseBoolVisConv}}"
-                        Content="🔌" FontSize="13" Padding="6,2" />
+                        Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/connect.svg" Width="20" Height="20"/>
+                </Button>
                 <Button Command="{Binding DisconnectKernelCommand}"
                         ToolTip="Disconnect from kernel driver"
                         Visibility="{Binding IsConnected, Converter={StaticResource BoolVisConv}}"
@@ -175,29 +260,57 @@
 
                 <Rectangle Width="1" Fill="{DynamicResource BorderBrush}" Margin="8,2" />
 
-                <Button Content="▶" Command="{Binding RunCommand}" ToolTip="Run (F9)" Foreground="Green" FontSize="14" />
-                <Button Content="🔄" Command="{Binding RestartSampleCommand}" ToolTip="Restart sample — relaunch the last opened file and break at its entry point" Foreground="Green" FontSize="14" />
-                <Button Content="⏸" Command="{Binding PauseCommand}" ToolTip="Pause (F12)" Foreground="Green" FontSize="14" />
-                <Button Content="F5" Command="{Binding ContinueExecutionCommand}" ToolTip="Continue (F5)" Foreground="Green" />
-                <Button Content="F7" Command="{Binding StepInCommand}" ToolTip="Step Into (F7)" Foreground="Green" />
-                <Button Content="F8" Command="{Binding StepOverCommand}" ToolTip="Step Over (F8)" Foreground="Green" />
-                <Button Content="Out" Command="{Binding StepOutCommand}" ToolTip="Step Out (Ctrl+F9)" Foreground="Green" />
-                <Button Content="F4" Command="{Binding RunToCursorCommand}" ToolTip="Run to Cursor (F4)" Foreground="Green" />
+                <Button Command="{Binding RunCommand}" ToolTip="Run (F9)" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/run.svg" Width="20" Height="20"/>
+                </Button>
+                <Button Command="{Binding RestartSampleCommand}" ToolTip="Restart sample" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/restart.svg" Width="20" Height="20"/>
+                </Button>
+                <Button Command="{Binding PauseCommand}" ToolTip="Pause (F12)" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/pause.svg" Width="20" Height="20"/>
+                </Button>
+                <Button Command="{Binding ContinueExecutionCommand}" ToolTip="Continue (F5)" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/continue.svg" Width="20" Height="20"/>
+                </Button>
+                <Button Command="{Binding StepInCommand}" ToolTip="Step Into (F7)" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/step-into.svg" Width="20" Height="20"/>
+                </Button>
+                <Button Command="{Binding StepOverCommand}" ToolTip="Step Over (F8)" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/step-over.svg" Width="20" Height="20"/>
+                </Button>
+                <Button Command="{Binding StepOutCommand}" ToolTip="Step Out (Ctrl+F9)" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/step-out.svg" Width="20" Height="20"/>
+                </Button>
+                <Button Command="{Binding RunToCursorCommand}" ToolTip="Run to Cursor (F4)" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/run-to-cursor.svg" Width="20" Height="20"/>
+                </Button>
 
                 <Rectangle Width="1" Fill="{DynamicResource BorderBrush}" Margin="8,2" />
 
-                <Button Content="BP" Click="OnBpButtonClick" ToolTip="Toggle breakpoint (F2)" Foreground="#FF5370" />
-                <Button Content="HW" Command="{Binding ToggleHwBreakpointCommand}" ToolTip="Toggle hardware breakpoint" Foreground="#FF5370" />
-                <Button Content="WW" Command="{Binding ToggleHwWriteBreakpointCommand}" ToolTip="Toggle HW write watchpoint" Foreground="#FF5370" />
-                <Button Content="RW" Command="{Binding ToggleHwRwBreakpointCommand}" ToolTip="Toggle HW read/write watchpoint" Foreground="#FF5370" />
-                <Button Content="Mem" Command="{Binding ToggleMemoryBreakpointCommand}" ToolTip="Toggle memory breakpoint (PAGE_GUARD)" Foreground="#FF5370" />
+                <Button Click="OnBpButtonClick" ToolTip="Toggle breakpoint (F2)" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/breakpoint.svg" Width="20" Height="20"/>
+                </Button>
+                <Button Command="{Binding ToggleHwBreakpointCommand}" ToolTip="Toggle hardware breakpoint" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/breakpoint-hw.svg" Width="20" Height="20"/>
+                </Button>
+                <Button Command="{Binding ToggleHwWriteBreakpointCommand}" ToolTip="Toggle HW write watchpoint" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/breakpoint-write.svg" Width="20" Height="20"/>
+                </Button>
+                <Button Command="{Binding ToggleHwRwBreakpointCommand}" ToolTip="Toggle HW read/write watchpoint" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/breakpoint-rw.svg" Width="20" Height="20"/>
+                </Button>
+                <Button Command="{Binding ToggleMemoryBreakpointCommand}" ToolTip="Toggle memory breakpoint (PAGE_GUARD)" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/breakpoint-mem.svg" Width="20" Height="20"/>
+                </Button>
 
                 <Rectangle Width="1" Fill="{DynamicResource BorderBrush}" Margin="8,2" />
 
                 <TextBlock Text="Addr:" VerticalAlignment="Center" Margin="4,0" />
                 <TextBox x:Name="GoToBox" Width="160" VerticalAlignment="Center"
                          KeyDown="OnGoToKeyDown" />
-                <Button Content="Go" Click="OnGoToClick" ToolTip="Go to address" />
+                <Button Click="OnGoToClick" ToolTip="Go to address" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/goto.svg" Width="20" Height="20"/>
+                </Button>
             </WrapPanel>
         </Border>
 
@@ -238,7 +351,13 @@
             <TabControl Grid.Row="1" x:Name="MainTabControl">
 
                 <!-- Tab: Disassembly + Registers -->
-                <TabItem Header="Disassembly" IsSelected="True">
+                <TabItem Tag="Disassembly" IsSelected="True">
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <svgc:SvgViewbox Source="/Resources/Icons/Tabs/disassembly.svg" Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Disassembly" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </TabItem.Header>
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="3*" />
@@ -307,7 +426,13 @@
                 </TabItem>
 
                 <!-- Tab: Breakpoints -->
-            <TabItem Header="Breakpoints">
+            <TabItem Tag="Breakpoints">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <svgc:SvgViewbox Source="/Resources/Icons/Tabs/breakpoints.svg" Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Breakpoints" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </TabItem.Header>
                 <DataGrid x:Name="BpGrid" ItemsSource="{Binding Breakpoints}" IsReadOnly="True"
                           AutoGenerateColumns="False" BorderBrush="{DynamicResource BorderBrush}"
                           MouseDoubleClick="OnBreakpointDoubleClick">
@@ -339,7 +464,13 @@
             </TabItem>
 
             <!-- Tab: Modules -->
-            <TabItem Header="Modules">
+            <TabItem Tag="Modules">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <svgc:SvgViewbox Source="/Resources/Icons/Tabs/modules.svg" Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Modules" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </TabItem.Header>
                 <DataGrid x:Name="ModulesGrid" ItemsSource="{Binding Modules}" IsReadOnly="True"
                           AutoGenerateColumns="False" BorderBrush="{DynamicResource BorderBrush}"
                           MouseDoubleClick="OnModuleDoubleClick">
@@ -369,7 +500,13 @@
             </TabItem>
 
             <!-- Tab: Kernel Modules -->
-            <TabItem Header="Kernel Modules">
+            <TabItem Tag="Kernel Modules">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <svgc:SvgViewbox Source="/Resources/Icons/Tabs/kernel-modules.svg" Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Kernel Modules" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </TabItem.Header>
                 <DataGrid x:Name="KernelModulesGrid" ItemsSource="{Binding KernelModules}" IsReadOnly="True"
                           AutoGenerateColumns="False" BorderBrush="{DynamicResource BorderBrush}"
                           MouseDoubleClick="OnKernelModuleDoubleClick">
@@ -402,7 +539,13 @@
             </TabItem>
 
             <!-- Tab: Threads -->
-            <TabItem Header="Threads">
+            <TabItem Tag="Threads">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <svgc:SvgViewbox Source="/Resources/Icons/Tabs/threads.svg" Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Threads" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </TabItem.Header>
                 <DataGrid x:Name="ThreadsGrid" ItemsSource="{Binding Threads}" IsReadOnly="True"
                           AutoGenerateColumns="False" BorderBrush="{DynamicResource BorderBrush}"
                           MouseDoubleClick="OnThreadDoubleClick">
@@ -430,7 +573,13 @@
             </TabItem>
 
             <!-- Tab: Call Stack -->
-            <TabItem Header="Call Stack">
+            <TabItem Tag="Call Stack">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <svgc:SvgViewbox Source="/Resources/Icons/Tabs/callstack.svg" Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Call Stack" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </TabItem.Header>
                 <DataGrid x:Name="CallStackGrid" ItemsSource="{Binding CallStack}" IsReadOnly="True"
                           AutoGenerateColumns="False" BorderBrush="{DynamicResource BorderBrush}"
                           MouseDoubleClick="OnCallStackDoubleClick">
@@ -466,7 +615,13 @@
             <!-- Bookmarks tab removed — replaced by Bookmarks/Notes plugin -->
 
             <!-- Tab: Patches -->
-            <TabItem Header="Patches">
+            <TabItem Tag="Patches">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <svgc:SvgViewbox Source="/Resources/Icons/Tabs/patches.svg" Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Patches" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </TabItem.Header>
                 <DataGrid x:Name="PatchesGrid" ItemsSource="{Binding Patches}" IsReadOnly="True"
                           AutoGenerateColumns="False" BorderBrush="{DynamicResource BorderBrush}">
                     <DataGrid.ContextMenu>
@@ -493,7 +648,13 @@
             </TabItem>
 
             <!-- Tab: Exception Handlers (.pdata + SEH) -->
-            <TabItem Header="Exceptions">
+            <TabItem Tag="Exceptions">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <svgc:SvgViewbox Source="/Resources/Icons/Tabs/exceptions.svg" Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Exceptions" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </TabItem.Header>
                 <DockPanel>
                     <DockPanel DockPanel.Dock="Top" Margin="2">
                         <TextBlock Text="Filter: " VerticalAlignment="Center" Foreground="{DynamicResource CommentBrush}" />
@@ -561,7 +722,13 @@
             </TabItem>
 
             <!-- Tab: Sections -->
-            <TabItem Header="Sections">
+            <TabItem Tag="Sections">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <svgc:SvgViewbox Source="/Resources/Icons/Tabs/sections.svg" Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Sections" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </TabItem.Header>
                 <DockPanel>
                     <DockPanel DockPanel.Dock="Top" Margin="2">
                         <TextBlock Text="Filter: " VerticalAlignment="Center" Foreground="{DynamicResource CommentBrush}" />
@@ -639,7 +806,13 @@
             </TabItem>
 
             <!-- Tab: Strings -->
-            <TabItem Header="Strings">
+            <TabItem Tag="Strings">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <svgc:SvgViewbox Source="/Resources/Icons/Tabs/strings.svg" Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Strings" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </TabItem.Header>
                 <DockPanel>
                     <DockPanel DockPanel.Dock="Top" Margin="2">
                         <TextBlock Text="Filter: " VerticalAlignment="Center" Foreground="{DynamicResource CommentBrush}" />
@@ -703,7 +876,13 @@
             </TabItem>
 
             <!-- Tab: Search -->
-            <TabItem Header="Search">
+            <TabItem Tag="Search">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <svgc:SvgViewbox Source="/Resources/Icons/Tabs/search.svg" Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Search" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </TabItem.Header>
                 <DataGrid x:Name="SearchGrid" ItemsSource="{Binding SearchResults}" IsReadOnly="True"
                           AutoGenerateColumns="False" BorderBrush="{DynamicResource BorderBrush}"
                           RowStyle="{StaticResource BpRowStyle}"
@@ -733,7 +912,13 @@
             </TabItem>
 
             <!-- Tab: Imports -->
-            <TabItem Header="Imports">
+            <TabItem Tag="Imports">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <svgc:SvgViewbox Source="/Resources/Icons/Tabs/imports.svg" Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Imports" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </TabItem.Header>
                 <DockPanel>
                     <DockPanel DockPanel.Dock="Top" Margin="2">
                         <TextBlock Text="Filter: " VerticalAlignment="Center" Foreground="{DynamicResource CommentBrush}" />
@@ -780,7 +965,13 @@
             </TabItem>
 
             <!-- Tab: Exports -->
-            <TabItem Header="Exports">
+            <TabItem Tag="Exports">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <svgc:SvgViewbox Source="/Resources/Icons/Tabs/exports.svg" Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Exports" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </TabItem.Header>
                 <DockPanel>
                     <DockPanel DockPanel.Dock="Top" Margin="2">
                         <TextBlock Text="Filter: " VerticalAlignment="Center" Foreground="{DynamicResource CommentBrush}" />
@@ -821,7 +1012,13 @@
             </TabItem>
 
             <!-- Tab: Functions -->
-            <TabItem Header="Functions">
+            <TabItem Tag="Functions">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <svgc:SvgViewbox Source="/Resources/Icons/Tabs/functions.svg" Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Functions" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </TabItem.Header>
                 <DockPanel>
                     <DockPanel DockPanel.Dock="Top" Margin="2">
                         <TextBlock Text="Filter: " VerticalAlignment="Center" Foreground="{DynamicResource CommentBrush}" />
@@ -866,7 +1063,13 @@
             </TabItem>
 
             <!-- Tab: Decompiler -->
-            <TabItem Header="Decompiler" x:Name="DecompilerTab">
+            <TabItem Tag="Decompiler" x:Name="DecompilerTab">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <svgc:SvgViewbox Source="/Resources/Icons/Tabs/decompiler.svg" Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Decompiler" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </TabItem.Header>
                 <DockPanel>
                     <Border DockPanel.Dock="Top" Background="{DynamicResource ToolbarBgBrush}" Padding="4,2">
                         <StackPanel Orientation="Horizontal">
@@ -887,7 +1090,13 @@
             </TabItem>
 
             <!-- Tab: Log -->
-            <TabItem Header="Log">
+            <TabItem Tag="Log">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <svgc:SvgViewbox Source="/Resources/Icons/Tabs/log.svg" Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Log" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </TabItem.Header>
                 <ListBox x:Name="LogList" ItemsSource="{Binding LogMessages}"
                          BorderBrush="{DynamicResource BorderBrush}">
                     <ListBox.ContextMenu>

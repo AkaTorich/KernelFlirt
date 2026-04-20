@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="srBase" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#B0D8FF"/>
+      <stop offset="50%" stop-color="#1976D2"/>
+      <stop offset="100%" stop-color="#0A2E5C"/>
+    </linearGradient>
+    <linearGradient id="srGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFF" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#FFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="srSh"><feGaussianBlur stdDeviation="0.35"/></filter>
+  </defs>
+  <!-- handle shadow -->
+  <line x1="10" y1="10" x2="14.5" y2="14.5" stroke="#000" stroke-width="2.8" stroke-linecap="round"
+        opacity="0.4" filter="url(#srSh)" transform="translate(0.2,0.3)"/>
+  <!-- handle -->
+  <line x1="10" y1="10" x2="14.5" y2="14.5" stroke="url(#srBase)" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="10" y1="10" x2="13.5" y2="13.5" stroke="#B0D8FF" stroke-width="0.8" stroke-linecap="round"/>
+  <!-- lens -->
+  <circle cx="6.5" cy="6.5" r="5" fill="#000" opacity="0.4" filter="url(#srSh)" transform="translate(0.2,0.3)"/>
+  <circle cx="6.5" cy="6.5" r="5" fill="#0A2E5C" stroke="#061A36" stroke-width="0.8" fill-opacity="0.4"/>
+  <circle cx="6.5" cy="6.5" r="5" fill="none" stroke="url(#srBase)" stroke-width="1.4"/>
+  <!-- lens gloss -->
+  <ellipse cx="4.8" cy="4.5" rx="2" ry="1" fill="url(#srGloss)"/>
+</svg>

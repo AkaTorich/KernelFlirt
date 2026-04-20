@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="mcpBase" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#C8B0FF"/>
+      <stop offset="100%" stop-color="#311B92"/>
+    </linearGradient>
+    <linearGradient id="mcpGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="mcpSh"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <!-- server tower -->
+  <rect x="3" y="2" width="10" height="12" rx="1" fill="#000" opacity="0.35" filter="url(#mcpSh)" transform="translate(0.2,0.3)"/>
+  <rect x="3" y="2" width="10" height="12" rx="1" fill="url(#mcpBase)" stroke="#1A0A4A" stroke-width="0.5"/>
+  <!-- drive bays -->
+  <rect x="4" y="3.2" width="8" height="1.2" rx="0.2" fill="#1A0A4A"/>
+  <circle cx="11.3" cy="3.8" r="0.35" fill="#7FE87F"/>
+  <rect x="4" y="5.2" width="8" height="1.2" rx="0.2" fill="#1A0A4A"/>
+  <circle cx="11.3" cy="5.8" r="0.35" fill="#7FE87F"/>
+  <rect x="4" y="7.2" width="8" height="1.2" rx="0.2" fill="#1A0A4A"/>
+  <circle cx="11.3" cy="7.8" r="0.35" fill="#FFD54F"/>
+  <!-- MCP label area -->
+  <rect x="4" y="9.5" width="8" height="3.5" rx="0.3" fill="#1A0A4A"/>
+  <text x="8" y="12.4" text-anchor="middle" font-family="monospace" font-size="3.2"
+        fill="#C8B0FF" font-weight="bold">MCP</text>
+  <rect x="3.2" y="2.3" width="9.6" height="3" rx="0.5" fill="url(#mcpGloss)"/>
+</svg>

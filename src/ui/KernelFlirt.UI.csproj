@@ -22,6 +22,7 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
     <PackageReference Include="Gee.External.Capstone" Version="2.3.0" />
     <PackageReference Include="Iced" Version="1.21.0" />
+    <PackageReference Include="SharpVectors.Reloaded" Version="1.8.1" />
   </ItemGroup>
 
   <ItemGroup>
@@ -30,6 +31,76 @@
 
   <ItemGroup>
     <Resource Include="icon.ico" />
+    <Resource Include="Resources\Icons\run.svg" />
+    <Resource Include="Resources\Icons\continue.svg" />
+    <Resource Include="Resources\Icons\pause.svg" />
+    <Resource Include="Resources\Icons\restart.svg" />
+    <Resource Include="Resources\Icons\step-into.svg" />
+    <Resource Include="Resources\Icons\step-over.svg" />
+    <Resource Include="Resources\Icons\step-out.svg" />
+    <Resource Include="Resources\Icons\run-to-cursor.svg" />
+    <Resource Include="Resources\Icons\breakpoint.svg" />
+    <Resource Include="Resources\Icons\breakpoint-hw.svg" />
+    <Resource Include="Resources\Icons\breakpoint-write.svg" />
+    <Resource Include="Resources\Icons\breakpoint-rw.svg" />
+    <Resource Include="Resources\Icons\breakpoint-mem.svg" />
+    <Resource Include="Resources\Icons\goto.svg" />
+    <Resource Include="Resources\Icons\attach-process.svg" />
+    <Resource Include="Resources\Icons\open-file.svg" />
+    <Resource Include="Resources\Icons\connect.svg" />
+    <Resource Include="Resources\Icons\Tabs\disassembly.svg" />
+    <Resource Include="Resources\Icons\Tabs\breakpoints.svg" />
+    <Resource Include="Resources\Icons\Tabs\modules.svg" />
+    <Resource Include="Resources\Icons\Tabs\kernel-modules.svg" />
+    <Resource Include="Resources\Icons\Tabs\threads.svg" />
+    <Resource Include="Resources\Icons\Tabs\callstack.svg" />
+    <Resource Include="Resources\Icons\Tabs\patches.svg" />
+    <Resource Include="Resources\Icons\Tabs\exceptions.svg" />
+    <Resource Include="Resources\Icons\Tabs\sections.svg" />
+    <Resource Include="Resources\Icons\Tabs\strings.svg" />
+    <Resource Include="Resources\Icons\Tabs\search.svg" />
+    <Resource Include="Resources\Icons\Tabs\imports.svg" />
+    <Resource Include="Resources\Icons\Tabs\exports.svg" />
+    <Resource Include="Resources\Icons\Tabs\functions.svg" />
+    <Resource Include="Resources\Icons\Tabs\decompiler.svg" />
+    <Resource Include="Resources\Icons\Tabs\log.svg" />
+    <Resource Include="Resources\Icons\Menu\disconnect.svg" />
+    <Resource Include="Resources\Icons\Menu\exit.svg" />
+    <Resource Include="Resources\Icons\Menu\service.svg" />
+    <Resource Include="Resources\Icons\Menu\detach.svg" />
+    <Resource Include="Resources\Icons\Menu\skip.svg" />
+    <Resource Include="Resources\Icons\Menu\bp-cond.svg" />
+    <Resource Include="Resources\Icons\Menu\bp-log.svg" />
+    <Resource Include="Resources\Icons\Menu\bp-remove-all.svg" />
+    <Resource Include="Resources\Icons\Menu\search-string.svg" />
+    <Resource Include="Resources\Icons\Menu\search-intermod.svg" />
+    <Resource Include="Resources\Icons\Menu\refresh.svg" />
+    <Resource Include="Resources\Icons\Menu\goto-rip.svg" />
+    <Resource Include="Resources\Icons\Menu\refresh-seh.svg" />
+    <Resource Include="Resources\Icons\Menu\restore-patches.svg" />
+    <Resource Include="Resources\Icons\Menu\fullscreen.svg" />
+    <Resource Include="Resources\Icons\Menu\settings.svg" />
+    <Resource Include="Resources\Icons\Menu\symbol-load.svg" />
+    <Resource Include="Resources\Icons\Menu\symbol-path.svg" />
+    <Resource Include="Resources\Icons\Menu\symbol-clear.svg" />
+    <Resource Include="Resources\Icons\Menu\about.svg" />
+    <Resource Include="Resources\Icons\Plugins\xrefs.svg" />
+    <Resource Include="Resources\Icons\Plugins\antidebug.svg" />
+    <Resource Include="Resources\Icons\Plugins\apimonitor.svg" />
+    <Resource Include="Resources\Icons\Plugins\bookmarks.svg" />
+    <Resource Include="Resources\Icons\Plugins\flirt.svg" />
+    <Resource Include="Resources\Icons\Plugins\graphview.svg" />
+    <Resource Include="Resources\Icons\Plugins\mcp.svg" />
+    <Resource Include="Resources\Icons\Plugins\memscanner.svg" />
+    <Resource Include="Resources\Icons\Plugins\network.svg" />
+    <Resource Include="Resources\Icons\Plugins\perebuilder.svg" />
+    <Resource Include="Resources\Icons\Plugins\scripting.svg" />
+    <Resource Include="Resources\Icons\Plugins\session.svg" />
+    <Resource Include="Resources\Icons\Plugins\stringdec.svg" />
+    <Resource Include="Resources\Icons\Plugins\themida.svg" />
+    <Resource Include="Resources\Icons\Plugins\vulnhunter.svg" />
+    <Resource Include="Resources\Icons\Plugins\ai.svg" />
+    <Resource Include="Resources\Icons\Plugins\sigdetect.svg" />
   </ItemGroup>
 
 

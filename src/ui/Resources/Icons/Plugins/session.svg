@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="seBase" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFE082"/>
+      <stop offset="100%" stop-color="#F57F17"/>
+    </linearGradient>
+    <linearGradient id="seGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="seSh"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <!-- folder back -->
+  <path d="M1.5 4 H6 L7.5 5.5 H14.5 V13.5 Q14.5 14 14 14 H2 Q1.5 14 1.5 13.5 Z"
+        fill="#000" opacity="0.35" filter="url(#seSh)" transform="translate(0.2,0.3)"/>
+  <path d="M1.5 4 H6 L7.5 5.5 H14.5 V13.5 Q14.5 14 14 14 H2 Q1.5 14 1.5 13.5 Z"
+        fill="url(#seBase)" stroke="#7A4400" stroke-width="0.5" stroke-linejoin="round"/>
+  <!-- save disk overlay -->
+  <rect x="5" y="7" width="6" height="6" rx="0.5" fill="#263238" stroke="#000" stroke-width="0.3"/>
+  <rect x="6" y="7" width="4" height="2" fill="#90A4AE"/>
+  <rect x="7.2" y="7.2" width="0.8" height="1.5" fill="#263238"/>
+  <rect x="5.5" y="10" width="5" height="2.5" fill="#CFD8DC"/>
+  <rect x="6" y="10.5" width="4" height="0.3" fill="#263238"/>
+  <rect x="6" y="11.1" width="4" height="0.3" fill="#263238"/>
+  <rect x="6" y="11.7" width="3" height="0.3" fill="#263238"/>
+  <!-- gloss -->
+  <path d="M1.7 4.2 H6 L7.2 5.3 H14.3 V7 Q8 5.5 1.7 6.5 Z" fill="url(#seGloss)"/>
+</svg>

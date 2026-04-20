@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="strBase" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1A2A1A"/><stop offset="100%" stop-color="#000"/>
+    </linearGradient>
+    <linearGradient id="strGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFF" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#FFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="strSh"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <rect x="1.5" y="2" width="13" height="12" rx="0.8" fill="#000" opacity="0.35" filter="url(#strSh)" transform="translate(0.2,0.3)"/>
+  <rect x="1.5" y="2" width="13" height="12" rx="0.8" fill="url(#strBase)" stroke="#2E7D32" stroke-width="0.4"/>
+  <!-- green strings with quotes -->
+  <g font-family="monospace" font-size="2.1" font-weight="bold" fill="#7FE87F">
+    <text x="2.5" y="4.5">"hello"</text>
+    <text x="2.5" y="7">"world"</text>
+    <text x="2.5" y="9.5">"admin"</text>
+    <text x="2.5" y="12">"0x1337"</text>
+  </g>
+  <rect x="1.8" y="2.3" width="12.4" height="2.5" rx="0.4" fill="url(#strGloss)"/>
+</svg>

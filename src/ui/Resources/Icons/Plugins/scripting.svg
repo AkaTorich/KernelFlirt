@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="scBase" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1A1A1A"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </linearGradient>
+    <linearGradient id="scGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="scSh"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <!-- terminal -->
+  <rect x="1.5" y="2.5" width="13" height="11" rx="1" fill="#000" opacity="0.35" filter="url(#scSh)" transform="translate(0.2,0.3)"/>
+  <rect x="1.5" y="2.5" width="13" height="11" rx="1" fill="url(#scBase)" stroke="#444" stroke-width="0.5"/>
+  <!-- title bar -->
+  <rect x="1.5" y="2.5" width="13" height="1.8" rx="1" fill="#2A2A2A"/>
+  <circle cx="3" cy="3.4" r="0.35" fill="#FF5F56"/>
+  <circle cx="4" cy="3.4" r="0.35" fill="#FFBD2E"/>
+  <circle cx="5" cy="3.4" r="0.35" fill="#27C93F"/>
+  <!-- prompt -->
+  <text x="2.5" y="7" font-family="monospace" font-size="2.5" fill="#7FE87F" font-weight="bold">&gt;_</text>
+  <rect x="5" y="5.7" width="4" height="1.4" fill="#7FE87F" opacity="0.6"/>
+  <!-- code lines -->
+  <rect x="2.5" y="8.5" width="4" height="0.7" rx="0.15" fill="#4FC3F7"/>
+  <rect x="7" y="8.5" width="5" height="0.7" rx="0.15" fill="#FFB74D"/>
+  <rect x="2.5" y="9.8" width="7" height="0.7" rx="0.15" fill="#CE93D8"/>
+  <rect x="2.5" y="11.1" width="3" height="0.7" rx="0.15" fill="#4FC3F7"/>
+  <rect x="6" y="11.1" width="5" height="0.7" rx="0.15" fill="#F06292"/>
+  <!-- gloss -->
+  <rect x="1.8" y="4.5" width="12.4" height="2.5" rx="0.3" fill="url(#scGloss)"/>
+</svg>

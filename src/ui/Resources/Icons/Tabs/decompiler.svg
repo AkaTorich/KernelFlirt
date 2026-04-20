@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="dcBase" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1A1A1A"/><stop offset="100%" stop-color="#000"/>
+    </linearGradient>
+    <linearGradient id="dcGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFF" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#FFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="dcSh"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <rect x="1.5" y="2" width="13" height="12" rx="0.8" fill="#000" opacity="0.35" filter="url(#dcSh)" transform="translate(0.2,0.3)"/>
+  <rect x="1.5" y="2" width="13" height="12" rx="0.8" fill="url(#dcBase)" stroke="#FFD54F" stroke-width="0.45"/>
+  <!-- C-like pseudocode: colored tokens -->
+  <g font-family="monospace" font-size="2.1" font-weight="bold">
+    <text x="2.3" y="4.3" fill="#CE93D8">int</text>
+    <text x="6" y="4.3" fill="#4FC3F7">main</text>
+    <text x="10.5" y="4.3" fill="#FFF">()</text>
+    <text x="13" y="4.3" fill="#FFF">{</text>
+
+    <text x="3" y="6.5" fill="#CE93D8">if</text>
+    <text x="5.5" y="6.5" fill="#FFF">(</text>
+    <text x="6.3" y="6.5" fill="#FFD54F">x</text>
+    <text x="7.5" y="6.5" fill="#FF8A65">==</text>
+    <text x="10" y="6.5" fill="#81C784">1</text>
+    <text x="11.2" y="6.5" fill="#FFF">)</text>
+
+    <text x="3.8" y="8.7" fill="#4FC3F7">return</text>
+    <text x="9" y="8.7" fill="#81C784">0</text>
+    <text x="10.5" y="8.7" fill="#FFF">;</text>
+
+    <text x="3" y="10.9" fill="#CE93D8">else</text>
+    <text x="6.5" y="10.9" fill="#FFF">...</text>
+
+    <text x="2.3" y="13" fill="#FFF">}</text>
+  </g>
+  <rect x="1.8" y="2.3" width="12.4" height="1.8" rx="0.4" fill="url(#dcGloss)"/>
+</svg>

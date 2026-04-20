@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="skArr" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FFB74D"/><stop offset="100%" stop-color="#E65100"/></linearGradient>
+  </defs>
+  <rect x="1" y="3" width="10" height="1.2" rx="0.3" fill="#888"/>
+  <rect x="3" y="6" width="10" height="1.2" rx="0.3" fill="#666" opacity="0.4"/>
+  <line x1="3" y1="6" x2="13" y2="7.2" stroke="#E53935" stroke-width="0.7"/>
+  <rect x="1" y="9" width="10" height="1.2" rx="0.3" fill="#888"/>
+  <rect x="1" y="12" width="10" height="1.2" rx="0.3" fill="#888"/>
+  <!-- big skip arrow on right -->
+  <path d="M12 2 L12 6 L14 4 Z M12 10 L12 14 L14 12 Z M12 6 L15 8 L12 10 Z"
+        fill="url(#skArr)" stroke="#5C2E00" stroke-width="0.3" stroke-linejoin="round"/>
+</svg>

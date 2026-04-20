@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="outArrow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#9ED2FF"/>
+      <stop offset="45%" stop-color="#4A9FE8"/>
+      <stop offset="100%" stop-color="#1E5F9C"/>
+    </linearGradient>
+    <linearGradient id="outGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#FFFFFF" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="outBox" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#2A1A3A"/>
+      <stop offset="100%" stop-color="#1A0A2A"/>
+    </linearGradient>
+    <filter id="outShadow"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <!-- We are INSIDE this function block (darker, current scope) -->
+  <rect x="3" y="4" width="10" height="8" rx="0.8"
+        fill="#000" opacity="0.25" filter="url(#outShadow)" transform="translate(0.2,0.3)"/>
+  <rect x="3" y="4" width="10" height="8" rx="0.8"
+        fill="url(#outBox)" stroke="#5A3A7A" stroke-width="0.5"/>
+  <text x="8" y="9.2" text-anchor="middle" font-family="monospace" font-size="3.5"
+        fill="#BB88DD" font-weight="bold">f( )</text>
+  <!-- Arrow pointing UP out of the box -->
+  <!-- shaft shadow -->
+  <rect x="7.5" y="2" width="2" height="5" rx="0.4"
+        fill="#000" opacity="0.3" filter="url(#outShadow)" transform="translate(0.2,0.3)"/>
+  <!-- arrowhead pointing UP, shadow -->
+  <path d="M5.5 4.5 L8.5 1 L11.5 4.5 Z"
+        fill="#000" opacity="0.3" filter="url(#outShadow)" transform="translate(0.2,0.3)"/>
+  <!-- shaft -->
+  <rect x="7.5" y="2" width="2" height="5" rx="0.4"
+        fill="url(#outArrow)" stroke="#14487E" stroke-width="0.4"/>
+  <!-- arrowhead UP -->
+  <path d="M5.5 4.5 L8.5 1 L11.5 4.5 Z"
+        fill="url(#outArrow)" stroke="#14487E" stroke-width="0.4" stroke-linejoin="round"/>
+  <!-- gloss on shaft -->
+  <rect x="7.5" y="2" width="1" height="3" rx="0.3" fill="url(#outGloss)"/>
+  <!-- "landing" line above (where we return to) -->
+  <rect x="2" y="13" width="12" height="1.5" rx="0.4" fill="#667788" opacity="0.9"/>
+</svg>

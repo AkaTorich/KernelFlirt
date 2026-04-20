@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="ptBase" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFE0B2"/>
+      <stop offset="100%" stop-color="#BF360C"/>
+    </linearGradient>
+    <linearGradient id="ptBand" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFF59D"/>
+      <stop offset="100%" stop-color="#F57C00"/>
+    </linearGradient>
+    <linearGradient id="ptGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFF" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#FFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="ptSh"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <!-- bandage at 45 degrees -->
+  <g transform="rotate(-35 8 8)">
+    <rect x="1" y="5.5" width="14" height="5" rx="2.5" fill="#000" opacity="0.4" filter="url(#ptSh)" transform="translate(0.3,0.4)"/>
+    <rect x="1" y="5.5" width="14" height="5" rx="2.5" fill="url(#ptBase)" stroke="#3A1000" stroke-width="0.5"/>
+    <!-- middle band with dots -->
+    <rect x="5" y="5.5" width="6" height="5" fill="url(#ptBand)" stroke="#3A1000" stroke-width="0.3"/>
+    <g fill="#3A1000">
+      <circle cx="6" cy="6.7" r="0.35"/><circle cx="8" cy="6.7" r="0.35"/><circle cx="10" cy="6.7" r="0.35"/>
+      <circle cx="6" cy="8" r="0.35"/><circle cx="8" cy="8" r="0.35"/><circle cx="10" cy="8" r="0.35"/>
+      <circle cx="6" cy="9.3" r="0.35"/><circle cx="8" cy="9.3" r="0.35"/><circle cx="10" cy="9.3" r="0.35"/>
+    </g>
+    <!-- gloss -->
+    <rect x="1.3" y="5.8" width="13.4" height="1.4" rx="2" fill="url(#ptGloss)"/>
+  </g>
+</svg>

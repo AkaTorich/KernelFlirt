@@ -77,7 +77,7 @@ public partial class MainWindow : Window
             var wrapper = new ContentControl { Content = content };
             ApplyPluginResources(wrapper);
             _pluginWrappers.Add(wrapper);
-            var tab = new TabItem { Header = title, Content = wrapper };
+            var tab = new TabItem { Header = BuildPluginTabHeader(_currentPluginName, title), Content = wrapper, Tag = title };
             MainTabControl.Items.Insert(MainTabControl.Items.Count - 1, tab); // Before Log tab
             // Track tab by current plugin name
             if (_currentPluginName != null)
@@ -1059,7 +1059,7 @@ public partial class MainWindow : Window
     {
         var tab = MainTabControl.SelectedItem as TabItem;
         if (tab == null) return 0;
-        var header = tab.Header?.ToString();
+        var header = tab.Tag as string ?? tab.Header?.ToString();
         return header switch
         {
             "Imports" => (ImportsGrid.SelectedItem as ImportEntry)?.ResolvedAddress ?? 0,
@@ -1610,6 +1610,51 @@ public partial class MainWindow : Window
     /// Overrides standard brush keys (BgBrush, FgBrush, etc.) inside the plugin wrapper scope
     /// so that implicit styles resolve to PluginXxx brushes instead of the main app brushes.
     /// </summary>
+    private static readonly Dictionary<string, string> _pluginIconMap = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Xrefs"] = "xrefs.svg",
+        ["Anti-Anti-Debug"] = "antidebug.svg",
+        ["API Monitor"] = "apimonitor.svg",
+        ["Bookmarks"] = "bookmarks.svg",
+        ["FLIRT Signatures"] = "flirt.svg",
+        ["Graph View"] = "graphview.svg",
+        ["MCP Server"] = "mcp.svg",
+        ["Memory Scanner"] = "memscanner.svg",
+        ["Network Monitor"] = "network.svg",
+        ["PE Rebuilder"] = "perebuilder.svg",
+        ["Scripting"] = "scripting.svg",
+        ["Session Manager"] = "session.svg",
+        ["String Decryptor"] = "stringdec.svg",
+        ["Themida Unpacker"] = "themida.svg",
+        ["VulnHunter"] = "vulnhunter.svg",
+        ["AI Assistant"] = "ai.svg",
+        ["Signature Detector"] = "sigdetect.svg",
+    };
+
+    private static object BuildPluginTabHeader(string? pluginName, string title)
+    {
+        if (pluginName == null || !_pluginIconMap.TryGetValue(pluginName, out var iconFile))
+            return title;
+
+        var panel = new StackPanel { Orientation = Orientation.Horizontal };
+        try
+        {
+            var uri = new Uri($"pack://application:,,,/Resources/Icons/Plugins/{iconFile}", UriKind.Absolute);
+            var svg = new SharpVectors.Converters.SvgViewbox
+            {
+                Source = uri,
+                Width = 14,
+                Height = 14,
+                Margin = new Thickness(0, 0, 5, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            panel.Children.Add(svg);
+        }
+        catch { /* icon load failed — fallback to text only */ }
+        panel.Children.Add(new TextBlock { Text = title, VerticalAlignment = VerticalAlignment.Center });
+        return panel;
+    }
+
     private static void ApplyPluginResources(ContentControl wrapper)
     {
         var app = Application.Current.Resources.MergedDictionaries[0];
@@ -1657,7 +1702,7 @@ public partial class MainWindow : Window
 
         foreach (TabItem tab in MainTabControl.Items)
         {
-            var name = tab.Header?.ToString() ?? "";
+            var name = tab.Tag as string ?? tab.Header?.ToString() ?? "";
 
             // Per-tab overrides (individual tab colors)
             var perTabFg = TryParseBrush(colors, $"Tab.{name}.Fg");

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="restartBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#9FE2FF"/>
+      <stop offset="45%" stop-color="#2DA6DE"/>
+      <stop offset="100%" stop-color="#0E5E85"/>
+    </linearGradient>
+    <linearGradient id="restartGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#FFFFFF" stop-opacity="0.75"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="restartShadow"><feGaussianBlur stdDeviation="0.35"/></filter>
+    <clipPath id="restartClip">
+      <path d="M8 2.2 a5.8 5.8 0 1 1 -4.7 2.4 L1.6 4.6 L4.2 1.6 L6.8 4.6 H5.1 A4 4 0 1 0 8 3.8 Z"/>
+    </clipPath>
+  </defs>
+  <path d="M8 2.2 a5.8 5.8 0 1 1 -4.7 2.4 L1.6 4.6 L4.2 1.6 L6.8 4.6 H5.1 A4 4 0 1 0 8 3.8 Z"
+        fill="#000" opacity="0.35" filter="url(#restartShadow)" transform="translate(0.3,0.4)"/>
+  <path d="M8 2.2 a5.8 5.8 0 1 1 -4.7 2.4 L1.6 4.6 L4.2 1.6 L6.8 4.6 H5.1 A4 4 0 1 0 8 3.8 Z"
+        fill="url(#restartBody)" stroke="#0A4660" stroke-width="0.55" stroke-linejoin="round"/>
+  <g clip-path="url(#restartClip)"><ellipse cx="8" cy="4" rx="7" ry="3" fill="url(#restartGloss)"/></g>
+</svg>

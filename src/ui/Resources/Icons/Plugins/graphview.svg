@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="gvNode" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#A5D8FF"/>
+      <stop offset="100%" stop-color="#1976D2"/>
+    </linearGradient>
+    <linearGradient id="gvGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="gvSh"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <!-- edges -->
+  <path d="M8 3.8 L5 7.5 M8 3.8 L11 7.5 M5 11 L8 13 M11 11 L8 13" stroke="#888" stroke-width="0.7" fill="none"/>
+  <!-- root node -->
+  <rect x="5.5" y="1.5" width="5" height="3" rx="0.5" fill="#000" opacity="0.35" filter="url(#gvSh)" transform="translate(0.2,0.3)"/>
+  <rect x="5.5" y="1.5" width="5" height="3" rx="0.5" fill="url(#gvNode)" stroke="#0D47A1" stroke-width="0.4"/>
+  <rect x="5.7" y="1.7" width="4.6" height="1.2" rx="0.3" fill="url(#gvGloss)"/>
+  <!-- left child -->
+  <rect x="1.5" y="7" width="5" height="3" rx="0.5" fill="url(#gvNode)" stroke="#0D47A1" stroke-width="0.4"/>
+  <rect x="1.7" y="7.2" width="4.6" height="1.2" rx="0.3" fill="url(#gvGloss)"/>
+  <!-- right child -->
+  <rect x="9.5" y="7" width="5" height="3" rx="0.5" fill="url(#gvNode)" stroke="#0D47A1" stroke-width="0.4"/>
+  <rect x="9.7" y="7.2" width="4.6" height="1.2" rx="0.3" fill="url(#gvGloss)"/>
+  <!-- bottom node -->
+  <rect x="5.5" y="12" width="5" height="3" rx="0.5" fill="url(#gvNode)" stroke="#0D47A1" stroke-width="0.4"/>
+  <rect x="5.7" y="12.2" width="4.6" height="1.2" rx="0.3" fill="url(#gvGloss)"/>
+</svg>

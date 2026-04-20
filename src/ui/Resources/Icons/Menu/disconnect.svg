@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="dcBase" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FF8080"/><stop offset="100%" stop-color="#5A0000"/></linearGradient>
+    <linearGradient id="dcGloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FFF" stop-opacity="0.7"/><stop offset="100%" stop-color="#FFF" stop-opacity="0"/></linearGradient>
+  </defs>
+  <path d="M9.5 1 L3 9 H7 L5.5 15 L12.5 6.5 H8.5 Z" fill="url(#dcBase)" stroke="#2A0000" stroke-width="0.6" stroke-linejoin="round"/>
+  <path d="M9 1.5 L3.8 8.2 H6.5 L6 10 L9 6.5 L8.5 5 Z" fill="url(#dcGloss)"/>
+  <!-- red slash -->
+  <line x1="2" y1="14" x2="14" y2="2" stroke="#FFF" stroke-width="2.2" stroke-linecap="round"/>
+  <line x1="2" y1="14" x2="14" y2="2" stroke="#B71C1C" stroke-width="1.2" stroke-linecap="round"/>
+</svg>
