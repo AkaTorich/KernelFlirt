@@ -179,6 +179,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _symbols.LogMessage += msg => Application.Current.Dispatcher.Invoke(() => Log(msg));
         _pluginManager = new PluginManager(msg => Application.Current.Dispatcher.Invoke(() => Log(msg)));
         LoadSettings();
+        // Rebuild x64dbg-style live hints only when the visible instruction set
+        // changes (navigation, initial break, scroll-load). Re-rendering on every
+        // step is expensive and most hints are unchanged — the user can press F5
+        // (Refresh) or re-navigate to force a rebuild.
+        Instructions.CollectionChanged += (_, _) => RebuildLiveHints();
     }
 
     public void LoadPlugins()
@@ -325,6 +330,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public double? UiColStackAddr { get; set; }
     public double? UiColRegName { get; set; }
     public double? UiColRegVal { get; set; }
+    public string? UiFontDisasm { get; set; }
+    public double? UiFontDisasmSize { get; set; }
+    public string? UiFontHex { get; set; }
+    public double? UiFontHexSize { get; set; }
+    public string? UiFontStack { get; set; }
+    public double? UiFontStackSize { get; set; }
+    public string? UiFontRegisters { get; set; }
+    public double? UiFontRegistersSize { get; set; }
     public void PersistLayout() => SaveSettings();
 
     private static bool TryParseDouble(string line, string prefix, out double value)
@@ -374,6 +387,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 else if (TryParseDouble(line, "Ui.Col.Stack.Addr=", out var vsa)) UiColStackAddr = vsa;
                 else if (TryParseDouble(line, "Ui.Col.Reg.Name=", out var vrn)) UiColRegName = vrn;
                 else if (TryParseDouble(line, "Ui.Col.Reg.Val=", out var vrv)) UiColRegVal = vrv;
+                else if (line == "Ui.LiveHints=1") LiveHintsEnabled = true;
+                else if (line.StartsWith("Ui.Font.Disasm=", StringComparison.Ordinal)) UiFontDisasm = line["Ui.Font.Disasm=".Length..];
+                else if (line.StartsWith("Ui.Font.Hex=",    StringComparison.Ordinal)) UiFontHex = line["Ui.Font.Hex=".Length..];
+                else if (line.StartsWith("Ui.Font.Stack=",  StringComparison.Ordinal)) UiFontStack = line["Ui.Font.Stack=".Length..];
+                else if (line.StartsWith("Ui.Font.Registers=", StringComparison.Ordinal)) UiFontRegisters = line["Ui.Font.Registers=".Length..];
+                else if (TryParseDouble(line, "Ui.FontSize.Disasm=", out var fdi)) UiFontDisasmSize = fdi;
+                else if (TryParseDouble(line, "Ui.FontSize.Hex=",    out var fhi)) UiFontHexSize = fhi;
+                else if (TryParseDouble(line, "Ui.FontSize.Stack=",  out var fsi)) UiFontStackSize = fsi;
+                else if (TryParseDouble(line, "Ui.FontSize.Registers=", out var fci)) UiFontRegistersSize = fci;
                 else if (line.StartsWith("Color.", StringComparison.Ordinal))
                 {
                     var eq = line.IndexOf('=');
@@ -426,6 +448,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
             if (UiColStackAddr is { } vsa) sb.AppendLine($"Ui.Col.Stack.Addr={vsa.ToString(inv)}");
             if (UiColRegName is { } vrn) sb.AppendLine($"Ui.Col.Reg.Name={vrn.ToString(inv)}");
             if (UiColRegVal is { } vrv) sb.AppendLine($"Ui.Col.Reg.Val={vrv.ToString(inv)}");
+            if (LiveHintsEnabled) sb.AppendLine("Ui.LiveHints=1");
+            if (!string.IsNullOrEmpty(UiFontDisasm))     sb.AppendLine($"Ui.Font.Disasm={UiFontDisasm}");
+            if (!string.IsNullOrEmpty(UiFontHex))        sb.AppendLine($"Ui.Font.Hex={UiFontHex}");
+            if (!string.IsNullOrEmpty(UiFontStack))      sb.AppendLine($"Ui.Font.Stack={UiFontStack}");
+            if (!string.IsNullOrEmpty(UiFontRegisters)) sb.AppendLine($"Ui.Font.Registers={UiFontRegisters}");
+            if (UiFontDisasmSize is { } fds)     sb.AppendLine($"Ui.FontSize.Disasm={fds.ToString(inv)}");
+            if (UiFontHexSize is { } fhs)        sb.AppendLine($"Ui.FontSize.Hex={fhs.ToString(inv)}");
+            if (UiFontStackSize is { } fss)      sb.AppendLine($"Ui.FontSize.Stack={fss.ToString(inv)}");
+            if (UiFontRegistersSize is { } fcs) sb.AppendLine($"Ui.FontSize.Registers={fcs.ToString(inv)}");
             foreach (var (key, val) in ThemeColors)
                 sb.AppendLine($"Color.{key}={val}");
             File.WriteAllText(SettingsFile, sb.ToString());
@@ -434,6 +465,42 @@ public partial class MainViewModel : ObservableObject, IDisposable
     }
 
     public void SaveThemeColors() => SaveSettings();
+
+    /// <summary>Read theme keys from a preset file in the themes/ folder.</summary>
+    public static Dictionary<string, string> ReadThemePreset(string themeName)
+    {
+        var dict = new Dictionary<string, string>();
+        var path = Path.Combine(AppContext.BaseDirectory, "themes", themeName + ".txt");
+        if (!File.Exists(path)) return dict;
+        foreach (var line in File.ReadAllLines(path))
+        {
+            if (!line.StartsWith("Color.", StringComparison.Ordinal)) continue;
+            var eq = line.IndexOf('=');
+            if (eq <= 6) continue;
+            dict[line[6..eq]] = line[(eq + 1)..];
+        }
+        return dict;
+    }
+
+    /// <summary>Apply a preset theme from themes/&lt;name&gt;.txt to the current session.</summary>
+    public void ApplyThemePreset(string themeName)
+    {
+        var preset = ReadThemePreset(themeName);
+        if (preset.Count == 0) return;
+        foreach (var (k, v) in preset) ThemeColors[k] = v;
+        SaveSettings();
+    }
+
+    /// <summary>List theme preset names (without extension) from themes/.</summary>
+    public static IReadOnlyList<string> ListThemePresets()
+    {
+        var dir = Path.Combine(AppContext.BaseDirectory, "themes");
+        if (!Directory.Exists(dir)) return Array.Empty<string>();
+        return Directory.GetFiles(dir, "*.txt")
+            .Select(f => Path.GetFileNameWithoutExtension(f))
+            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
 
     /* ================================================================== */
     /*  Connection                                                         */
@@ -3423,6 +3490,394 @@ public partial class MainViewModel : ObservableObject, IDisposable
     /// <summary>Public wrapper for command console.</summary>
     public void FollowAddressInDump(ulong address) => FollowInDump(address);
 
+    // Raised after LiveHint is recomputed for visible instructions.
+    public event Action? LiveHintsChanged;
+
+    /// <summary>
+    /// Toggle for x64dbg-style live hints in the disassembly view. Disabled by
+    /// default because rebuilding clickable InlineUIContainer values for every
+    /// visible row adds measurable latency on each break/step. Turned on via
+    /// View → Live Hints.
+    /// </summary>
+    [ObservableProperty]
+    private bool _liveHintsEnabled;
+
+    partial void OnLiveHintsEnabledChanged(bool value)
+    {
+        if (!value)
+        {
+            foreach (var instr in Instructions) instr.LiveHint = null;
+            LiveHintsChanged?.Invoke();
+        }
+        else
+        {
+            RebuildLiveHints();
+        }
+    }
+
+    private bool _hintsRebuildScheduled;
+    /// <summary>
+    /// Populate Instruction.LiveHint for each visible instruction, resembling
+    /// x64dbg's right-hand annotation column. Debounced so consecutive
+    /// CollectionChanged bursts collapse into one pass on the dispatcher.
+    /// </summary>
+    public void RebuildLiveHints()
+    {
+        if (!LiveHintsEnabled) return;
+        if (_hintsRebuildScheduled) return;
+        _hintsRebuildScheduled = true;
+        Application.Current.Dispatcher.BeginInvoke(new Action(async () =>
+        {
+            _hintsRebuildScheduled = false;
+            try
+            {
+                DoRebuildLiveHints();          // synchronous register pass (fast)
+                LiveHintsChanged?.Invoke();
+                await EnrichMemHintsAsync();   // background: dereference [rip+disp] operands
+                LiveHintsChanged?.Invoke();
+            }
+            catch (Exception ex) { Log($"[LiveHints] {ex.Message}"); }
+        }), System.Windows.Threading.DispatcherPriority.Background);
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex _regRx =
+        new(@"\b(rax|rbx|rcx|rdx|rsi|rdi|rbp|rsp|r8|r9|r10|r11|r12|r13|r14|r15|eax|ebx|ecx|edx|esi|edi|ebp|esp|r8d|r9d|r10d|r11d|r12d|r13d|r14d|r15d|ax|bx|cx|dx|si|di|bp|sp|al|bl|cl|dl|sil|dil|bpl|spl|ah|bh|ch|dh|r8b|r9b|r10b|r11b|r12b|r13b|r14b|r15b|rip|eip)\b",
+            System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    private static readonly System.Text.RegularExpressions.Regex _memRx =
+        new(@"\[([^\]]+)\]", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private void DoRebuildLiveHints()
+    {
+        if (Instructions.Count == 0) return;
+
+        // Determine user-code range (the main .exe). Hints are suppressed inside
+        // system DLLs (ntdll, kernelbase, msvcrt runtime init, etc.) because
+        // those are rarely the focus and produce dozens of identical lines.
+        var mainMod = Modules.FirstOrDefault(m =>
+            m.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
+        ulong userBegin = mainMod?.BaseAddress ?? 0;
+        ulong userEnd   = mainMod != null ? mainMod.BaseAddress + mainMod.Size : 0;
+        bool hasUserRange = userBegin != 0 && userEnd > userBegin;
+
+        var regMap = new Dictionary<string, ulong>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in Registers) if (!r.IsFlag) regMap[r.Name] = r.Value;
+
+        string? prevHint = null; // for dedup against the previous row
+        foreach (var instr in Instructions)
+        {
+            // Only annotate user code
+            if (hasUserRange && (instr.Address < userBegin || instr.Address >= userEnd))
+            { instr.LiveHint = null; continue; }
+            if (string.IsNullOrEmpty(instr.Operands)) { instr.LiveHint = null; continue; }
+
+            var seenParents = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var parts = new List<string>();
+
+            foreach (System.Text.RegularExpressions.Match m in _regRx.Matches(instr.Operands))
+            {
+                var name = m.Value;
+                var upper = name.ToUpperInvariant();
+                if (upper is "RIP" or "EIP") continue;
+
+                // Skip sub-registers (al, ax, eax) if we've already emitted the
+                // 64-bit parent — redundant, same pointer value anyway.
+                var parent = Extend(name) ?? upper;
+                if (!seenParents.Add(parent)) continue;
+
+                if (!regMap.TryGetValue(name, out var val))
+                {
+                    if (parent != upper && regMap.TryGetValue(parent, out var pv)) val = pv;
+                    else continue;
+                }
+                // Tiny values are constants/counters, not addresses — no symbol
+                // resolution is meaningful.
+                if (val < 0x10000) continue;
+
+                var label = FormatHintValue(val);
+                if (label != null) parts.Add($"{parent.ToLowerInvariant()}:{label}");
+            }
+            var hint = parts.Count == 0 ? null : string.Join(", ", parts);
+            // Dedup with previous: don't spam the same hint line after line.
+            instr.LiveHint = hint == prevHint ? null : hint;
+            if (hint != null) prevHint = hint;
+        }
+    }
+
+    /// <summary>
+    /// Second pass for live hints: evaluate every [mem] operand in user code,
+    /// group effective addresses by 4 KB page, read each page with a single
+    /// ReadMemory, then decode ASCII/UTF-16 previews locally. This takes the
+    /// "1 round-trip per operand" pattern (would be dozens of reads) down to
+    /// ~1 read per distinct code page. Runs off the hot step path.
+    /// </summary>
+    private async Task EnrichMemHintsAsync()
+    {
+        if (!IsConnected || TargetPid == 0 || Instructions.Count == 0) return;
+        var mainMod = Modules.FirstOrDefault(m =>
+            m.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
+        if (mainMod == null) return;
+        ulong userBegin = mainMod.BaseAddress;
+        ulong userEnd   = mainMod.BaseAddress + mainMod.Size;
+
+        var regMap = new Dictionary<string, ulong>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in Registers) if (!r.IsFlag) regMap[r.Name] = r.Value;
+
+        // instruction index → list of (operand text, effective address)
+        var targets = new List<(int idx, string expr, ulong addr)>();
+        var pages = new HashSet<ulong>();
+        const ulong PAGE = 0x1000;
+
+        for (int idx = 0; idx < Instructions.Count; idx++)
+        {
+            var instr = Instructions[idx];
+            if (instr.Address < userBegin || instr.Address >= userEnd) continue;
+            if (string.IsNullOrEmpty(instr.Operands)) continue;
+
+            foreach (System.Text.RegularExpressions.Match mm in _memRx.Matches(instr.Operands))
+            {
+                var inner = mm.Groups[1].Value.Trim();
+                if (!TryEvalMem(inner, regMap, instr.Address, (ulong)instr.Size, out var addr)) continue;
+                if (addr < 0x10000) continue;
+                targets.Add((idx, inner, addr));
+                pages.Add(addr & ~(PAGE - 1));
+            }
+        }
+        if (targets.Count == 0) return;
+
+        // Batch: one ReadMemory per page. Most .rdata strings are in the same
+        // 1-2 pages, so this collapses to very few round-trips.
+        var pid = TargetPid;
+        var cache = new Dictionary<ulong, byte[]?>();
+        foreach (var p in pages)
+        {
+            if (cache.ContainsKey(p)) continue;
+            var bytes = await Task.Run(() => _driver.ReadMemory(pid, p, (uint)PAGE));
+            cache[p] = bytes;
+        }
+
+        // Append preview to each instruction's LiveHint
+        foreach (var (idx, expr, addr) in targets)
+        {
+            ulong page = addr & ~(PAGE - 1);
+            if (!cache.TryGetValue(page, out var bytes) || bytes == null) continue;
+            int off = (int)(addr - page);
+            if (off < 0 || off >= bytes.Length - 1) continue;
+            var preview = TryPreviewAt(bytes, off);
+            if (preview == null) continue;
+
+            var cur = Instructions[idx].LiveHint;
+            var add = $"[{expr}]={preview}";
+            Instructions[idx].LiveHint = string.IsNullOrEmpty(cur) ? add : $"{cur}, {add}";
+        }
+    }
+
+    /// <summary>Try to interpret bytes starting at off as ASCII/UTF-16 string, else null.</summary>
+    private static string? TryPreviewAt(byte[] data, int off)
+    {
+        // ASCII
+        int end = Math.Min(off + 64, data.Length);
+        int n = 0;
+        var sb = new System.Text.StringBuilder(32);
+        for (int i = off; i < end; i++)
+        {
+            byte b = data[i];
+            if (b == 0) break;
+            if (b < 0x20 || b >= 0x7F) { n = -1; break; }
+            sb.Append((char)b); n++;
+        }
+        if (n >= 2) return $"\"{sb}\"";
+
+        // UTF-16LE
+        sb.Clear(); n = 0;
+        for (int i = off; i + 1 < end; i += 2)
+        {
+            byte lo = data[i], hi = data[i + 1];
+            if (lo == 0 && hi == 0) break;
+            if (hi != 0 || lo < 0x20 || lo >= 0x7F) { n = -1; break; }
+            sb.Append((char)lo); n++;
+        }
+        if (n >= 2) return $"L\"{sb}\"";
+        return null;
+    }
+
+    private static string? Extend(string name)
+    {
+        name = name.ToLowerInvariant();
+        // Drop common subregister suffixes back to 64-bit parent
+        if (name.StartsWith('r') && name.Length == 3 && name[^1] is 'd' or 'w' or 'b')
+            return name[..2].ToUpperInvariant(); // r8d -> R8
+        return name switch
+        {
+            "eax" or "ax" or "al" or "ah" => "RAX",
+            "ebx" or "bx" or "bl" or "bh" => "RBX",
+            "ecx" or "cx" or "cl" or "ch" => "RCX",
+            "edx" or "dx" or "dl" or "dh" => "RDX",
+            "esi" or "si" or "sil" => "RSI",
+            "edi" or "di" or "dil" => "RDI",
+            "ebp" or "bp" or "bpl" => "RBP",
+            "esp" or "sp" or "spl" => "RSP",
+            "eip" => "RIP",
+            _ => null,
+        };
+    }
+
+    private string? FormatHintValue(ulong val)
+    {
+        if (val == 0) return null;
+        try
+        {
+            var sym = _symbols.ResolveViaDbgHelp(val);
+            if (!string.IsNullOrEmpty(sym)) return sym;
+        }
+        catch { }
+        var mod = Modules.FirstOrDefault(m => val >= m.BaseAddress && val < m.BaseAddress + m.Size);
+        if (mod != null)
+        {
+            var name = System.IO.Path.GetFileNameWithoutExtension(mod.Name);
+            return $"{name}+{val - mod.BaseAddress:X}";
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Read memory at the given address and return a short human representation:
+    /// printable ASCII/UTF-16 string, or a pointer resolved to symbol, or qword in hex.
+    /// Returns null if the memory is not readable or holds nothing interesting.
+    /// </summary>
+    private string? FormatMemoryDeref(ulong addr)
+    {
+        if (addr == 0 || !IsConnected || TargetPid == 0) return null;
+        byte[]? data;
+        try { data = _driver.ReadMemory(TargetPid, addr, 16u); }
+        catch { return null; }
+        if (data == null || data.Length < 8) return null;
+
+        // 1) ASCII string (at least 2 printable chars, terminated or all printable)
+        if (LooksLikeAscii(data, out var ascii)) return $"\"{ascii}\"";
+
+        // 2) UTF-16LE string (even bytes printable, odd bytes zero)
+        if (LooksLikeUtf16(data, out var wide)) return $"L\"{wide}\"";
+
+        // 3) Treat as qword — try resolve as pointer
+        ulong q = BitConverter.ToUInt64(data, 0);
+        var asSym = FormatHintValue(q);
+        if (asSym != null) return $"→{asSym}";
+        if (q != 0) return $"0x{q:X}";
+        return "0";
+    }
+
+    private static bool LooksLikeAscii(byte[] data, out string s)
+    {
+        s = "";
+        int n = 0;
+        var sb = new System.Text.StringBuilder(16);
+        for (int i = 0; i < data.Length; i++)
+        {
+            byte b = data[i];
+            if (b == 0) break;
+            if (b < 0x20 || b >= 0x7F) return false;
+            sb.Append((char)b);
+            n++;
+        }
+        if (n < 2) return false;
+        s = sb.ToString();
+        return true;
+    }
+
+    private static bool LooksLikeUtf16(byte[] data, out string s)
+    {
+        s = "";
+        int n = 0;
+        var sb = new System.Text.StringBuilder(8);
+        for (int i = 0; i + 1 < data.Length; i += 2)
+        {
+            byte lo = data[i];
+            byte hi = data[i + 1];
+            if (lo == 0 && hi == 0) break;
+            if (hi != 0) return false; // only BMP ASCII range
+            if (lo < 0x20 || lo >= 0x7F) return false;
+            sb.Append((char)lo);
+            n++;
+        }
+        if (n < 2) return false;
+        s = sb.ToString();
+        return true;
+    }
+
+    private bool TryEvalMem(string expr, Dictionary<string, ulong> regMap,
+                            ulong rip, ulong instrSize, out ulong addr)
+    {
+        addr = 0;
+        // Strip size/segment prefixes: "qword ptr ss:[rsp+10]" — we already stripped brackets
+        // Just take last "ptr " part if present:
+        int ptrIdx = expr.IndexOf("ptr ", StringComparison.OrdinalIgnoreCase);
+        if (ptrIdx >= 0) expr = expr[(ptrIdx + 4)..];
+        int colon = expr.IndexOf(':');
+        if (colon >= 0) expr = expr[(colon + 1)..];
+        expr = expr.Trim().Trim('[', ']').Trim();
+        // Tokenize: reg, numbers (hex), + - * , ignore size hints
+        ulong acc = 0;
+        int sign = 1;
+        ulong mul = 1;
+        int i = 0;
+        while (i < expr.Length)
+        {
+            char c = expr[i];
+            if (char.IsWhiteSpace(c)) { i++; continue; }
+            if (c == '+') { sign = 1; mul = 1; i++; continue; }
+            if (c == '-') { sign = -1; mul = 1; i++; continue; }
+            if (c == '*')
+            {
+                // read next number as multiplier
+                i++;
+                int start = i;
+                while (i < expr.Length && (char.IsLetterOrDigit(expr[i]))) i++;
+                var m = expr[start..i];
+                if (!ulong.TryParse(m, System.Globalization.NumberStyles.Integer, null, out var mv))
+                    ulong.TryParse(m, System.Globalization.NumberStyles.HexNumber, null, out mv);
+                mul = mv == 0 ? 1 : mv;
+                continue;
+            }
+            if (char.IsLetter(c) || c == '_')
+            {
+                int start = i;
+                while (i < expr.Length && (char.IsLetterOrDigit(expr[i]) || expr[i] == '_')) i++;
+                var tok = expr[start..i];
+                ulong val = 0;
+                if (string.Equals(tok, "rip", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(tok, "eip", StringComparison.OrdinalIgnoreCase))
+                {
+                    val = rip + instrSize; // RIP-relative uses next instruction address
+                }
+                else if (regMap.TryGetValue(tok, out var rv)) val = rv;
+                else { addr = 0; return false; }
+                acc = (ulong)((long)acc + sign * (long)(val * mul));
+                sign = 1; mul = 1; continue;
+            }
+            if (char.IsDigit(c))
+            {
+                int start = i;
+                while (i < expr.Length && (IsHexDigit2(expr[i]) || expr[i] == 'x' || expr[i] == 'X')) i++;
+                var tok = expr[start..i];
+                if (tok.EndsWith("h", StringComparison.OrdinalIgnoreCase)) tok = tok[..^1];
+                if (tok.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) tok = tok[2..];
+                if (!ulong.TryParse(tok, System.Globalization.NumberStyles.HexNumber, null, out var nv))
+                    if (!ulong.TryParse(tok, System.Globalization.NumberStyles.Integer, null, out nv))
+                    { addr = 0; return false; }
+                acc = (ulong)((long)acc + sign * (long)(nv * mul));
+                sign = 1; mul = 1; continue;
+            }
+            // Unknown char — give up
+            return false;
+        }
+        addr = acc;
+        return acc != 0;
+    }
+
+    private static bool IsHexDigit2(char c) =>
+        (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+
     /// <summary>Read 8 bytes from target memory and return as qword (0 on failure).</summary>
     public ulong ReadQwordAt(ulong address)
     {
@@ -4524,8 +4979,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
             if (oldRegs.TryGetValue(reg.Name, out var prev))
                 reg.PreviousValue = prev;
         }
-        await AnnotateRegistersAsync(regs);
+        // Push raw register values immediately — symbol/string annotations are
+        // expensive (stack reads, dbghelp lookups) and block stepping if awaited.
         Registers.ReplaceAll(regs);
+        _ = AnnotateRegistersAsync(regs).ContinueWith(_ =>
+            Application.Current.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                for (int i = 0; i < Registers.Count && i < regs.Count; i++)
+                    Registers[i].Annotation = regs[i].Annotation;
+            })), TaskScheduler.Default);
 
         NavigateToRip();
         RefreshDisassembly();
@@ -4576,14 +5038,44 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (!IsConnected || TargetPid == 0) return;
         var addr = DisasmAddress;
         var pid = TargetPid;
-        var data = await Task.Run(() => _driver.ReadMemory(pid, addr, 8192));
+
+        // Fast path: if the new RIP is already in our current instruction window,
+        // just update the "current" marker — no network read, no disasm, no symbol
+        // lookup. This is the common case for single-stepping through straight code.
+        if (Instructions.Count > 0)
+        {
+            var first = Instructions[0].Address;
+            var last = Instructions[Instructions.Count - 1];
+            ulong lastEnd = last.Address + (ulong)last.Size;
+            if (addr >= first && addr < lastEnd)
+            {
+                bool changed = false;
+                foreach (var ins in Instructions)
+                {
+                    bool isCur = ins.Address == addr;
+                    if (ins.IsCurrentInstruction != isCur)
+                    {
+                        ins.IsCurrentInstruction = isCur;
+                        changed = true;
+                    }
+                }
+                if (changed) Instructions.NotifyReset();
+                _disasmLoadingMore = false;
+                return;
+            }
+        }
+
+        var data = await Task.Run(() => _driver.ReadMemory(pid, addr, 2048));
         if (data == null) return;
 
         PatchBpBytesForDisasm(data, addr);
-        var instrs = _disasm.Disassemble(data, addr, 512);
+        var instrs = _disasm.Disassemble(data, addr, 128);
         AnnotateInstructionsWithSymbols(instrs);
         foreach (var instr in instrs)
+        {
             instr.HasBreakpoint = Breakpoints.Any(b => b.Address == instr.Address);
+            instr.IsCurrentInstruction = instr.Address == addr;
+        }
         Instructions.ReplaceAll(instrs);
         SyncBreakpointMarkers();
         _disasmLoadingMore = false;
@@ -6141,24 +6633,56 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         var moduleList = Modules.ToList();
         var kmodList = KernelModules.ToList();
-        var items = new List<StackEntry>();
         int sp = PointerSize;
         string spName = SpRegName;
+
+        // Fast pass: symbol-only annotations using locally-cached dbghelp + module lists.
+        // No per-value string reads, no return-address probing — those each cost a
+        // network round-trip × 32 entries = 1+ second on every break. We publish
+        // this fast version immediately, then upgrade in the background.
+        var items = new List<StackEntry>(32);
+        var addrsForDetail = new List<(int idx, ulong val)>();
         for (int i = 0; i < data.Length; i += sp)
         {
             if (i + sp > data.Length) break;
             ulong val = Is32Bit ? BitConverter.ToUInt32(data, i) : BitConverter.ToUInt64(data, i);
-            var strB = val != 0 ? await TryReadStringAtAsync(pid, val) : null;
-            string? annotB;
-            if (strB != null) { annotB = strB; }
-            else { annotB = ResolveStackValue(pid, val, moduleList, kmodList); if (annotB != null && await IsReturnAddressAsync(pid, val)) annotB = $"return to {annotB}"; }
-            items.Add(new StackEntry { Offset = $"{spName}+{i:X2}", Address = FormatAddr(val), Annotation = annotB });
+            string? annot = val == 0 ? null : ResolveStackValue(pid, val, moduleList, kmodList);
+            items.Add(new StackEntry { Offset = $"{spName}+{i:X2}", Address = FormatAddr(val), Annotation = annot });
+            if (val != 0 && annot != null) addrsForDetail.Add((items.Count - 1, val));
         }
         StackEntries.ReplaceAll(items);
+
+        // Background enrichment: upgrade entries that look like return addresses
+        // (prefix with "return to") and try to attach inline string previews.
+        // Runs off the UI thread; updates are posted back per-entry so stepping
+        // isn't delayed by these extra round-trips.
+        _ = Task.Run(async () =>
+        {
+            foreach (var (idx, val) in addrsForDetail)
+            {
+                try
+                {
+                    var isRet = await IsReturnAddressAsync(pid, val);
+                    if (!isRet) continue;
+                    var cur = items[idx].Annotation;
+                    if (cur == null || cur.StartsWith("return to ")) continue;
+                    _ = Application.Current.Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        if (idx < StackEntries.Count && StackEntries[idx].Address == items[idx].Address)
+                            StackEntries[idx].Annotation = "return to " + cur;
+                    }));
+                }
+                catch { /* ignore single-entry failures */ }
+            }
+        });
     }
 
-    private async Task AnnotateRegistersAsync(IEnumerable<Register> regs)
+    private Task AnnotateRegistersAsync(IEnumerable<Register> regs)
     {
+        // Fast path: symbol-only annotation (all local — dbghelp + module list).
+        // Drops per-register string/return-addr probes that each cost a network
+        // round-trip; the previous implementation made up to 18×2 reads per
+        // break which dominated step latency.
         var moduleList = Modules.ToList();
         var kmodList = KernelModules.ToList();
         var pid = TargetPid;
@@ -6170,13 +6694,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 reg.Annotation = null;
                 continue;
             }
-            var str = await TryReadStringAtAsync(pid, reg.Value);
-            if (str != null) { reg.Annotation = str; continue; }
-            var sym = ResolveStackValue(pid, reg.Value, moduleList, kmodList);
-            if (sym != null && await IsReturnAddressAsync(pid, reg.Value))
-                sym = $"return to {sym}";
-            reg.Annotation = sym;
+            reg.Annotation = ResolveStackValue(pid, reg.Value, moduleList, kmodList);
         }
+        return Task.CompletedTask;
     }
 
     private async Task<List<StackEntry>> BuildAnnotatedStackAsync(uint pid, byte[] stackData, string spName, int pointerSize)
@@ -6549,8 +7069,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
             if (oldRegs.TryGetValue(reg.Name, out var prev))
                 reg.PreviousValue = prev;
         }
-        await AnnotateRegistersAsync(regs);
+        // Push raw register values immediately — symbol/string annotations are
+        // expensive (stack reads, dbghelp lookups) and block stepping if awaited.
         Registers.ReplaceAll(regs);
+        _ = AnnotateRegistersAsync(regs).ContinueWith(_ =>
+            Application.Current.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                for (int i = 0; i < Registers.Count && i < regs.Count; i++)
+                    Registers[i].Annotation = regs[i].Annotation;
+            })), TaskScheduler.Default);
 
         NavigateToRip();
         RefreshDisassembly();

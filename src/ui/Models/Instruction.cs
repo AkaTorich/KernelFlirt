@@ -13,6 +13,13 @@ public class Instruction
     /// <summary>Symbol comment shown to the right of operands (e.g. "ntdll!NtDeviceIoControlFile").</summary>
     public string? Comment { get; set; }
 
+    /// <summary>
+    /// Dynamic x64dbg-style annotation derived from live register values, e.g.
+    /// "rcx:ZwQueryInformationThread+14, [rcx+30]:..." — updated each time the
+    /// target breaks. Shown to the right of Mnemonic/Comment in DisasmView.
+    /// </summary>
+    public string? LiveHint { get; set; }
+
     /// <summary>Symbol name for the address column (e.g. "nt!KiSystemCall64" at function entry).</summary>
     public string? AddressLabel { get; set; }
 

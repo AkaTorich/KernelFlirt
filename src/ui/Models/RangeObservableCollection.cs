@@ -47,6 +47,13 @@ public class RangeObservableCollection<T> : ObservableCollection<T>
         _suppress = false;
     }
 
+    /// <summary>Forces a Reset notification without mutating the collection
+    /// (useful when item properties changed but the list didn't).</summary>
+    public void NotifyReset()
+    {
+        OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
+    }
+
     /// <summary>Remove a range without firing CollectionChanged.</summary>
     public void RemoveRangeSilent(int index, int count)
     {

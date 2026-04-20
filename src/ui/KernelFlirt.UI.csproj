@@ -30,6 +30,17 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Resource Include="fonts\IntelOneMono-Regular.ttf" />
+    <Resource Include="fonts\IntelOneMono-Bold.ttf" />
+    <Resource Include="fonts\IntelOneMono-Italic.ttf" />
+    <Resource Include="fonts\IntelOneMono-BoldItalic.ttf" />
+    <Resource Include="fonts\IntelOneMono-Light.ttf" />
+    <Resource Include="fonts\IntelOneMono-LightItalic.ttf" />
+    <Resource Include="fonts\IntelOneMono-Medium.ttf" />
+    <Resource Include="fonts\IntelOneMono-MediumItalic.ttf" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Resource Include="icon.ico" />
     <Resource Include="Resources\Icons\run.svg" />
     <Resource Include="Resources\Icons\continue.svg" />

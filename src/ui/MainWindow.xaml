@@ -13,7 +13,7 @@
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource BgBrush}"
         Foreground="{DynamicResource FgBrush}"
-        FontFamily="Segoe UI" FontSize="12"
+        FontFamily="Lucida Console" FontSize="12"
         PreviewKeyDown="Window_PreviewKeyDown">
 
     <Window.DataContext>
@@ -26,7 +26,7 @@
         <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolVisConv" />
 
         <!-- Per-panel font sizes (changed at runtime via Ctrl+±/wheel) -->
-        <sys:Double x:Key="StackFontSize" xmlns:sys="clr-namespace:System;assembly=mscorlib">11</sys:Double>
+        <sys:Double x:Key="StackFontSize" xmlns:sys="clr-namespace:System;assembly=mscorlib">12</sys:Double>
 
         <!-- Cell style that overrides selection colors and shows BP red -->
         <Style x:Key="BpCellStyle" TargetType="DataGridCell">
@@ -192,8 +192,18 @@
                     <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/Menu/restore-patches.svg" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <Separator />
+                <MenuItem Header="_Live Hints (x64dbg-style)" IsCheckable="True"
+                          IsChecked="{Binding LiveHintsEnabled}"
+                          ToolTip="Show register values and symbol annotations next to each instruction. Slower when on."/>
+                <Separator />
                 <MenuItem Header="_Fullscreen" Click="OnToggleFullscreen" InputGestureText="F11">
                     <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/Menu/fullscreen.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Themes" x:Name="ThemesMenu">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/Menu/settings.svg" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Appearance..." Click="OnAppearanceClick">
+                    <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/Menu/settings.svg" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="_Settings..." Click="OnSettingsClick">
                     <MenuItem.Icon><svgc:SvgViewbox Source="/Resources/Icons/Menu/settings.svg" Width="16" Height="16"/></MenuItem.Icon>
@@ -315,6 +325,87 @@
                 <Button Command="{Binding ToggleMemoryBreakpointCommand}" ToolTip="Toggle memory breakpoint (PAGE_GUARD)" Padding="3">
                     <svgc:SvgViewbox Source="/Resources/Icons/breakpoint-mem.svg" Width="20" Height="20"/>
                 </Button>
+                <Button Command="{Binding SetConditionalBreakpointCommand}" ToolTip="Set conditional breakpoint" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/Menu/bp-cond.svg" Width="20" Height="20"/>
+                </Button>
+                <Button Command="{Binding SetLogBreakpointCommand}" ToolTip="Set log breakpoint" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/Menu/bp-log.svg" Width="20" Height="20"/>
+                </Button>
+                <Button Command="{Binding RemoveAllBreakpointsCommand}" ToolTip="Remove all breakpoints" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/Menu/bp-remove-all.svg" Width="20" Height="20"/>
+                </Button>
+
+                <Rectangle Width="1" Fill="{DynamicResource BorderBrush}" Margin="8,2" />
+
+                <!-- Step Out is already above; Skip Instruction goes here -->
+                <Button Command="{Binding SkipInstructionCommand}" ToolTip="Skip instruction (Ctrl+F8)" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/Menu/skip.svg" Width="20" Height="20"/>
+                </Button>
+
+                <Rectangle Width="1" Fill="{DynamicResource BorderBrush}" Margin="8,2" />
+
+                <!-- Search group -->
+                <Button Command="{Binding SearchBinaryCommand}" ToolTip="Search binary pattern (Ctrl+F)" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/Tabs/search.svg" Width="20" Height="20"/>
+                </Button>
+                <Button Command="{Binding SearchStringsCommand}" ToolTip="Search string references" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/Menu/search-string.svg" Width="20" Height="20"/>
+                </Button>
+                <Button Command="{Binding SearchIntermodularCallsCommand}" ToolTip="Intermodular calls" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/Menu/search-intermod.svg" Width="20" Height="20"/>
+                </Button>
+
+                <Rectangle Width="1" Fill="{DynamicResource BorderBrush}" Margin="8,2" />
+
+                <!-- View group -->
+                <Button Click="OnRefreshAllClick" ToolTip="Refresh all" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/Menu/refresh.svg" Width="20" Height="20"/>
+                </Button>
+                <Button Command="{Binding GoToRipCommand}" ToolTip="Go to RIP (Ctrl+G)" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/Menu/goto-rip.svg" Width="20" Height="20"/>
+                </Button>
+                <Button Command="{Binding AddBookmarkCommand}" ToolTip="Add bookmark" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/Plugins/bookmarks.svg" Width="20" Height="20"/>
+                </Button>
+                <Button Click="OnRefreshSehClick" ToolTip="Refresh SEH chain" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/Menu/refresh-seh.svg" Width="20" Height="20"/>
+                </Button>
+                <Button Command="{Binding RestoreAllPatchesCommand}" ToolTip="Restore all patches" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/Menu/restore-patches.svg" Width="20" Height="20"/>
+                </Button>
+                <Button Click="OnToggleFullscreen" ToolTip="Fullscreen (F11)" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/Menu/fullscreen.svg" Width="20" Height="20"/>
+                </Button>
+                <Button Click="OnSettingsClick" ToolTip="Settings…" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/Menu/settings.svg" Width="20" Height="20"/>
+                </Button>
+
+                <Rectangle Width="1" Fill="{DynamicResource BorderBrush}" Margin="8,2" />
+
+                <!-- Symbols group -->
+                <Button Command="{Binding LoadAllSymbolsCommand}" ToolTip="Load all symbols" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/Menu/symbol-load.svg" Width="20" Height="20"/>
+                </Button>
+                <Button Command="{Binding SetSymbolPathCommand}" ToolTip="Set symbol path…" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/Menu/symbol-path.svg" Width="20" Height="20"/>
+                </Button>
+                <Button Command="{Binding ClearSymbolCacheCommand}" ToolTip="Clear symbol cache" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/Menu/symbol-clear.svg" Width="20" Height="20"/>
+                </Button>
+
+                <Rectangle Width="1" Fill="{DynamicResource BorderBrush}" Margin="8,2" />
+
+                <!-- File group: debug service -->
+                <Button Command="{Binding DebugServiceCommand}" ToolTip="Debug service…" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/Menu/service.svg" Width="20" Height="20"/>
+                </Button>
+
+                <Rectangle Width="1" Fill="{DynamicResource BorderBrush}" Margin="8,2" />
+
+                <!-- Help -->
+                <Button Click="OnAboutClick" ToolTip="About" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/Menu/about.svg" Width="20" Height="20"/>
+                </Button>
 
                 <Rectangle Width="1" Fill="{DynamicResource BorderBrush}" Margin="8,2" />
 
@@ -354,7 +445,7 @@
                            VerticalAlignment="Center" Margin="6,0,4,0"
                            TextTrimming="CharacterEllipsis"/>
                 <Grid>
-                    <TextBox x:Name="ConsoleInput" FontFamily="Lucida Console" FontSize="11"
+                    <TextBox x:Name="ConsoleInput" FontFamily="Lucida Console" FontSize="12"
                              Background="{DynamicResource BgBrush}" Foreground="{DynamicResource FgBrush}"
                              BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
                              Padding="4,2" VerticalContentAlignment="Center"
@@ -365,7 +456,7 @@
                     <!-- Ghost-text hint (faded), shown when input is empty -->
                     <TextBlock x:Name="ConsoleHint" IsHitTestVisible="False"
                                Foreground="{DynamicResource FgDimBrush}" Opacity="0.5"
-                               FontFamily="Lucida Console" FontSize="11"
+                               FontFamily="Lucida Console" FontSize="12"
                                VerticalAlignment="Center" Margin="6,0,0,0"
                                Text="g · t · p · bp · bc · bl · d · dis · r · ? · findall  (press : to focus)"/>
                     <!-- Autocomplete popup -->
@@ -376,7 +467,7 @@
                                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
                                 Padding="0" MinWidth="340">
                             <ListBox x:Name="ConsoleSuggestions" BorderThickness="0"
-                                     FontFamily="Lucida Console" FontSize="11"
+                                     FontFamily="Lucida Console" FontSize="12"
                                      Background="{DynamicResource BgLightBrush}"
                                      MaxHeight="220"
                                      PreviewMouseLeftButtonUp="OnSuggestionPicked">
@@ -528,6 +619,9 @@
                             </DataGrid>
                             <!-- Column resize overlay for Registers -->
                             <Grid x:Name="RegColumnOverlay" IsHitTestVisible="True" HorizontalAlignment="Left">
+                                <Grid.RenderTransform>
+                                    <TranslateTransform x:Name="RegColumnXform"/>
+                                </Grid.RenderTransform>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition x:Name="RegNameCol" Width="60"/>
                                     <ColumnDefinition x:Name="RegValCol" Width="140"/>
@@ -537,7 +631,7 @@
                                     <Thumb.Template>
                                         <ControlTemplate TargetType="Thumb">
                                             <Grid Background="Transparent">
-                                                <Line X1="3" Y1="0" X2="3" Y2="10000" Stroke="#8899A0"
+                                                <Line X1="3" Y1="0" X2="3" Y2="10000" Stroke="{DynamicResource SplitterDashBrush}"
                                                       StrokeThickness="1" StrokeDashArray="2 2" SnapsToDevicePixels="True"/>
                                             </Grid>
                                         </ControlTemplate>
@@ -548,7 +642,7 @@
                                     <Thumb.Template>
                                         <ControlTemplate TargetType="Thumb">
                                             <Grid Background="Transparent">
-                                                <Line X1="3" Y1="0" X2="3" Y2="10000" Stroke="#8899A0"
+                                                <Line X1="3" Y1="0" X2="3" Y2="10000" Stroke="{DynamicResource SplitterDashBrush}"
                                                       StrokeThickness="1" StrokeDashArray="2 2" SnapsToDevicePixels="True"/>
                                             </Grid>
                                         </ControlTemplate>
@@ -1215,7 +1309,7 @@
                     </Border>
                     <ae:TextEditor x:Name="DecompilerOutput"
                                    IsReadOnly="True"
-                                   FontFamily="Lucida Console" FontSize="11"
+                                   FontFamily="Lucida Console" FontSize="12"
                                    BorderBrush="{DynamicResource BorderBrush}"
                                    VerticalScrollBarVisibility="Auto"
                                    HorizontalScrollBarVisibility="Auto"
@@ -1325,6 +1419,9 @@
                         </ListBox>
                         <!-- Column resize overlay -->
                         <Grid x:Name="StackColumnOverlay" IsHitTestVisible="True" HorizontalAlignment="Left">
+                            <Grid.RenderTransform>
+                                <TranslateTransform x:Name="StackColumnXform"/>
+                            </Grid.RenderTransform>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition x:Name="StackOffsetCol" Width="60"/>
                                 <ColumnDefinition x:Name="StackAddrCol" Width="160"/>
@@ -1334,7 +1431,7 @@
                                 <Thumb.Template>
                                     <ControlTemplate TargetType="Thumb">
                                         <Grid Background="Transparent">
-                                            <Line X1="3" Y1="0" X2="3" Y2="10000" Stroke="#8899A0"
+                                            <Line X1="3" Y1="0" X2="3" Y2="10000" Stroke="{DynamicResource SplitterDashBrush}"
                                                   StrokeThickness="1" StrokeDashArray="2 2" SnapsToDevicePixels="True"/>
                                         </Grid>
                                     </ControlTemplate>
@@ -1345,7 +1442,7 @@
                                 <Thumb.Template>
                                     <ControlTemplate TargetType="Thumb">
                                         <Grid Background="Transparent">
-                                            <Line X1="3" Y1="0" X2="3" Y2="10000" Stroke="#8899A0"
+                                            <Line X1="3" Y1="0" X2="3" Y2="10000" Stroke="{DynamicResource SplitterDashBrush}"
                                                   StrokeThickness="1" StrokeDashArray="2 2" SnapsToDevicePixels="True"/>
                                         </Grid>
                                     </ControlTemplate>

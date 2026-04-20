@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Shapes;
 using KernelFlirt.UI.Models;
 using KernelFlirt.UI.ViewModels;
 
@@ -36,7 +37,7 @@ public partial class DisasmView : UserControl
     };
 
     // Jump/call/ret instructions (highlighted differently like OllyDbg)
-    private static readonly HashSet<string> JumpMnemonics = new(StringComparer.OrdinalIgnoreCase)
+    internal static readonly HashSet<string> JumpMnemonics = new(StringComparer.OrdinalIgnoreCase)
     {
         "jmp","je","jne","jz","jnz","jg","jge","jl","jle",
         "ja","jae","jb","jbe","jo","jno","js","jns","jp","jnp",
@@ -81,38 +82,68 @@ public partial class DisasmView : UserControl
 
     // Shared column widths — bound to every instruction row Grid
     public double BpColWidth { get; set; } = 22;
+    public double JumpsColWidth { get; set; } = 40;
     public double AddrColWidth { get; set; } = 170;
     public double BytesColWidth { get; set; } = 230;
+    public double MnemColWidth { get; set; } = 260;
 
     private void OnSplitterDrag0(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e) => DragColumn(0, e.HorizontalChange);
     private void OnSplitterDrag1(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e) => DragColumn(1, e.HorizontalChange);
     private void OnSplitterDrag2(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e) => DragColumn(2, e.HorizontalChange);
+    private void OnSplitterDrag3(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e) => DragColumn(3, e.HorizontalChange);
+    private void OnSplitterDrag4(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e) => DragColumn(4, e.HorizontalChange);
 
     public void DragColumnPublic(int colIndex, double delta) => DragColumn(colIndex, delta);
 
     private void DragColumn(int colIndex, double delta)
     {
+        double scale = LineFontSize / 11.0;
+        if (scale <= 0) scale = 1;
         var cols = ColumnHeader.ColumnDefinitions;
         double newW = Math.Max(20, cols[colIndex].Width.Value + delta);
         cols[colIndex].Width = new GridLength(newW);
+        double basePx = newW / scale;
         switch (colIndex)
         {
-            case 0: BpColWidth = newW; break;
-            case 1: AddrColWidth = newW; break;
-            case 2: BytesColWidth = newW; break;
+            case 0: BpColWidth = basePx; break;
+            case 1: JumpsColWidth = basePx; break;
+            case 2: AddrColWidth = basePx; break;
+            case 3: BytesColWidth = basePx; break;
+            case 4: MnemColWidth = basePx; break;
         }
         ApplyColumnWidths();
+        DrawJumpArrows();
     }
 
     private void ApplyColumnWidths()
     {
+        double scale = LineFontSize / 11.0;
+        double bpW    = BpColWidth * scale;
+        double jumpsW = JumpsColWidth * scale;
+        double addrW  = AddrColWidth * scale;
+        double bytesW = BytesColWidth * scale;
+        double mnemW  = MnemColWidth * scale;
+
         foreach (var item in InstructionList.Items)
         {
-            if (item is Border b && b.Child is Grid g && g.ColumnDefinitions.Count >= 4)
+            if (item is Border b && b.Child is Grid g && g.ColumnDefinitions.Count >= 6)
             {
-                g.ColumnDefinitions[0].Width = new GridLength(BpColWidth);
-                g.ColumnDefinitions[1].Width = new GridLength(AddrColWidth);
-                g.ColumnDefinitions[2].Width = new GridLength(BytesColWidth);
+                g.ColumnDefinitions[0].Width = new GridLength(bpW);
+                g.ColumnDefinitions[1].Width = new GridLength(jumpsW);
+                g.ColumnDefinitions[2].Width = new GridLength(addrW);
+                g.ColumnDefinitions[3].Width = new GridLength(bytesW);
+                g.ColumnDefinitions[4].Width = new GridLength(mnemW);
+                foreach (var child in g.Children)
+                {
+                    if (child is not Border cb) continue;
+                    int col = Grid.GetColumn(cb);
+                    double w = col switch
+                    {
+                        0 => bpW, 2 => addrW, 3 => bytesW, 4 => mnemW, _ => double.NaN,
+                    };
+                    if (!double.IsNaN(w)) cb.Width = w;
+                    if (col == 4 && cb.Child is MnemonicCell mc) mc.InvalidateVisual();
+                }
             }
         }
     }
@@ -135,13 +166,47 @@ public partial class DisasmView : UserControl
     private void ApplyLineFontSize()
     {
         double fs = LineFontSize;
+        // Scale column widths with font size so columns stay aligned on zoom.
+        double scale = fs / 11.0;
+        double bpW    = BpColWidth * scale;
+        double jumpsW = JumpsColWidth * scale;
+        double addrW  = AddrColWidth * scale;
+        double bytesW = BytesColWidth * scale;
+        double mnemW  = MnemColWidth * scale;
+
         foreach (var item in InstructionList.Items)
         {
             if (item is Border b && b.Child is Grid g)
             {
+                if (g.ColumnDefinitions.Count >= 5)
+                {
+                    g.ColumnDefinitions[0].Width = new GridLength(bpW);
+                    g.ColumnDefinitions[1].Width = new GridLength(jumpsW);
+                    g.ColumnDefinitions[2].Width = new GridLength(addrW);
+                    g.ColumnDefinitions[3].Width = new GridLength(bytesW);
+                    g.ColumnDefinitions[4].Width = new GridLength(mnemW);
+                }
                 foreach (var child in g.Children)
                 {
-                    if (child is TextBlock tb)
+                    if (child is Border cb)
+                    {
+                        int col = Grid.GetColumn(cb);
+                        double w = col switch
+                        {
+                            0 => bpW, 2 => addrW, 3 => bytesW, 4 => mnemW, _ => double.NaN,
+                        };
+                        if (!double.IsNaN(w)) cb.Width = w;
+                    }
+                }
+                foreach (var child in g.Children)
+                {
+                    TextBlock? tb = child switch
+                    {
+                        TextBlock direct => direct,
+                        Border wrap when wrap.Child is TextBlock inner => inner,
+                        _ => null,
+                    };
+                    if (tb != null)
                     {
                         tb.FontSize = fs;
                         foreach (var inl in tb.Inlines)
@@ -151,13 +216,80 @@ public partial class DisasmView : UserControl
                                 sym.FontSize = fs;
                         }
                         tb.InvalidateMeasure();
+                        continue;
+                    }
+                    // Custom-rendered mnemonic cell
+                    if (child is Border wrap2 && wrap2.Child is MnemonicCell mc)
+                    {
+                        TextElement.SetFontSize(mc, fs);
+                        mc.InvalidateMeasure();
+                        mc.InvalidateVisual();
                     }
                 }
                 b.InvalidateMeasure();
             }
         }
+        if (ColumnHeader.ColumnDefinitions.Count >= 5)
+        {
+            ColumnHeader.ColumnDefinitions[0].Width = new GridLength(bpW);
+            ColumnHeader.ColumnDefinitions[1].Width = new GridLength(jumpsW);
+            ColumnHeader.ColumnDefinitions[2].Width = new GridLength(addrW);
+            ColumnHeader.ColumnDefinitions[3].Width = new GridLength(bytesW);
+            ColumnHeader.ColumnDefinitions[4].Width = new GridLength(mnemW);
+        }
         InstructionList.InvalidateMeasure();
+        Dispatcher.InvokeAsync(DrawJumpArrows, System.Windows.Threading.DispatcherPriority.Loaded);
     }
+
+    /// <summary>
+    /// Rebuilds the arrow list for the currently visible instructions and hands
+    /// it to the JumpArrowsCanvas, which renders via DrawingContext (one pass).
+    /// </summary>
+    private void DrawJumpArrows()
+    {
+        if (JumpsCanvas == null) return;
+        if (InstructionList.Items.Count == 0) { JumpsCanvas.Clear(); return; }
+
+        // Build address → row-center Y map relative to the Jumps column itself.
+        var addrToY = new Dictionary<ulong, double>();
+        ulong? currentRip = null;
+        for (int idx = 0; idx < InstructionList.Items.Count; idx++)
+        {
+            if (InstructionList.Items[idx] is not Border b) continue;
+            if (b.DataContext is not Instruction instr) continue;
+            var origin = b.TranslatePoint(new Point(0, 0), JumpsCanvas);
+            double y = origin.Y + b.ActualHeight / 2.0;
+            addrToY[instr.Address] = y;
+            if (instr.IsCurrentInstruction) currentRip = instr.Address;
+        }
+
+        var list = new List<JumpArrowsCanvas.JumpArrow>(InstructionList.Items.Count / 4);
+        foreach (var item in InstructionList.Items)
+        {
+            if (item is not Border b) continue;
+            if (b.DataContext is not Instruction instr) continue;
+            if (instr.BranchTargetAddress == 0) continue;
+            if (!IsBranchMnemonic(instr.Mnemonic)) continue;
+            if (!addrToY.TryGetValue(instr.Address, out double ySrc)) continue;
+            bool taken = currentRip.HasValue && instr.Address == currentRip.Value;
+            var kind = taken ? JumpArrowsCanvas.ArrowKind.Taken : JumpArrowsCanvas.ArrowKind.Normal;
+            if (addrToY.TryGetValue(instr.BranchTargetAddress, out double yDst))
+                list.Add(new JumpArrowsCanvas.JumpArrow(ySrc, yDst, false, kind));
+            else
+                list.Add(new JumpArrowsCanvas.JumpArrow(ySrc, null,
+                    instr.BranchTargetAddress > instr.Address, kind));
+        }
+
+        if (currentRip.HasValue && addrToY.TryGetValue(currentRip.Value, out double yRip))
+            list.Add(new JumpArrowsCanvas.JumpArrow(yRip, null, false, JumpArrowsCanvas.ArrowKind.Rip));
+
+        JumpsCanvas.SetArrows(list);
+    }
+
+    private static bool IsBranchMnemonic(string m) =>
+        JumpMnemonics.Contains(m) && m != "ret" && m != "retn" && m != "retf" &&
+        m != "iret" && m != "iretd" && m != "iretq" && m != "syscall" &&
+        m != "sysret" && m != "int" && m != "int3" && m != "into";
 
     private void OnKeyDown(object sender, KeyEventArgs e)
     {
@@ -170,6 +302,11 @@ public partial class DisasmView : UserControl
 
     private void OnScrollChanged(object sender, ScrollChangedEventArgs e)
     {
+        // Keep the splitter overlay aligned with horizontally-scrolled content
+        ColumnHeaderXform.X = -e.HorizontalOffset;
+        // Any scroll/resize → redraw jump arrows to match new Y positions
+        Dispatcher.InvokeAsync(DrawJumpArrows, System.Windows.Threading.DispatcherPriority.Render);
+
         var vm = GetViewModel();
         if (vm == null) return;
 
@@ -248,6 +385,7 @@ public partial class DisasmView : UserControl
                 }
             }, System.Windows.Threading.DispatcherPriority.Loaded);
         }
+        Dispatcher.InvokeAsync(DrawJumpArrows, System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
     /// <summary>Append instructions to the bottom of the view (called by scroll-down loading).</summary>
@@ -312,49 +450,85 @@ public partial class DisasmView : UserControl
         if (instr.HasBreakpoint)
             bpTb.Inlines.Add(new Run("●") { Foreground = BpMarkerColor, FontWeight = FontWeights.Bold });
 
-        // Address column
+        // Address column — always hex address (x64dbg-style).
+        // Function label (if any) is surfaced as a separator row, not inside the address cell.
         var addrTb = MakeCellTb();
-        if (!string.IsNullOrEmpty(instr.AddressLabel))
-        {
-            var symInline = CreateSymbolInline(instr.AddressLabel, instr.Address);
-            addrTb.Inlines.Add(symInline);
-        }
-        else
-        {
-            addrTb.Inlines.Add(new Run(FormatAddress(instr.Address)) { Foreground = AddressColor });
-        }
+        addrTb.Inlines.Add(new Run(FormatAddress(instr.Address)) { Foreground = AddressColor });
 
         // Bytes column
         var bytesTb = MakeCellTb();
         bytesTb.Inlines.Add(new Run(instr.BytesHex) { Foreground = BytesColor });
 
-        // Mnemonic + operands + comment
-        var mnemTb = MakeCellTb();
-        AddHighlightedMnemonic(mnemTb, instr);
-        if (!string.IsNullOrEmpty(instr.Comment))
+        // Mnemonic + operands + comment — custom-rendered via MnemonicCell so
+        // long symbol names get a proper "…" ellipsis while still being clickable.
+        var mnemCell = new MnemonicCell { Instruction = instr };
+        TextElement.SetFontSize(mnemCell, LineFontSize);
+
+        // Live-hint column (x64dbg-style register/mem annotations) with per-value Copy.
+        var hintTb = MakeCellTb();
+        if (!string.IsNullOrEmpty(instr.LiveHint))
         {
-            string? displayComment = instr.Comment;
-            if (!string.IsNullOrEmpty(instr.BranchTargetSymbol) && displayComment.Contains(" | "))
-                displayComment = displayComment[(displayComment.IndexOf(" | ") + 3)..];
-            else if (!string.IsNullOrEmpty(instr.BranchTargetSymbol))
-                displayComment = null;
-            if (!string.IsNullOrEmpty(displayComment))
-                mnemTb.Inlines.Add(new Run($"  ; {displayComment}") { Foreground = CommentColor });
+            BuildHintInlines(hintTb, instr.LiveHint);
+            hintTb.ContextMenu = new ContextMenu
+            {
+                Items =
+                {
+                    CreateSymMenuItem("Copy all hints", () => Clipboard.SetText(instr.LiveHint!)),
+                }
+            };
         }
 
+        // Each cell is wrapped in a Border with ClipToBounds so long content
+        // (symbol names with InlineUIContainer break TextTrimming) can't spill
+        // into neighbouring columns.
+        // Each cell is a Border with an explicit Width equal to the current
+        // column width, and ClipToBounds. Explicit Width (rather than Stretch)
+        // prevents InlineUIContainer children from making Grid re-measure the
+        // column wider — the Border cannot grow past its configured size.
+        Border Wrap(TextBlock t, int col, double w)
+        {
+            t.HorizontalAlignment = HorizontalAlignment.Left;
+            var b = new Border
+            {
+                Child = t,
+                ClipToBounds = true,
+                HorizontalAlignment = double.IsNaN(w) ? HorizontalAlignment.Stretch : HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Stretch,
+                SnapsToDevicePixels = true,
+            };
+            if (!double.IsNaN(w)) b.Width = w;
+            Grid.SetColumn(b, col);
+            return b;
+        }
+
+        double scale = LineFontSize / 11.0;
         var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(BpColWidth) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(AddrColWidth) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(BytesColWidth) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(BpColWidth * scale) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(JumpsColWidth * scale) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(AddrColWidth * scale) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(BytesColWidth * scale) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(MnemColWidth * scale) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        Grid.SetColumn(bpTb, 0);
-        Grid.SetColumn(addrTb, 1);
-        Grid.SetColumn(bytesTb, 2);
-        Grid.SetColumn(mnemTb, 3);
-        grid.Children.Add(bpTb);
-        grid.Children.Add(addrTb);
-        grid.Children.Add(bytesTb);
-        grid.Children.Add(mnemTb);
+        grid.Children.Add(Wrap(bpTb, 0, BpColWidth * scale));
+        // column 1 reserved for JumpsCanvas overlay (drawn in code-behind)
+        grid.Children.Add(Wrap(addrTb, 2, AddrColWidth * scale));
+        grid.Children.Add(Wrap(bytesTb, 3, BytesColWidth * scale));
+        // Mnemonic uses custom-rendered FrameworkElement — wrap it in a
+        // fixed-width Border so ClipToBounds stops neighbours from being
+        // pushed wider, just like the other cells.
+        var mnemBorder = new Border
+        {
+            Child = mnemCell,
+            Width = MnemColWidth * scale,
+            ClipToBounds = true,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            SnapsToDevicePixels = true,
+        };
+        Grid.SetColumn(mnemBorder, 4);
+        grid.Children.Add(mnemBorder);
+        // Last (hint) column takes whatever's left — leave it flexible.
+        grid.Children.Add(Wrap(hintTb, 5, double.NaN));
 
         Brush bgBrush;
         if (instr.IsCurrentInstruction || (currentRip.HasValue && instr.Address == currentRip.Value))
@@ -370,6 +544,7 @@ public partial class DisasmView : UserControl
             Background = bgBrush,
             Padding = new Thickness(4, 1, 4, 1),
             BorderThickness = new Thickness(0),
+            DataContext = instr,
         };
         return border;
     }
@@ -433,6 +608,73 @@ public partial class DisasmView : UserControl
     }
 
     /// <summary>
+    /// Splits "rax:ntdll+1234, [rip+0x10]=0xDEAD" into "label : value" pairs and
+    /// makes each value a clickable TextBlock with a Copy context menu.
+    /// </summary>
+    private void BuildHintInlines(TextBlock tb, string hint)
+    {
+        var tokens = hint.Split(',');
+        for (int t = 0; t < tokens.Length; t++)
+        {
+            var tok = tokens[t].TrimStart();
+            // Separator between labels (not before first)
+            if (t > 0) tb.Inlines.Add(new Run(", ") { Foreground = CommentColor, FontStyle = FontStyles.Italic });
+
+            // Find the boundary: "label:val" or "[expr]=val"
+            int sep = -1;
+            char sepCh = '\0';
+            int bracket = 0;
+            for (int i = 0; i < tok.Length; i++)
+            {
+                char c = tok[i];
+                if (c == '[') bracket++;
+                else if (c == ']') bracket--;
+                else if (bracket == 0 && (c == ':' || c == '='))
+                {
+                    sep = i; sepCh = c; break;
+                }
+            }
+            if (sep < 0)
+            {
+                tb.Inlines.Add(new Run(tok) { Foreground = CommentColor, FontStyle = FontStyles.Italic });
+                continue;
+            }
+            var label = tok[..sep];
+            var value = tok[(sep + 1)..];
+            tb.Inlines.Add(new Run(label + sepCh)
+            { Foreground = CommentColor, FontStyle = FontStyles.Italic });
+            tb.Inlines.Add(CreateHintValueInline(value));
+        }
+    }
+
+    private InlineUIContainer CreateHintValueInline(string rawValue)
+    {
+        var copyText = rawValue.Trim();
+        // For pointer-style "→name" strip the arrow for clipboard clarity
+        if (copyText.StartsWith("→")) copyText = copyText[1..];
+
+        var valTb = new TextBlock
+        {
+            Text = rawValue,
+            FontFamily = new FontFamily("Lucida Console"),
+            FontSize = LineFontSize,
+            FontStyle = FontStyles.Italic,
+            Foreground = CommentColor,
+            Cursor = Cursors.Hand,
+        };
+        valTb.ContextMenu = new ContextMenu
+        {
+            Items =
+            {
+                CreateSymMenuItem("Copy value", () => Clipboard.SetText(copyText)),
+                CreateSymMenuItem("Copy full hint entry", () =>
+                    Clipboard.SetText(rawValue)),
+            }
+        };
+        return new InlineUIContainer(valTb) { BaselineAlignment = BaselineAlignment.TextBottom };
+    }
+
+    /// <summary>
     /// Add mnemonic + operands with syntax highlighting.
     /// For branch instructions with resolved symbols, replaces hex operand with clickable symbol name.
     /// </summary>
@@ -445,7 +687,12 @@ public partial class DisasmView : UserControl
         if (string.IsNullOrEmpty(instr.Operands))
             return;
 
-        // For branch instructions with a resolved symbol, show the symbol name instead of hex address
+        // For branch instructions with a resolved symbol, render a clickable
+        // InlineUIContainer — preserves double-click navigation and the per-symbol
+        // context menu (Go to / Copy name / Set breakpoint). Long names are
+        // clipped by the cell's Border (ClipToBounds + fixed Width); they won't
+        // get the "…" ellipsis WPF draws for plain Runs, but losing click
+        // behaviour just to gain three dots isn't worth it.
         if (!string.IsNullOrEmpty(instr.BranchTargetSymbol) && instr.BranchTargetAddress != 0)
         {
             var symInline = CreateSymbolInline(instr.BranchTargetSymbol, instr.BranchTargetAddress);
@@ -471,7 +718,10 @@ public partial class DisasmView : UserControl
         }
     }
 
-    private enum TokenKind { Text, Register, Number, Punctuation, SizePrefix, String, Symbol }
+    internal enum TokenKind { Text, Register, Number, Punctuation, SizePrefix, String, Symbol }
+
+    internal static List<(string text, TokenKind kind)> TokenizeOperandsStatic(string operands)
+        => TokenizeOperands(operands);
 
     private static List<(string text, TokenKind kind)> TokenizeOperands(string operands)
     {
@@ -571,7 +821,7 @@ public partial class DisasmView : UserControl
                 }
             }
 
-            border.Background = new SolidColorBrush(Color.FromRgb(0x26, 0x4F, 0x78));
+            border.Background = Res("SelectionBrush");
             _selectedIndex = index;
 
             // Update selected address for context menu operations

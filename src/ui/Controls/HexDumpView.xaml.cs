@@ -19,8 +19,12 @@ public partial class HexDumpView : UserControl
     private static SolidColorBrush AsciiColor => (SolidColorBrush)Application.Current.Resources["CommentBrush"];
     private static SolidColorBrush FgDimColor => (SolidColorBrush)Application.Current.Resources["FgDimBrush"];
     private static SolidColorBrush BpMarkerColor => (SolidColorBrush)Application.Current.Resources["BreakpointBrush"];
-    private static SolidColorBrush SelectionColor => new(Color.FromRgb(0x26, 0x4F, 0x78));
-    private static SolidColorBrush BpLineColor => new(Color.FromRgb(0x8B, 0x20, 0x20));
+    private static SolidColorBrush SelectionColor =>
+        (Application.Current.Resources.MergedDictionaries[0]["SelectionBrush"] as SolidColorBrush)
+        ?? new SolidColorBrush(Color.FromRgb(0x26, 0x4F, 0x78));
+    private static SolidColorBrush BpLineColor =>
+        (Application.Current.Resources.MergedDictionaries[0]["BpRowBrush"] as SolidColorBrush)
+        ?? new SolidColorBrush(Color.FromRgb(0x8B, 0x20, 0x20));
 
     private byte[]? _data;
     private ulong _baseAddress;
@@ -34,6 +38,7 @@ public partial class HexDumpView : UserControl
     public HexDumpView()
     {
         InitializeComponent();
+        ScrollArea.ScrollChanged += (_, e) => HexColumnXform.X = -e.HorizontalOffset;
     }
 
     public static readonly DependencyProperty LineFontSizeProperty = DependencyProperty.Register(
@@ -54,10 +59,22 @@ public partial class HexDumpView : UserControl
     private void ApplyLineFontSize()
     {
         double fs = LineFontSize;
+        // Column widths scale with font size so hex/ASCII blocks stay aligned
+        // when zooming (Ctrl+wheel). 11pt is the base — at 22pt the columns
+        // double in width, etc.
+        double scale = fs / 11.0;
+        double addrW = AddressColWidth * scale;
+        double hexW  = HexColWidth * scale;
+
         foreach (var item in LineList.Items)
         {
             if (item is Border b && b.Child is Grid g)
             {
+                if (g.ColumnDefinitions.Count >= 3)
+                {
+                    g.ColumnDefinitions[0].Width = new GridLength(addrW);
+                    g.ColumnDefinitions[1].Width = new GridLength(hexW);
+                }
                 foreach (var child in g.Children)
                 {
                     if (child is TextBlock tb)
@@ -70,6 +87,12 @@ public partial class HexDumpView : UserControl
                 }
                 b.InvalidateMeasure();
             }
+        }
+        // Keep the splitter overlay aligned with the scaled columns
+        if (HexColumnOverlay.ColumnDefinitions.Count >= 2)
+        {
+            HexColumnOverlay.ColumnDefinitions[0].Width = new GridLength(addrW);
+            HexColumnOverlay.ColumnDefinitions[1].Width = new GridLength(hexW);
         }
         LineList.InvalidateMeasure();
     }
@@ -173,9 +196,11 @@ public partial class HexDumpView : UserControl
         asciiRun.MouseRightButtonDown += (s, e) => { SelectLine(lineIdx); };
         asciiTb.Inlines.Add(asciiRun);
 
+        double scale = LineFontSize / 11.0;
+        double rowH = Math.Ceiling(LineFontSize * 1.3);
         var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(AddressColWidth) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(HexColWidth) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(AddressColWidth * scale) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(HexColWidth * scale) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         Grid.SetColumn(addrTb, 0);
         Grid.SetColumn(hexTb, 1);
@@ -190,8 +215,9 @@ public partial class HexDumpView : UserControl
         {
             Child = grid,
             Background = bgBrush,
-            Padding = new Thickness(4, 1, 4, 1),
+            Padding = new Thickness(4, 0, 4, 0),
             BorderThickness = new Thickness(0),
+            Height = rowH,
         };
         border.ContextMenu = BuildContextMenu();
         return border;
@@ -205,16 +231,20 @@ public partial class HexDumpView : UserControl
 
     private void DragHexCol(int idx, double delta)
     {
+        double scale = LineFontSize / 11.0;
+        if (scale <= 0) scale = 1;
         var cols = HexColumnOverlay.ColumnDefinitions;
         double newW = Math.Max(30, cols[idx].Width.Value + delta);
         cols[idx].Width = new GridLength(newW);
-        if (idx == 0) AddressColWidth = newW; else HexColWidth = newW;
+        // Persist unscaled base width so zooming keeps splitter position consistent.
+        if (idx == 0) AddressColWidth = newW / scale; else HexColWidth = newW / scale;
+        double a = AddressColWidth * scale, h = HexColWidth * scale;
         foreach (var item in LineList.Items)
         {
             if (item is Border b && b.Child is Grid g && g.ColumnDefinitions.Count >= 3)
             {
-                g.ColumnDefinitions[0].Width = new GridLength(AddressColWidth);
-                g.ColumnDefinitions[1].Width = new GridLength(HexColWidth);
+                g.ColumnDefinitions[0].Width = new GridLength(a);
+                g.ColumnDefinitions[1].Width = new GridLength(h);
             }
         }
     }

@@ -1,9 +1,14 @@
 <UserControl x:Class="KernelFlirt.UI.Controls.HexDumpView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             FontFamily="Lucida Console" FontSize="11"
+             FontFamily="Lucida Console" FontSize="12"
              Background="{DynamicResource BgBrush}"
-             Foreground="{DynamicResource FgBrush}">
+             Foreground="{DynamicResource FgBrush}"
+             TextOptions.TextRenderingMode="Aliased"
+             TextOptions.TextFormattingMode="Display"
+             TextOptions.TextHintingMode="Fixed"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True">
 
     <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
         <Grid>
@@ -14,6 +19,9 @@
                 <ItemsControl x:Name="LineList" />
             </ScrollViewer>
             <Grid x:Name="HexColumnOverlay" IsHitTestVisible="True" HorizontalAlignment="Left">
+                <Grid.RenderTransform>
+                    <TranslateTransform x:Name="HexColumnXform"/>
+                </Grid.RenderTransform>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="150"/>
                     <ColumnDefinition Width="340"/>
@@ -23,7 +31,7 @@
                     <Thumb.Template>
                         <ControlTemplate TargetType="Thumb">
                             <Grid Background="Transparent">
-                                <Line X1="3" Y1="0" X2="3" Y2="10000" Stroke="#8899A0"
+                                <Line X1="3" Y1="0" X2="3" Y2="10000" Stroke="{DynamicResource SplitterDashBrush}"
                                       StrokeThickness="1" StrokeDashArray="2 2" SnapsToDevicePixels="True"/>
                             </Grid>
                         </ControlTemplate>
@@ -34,7 +42,7 @@
                     <Thumb.Template>
                         <ControlTemplate TargetType="Thumb">
                             <Grid Background="Transparent">
-                                <Line X1="3" Y1="0" X2="3" Y2="10000" Stroke="#8899A0"
+                                <Line X1="3" Y1="0" X2="3" Y2="10000" Stroke="{DynamicResource SplitterDashBrush}"
                                       StrokeThickness="1" StrokeDashArray="2 2" SnapsToDevicePixels="True"/>
                             </Grid>
                         </ControlTemplate>

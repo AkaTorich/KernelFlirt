@@ -48,6 +48,15 @@
     <SolidColorBrush x:Key="DsmCurrentLineBrush" Color="#264F78" />
     <SolidColorBrush x:Key="DsmFunctionBrush" Color="#DCDCAA" />
 
+    <!-- Column splitters (dashed vertical resize indicators) -->
+    <SolidColorBrush x:Key="SplitterDashBrush" Color="#8899A0" />
+
+    <!-- Jump arrows in the disassembly gutter -->
+    <SolidColorBrush x:Key="JumpArrowBrush" Color="#4CAF50" />
+    <SolidColorBrush x:Key="JumpArrowTakenBrush" Color="#FF6B6B" />
+    <SolidColorBrush x:Key="JumpArrowNotTakenBrush" Color="#808080" />
+    <SolidColorBrush x:Key="JumpArrowRipBrush" Color="#FFEB3B" />
+
     <!-- Stack view -->
     <SolidColorBrush x:Key="StackOffsetBrush" Color="#569CD6" />
     <SolidColorBrush x:Key="StackAddressBrush" Color="#D4D4D4" />

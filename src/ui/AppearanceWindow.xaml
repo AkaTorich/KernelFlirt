@@ -1,0 +1,178 @@
+<Window x:Class="KernelFlirt.UI.AppearanceWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Appearance" Width="720" Height="560"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource BgBrush}" Foreground="{DynamicResource FgBrush}"
+        FontFamily="Segoe UI" FontSize="12"
+        ResizeMode="CanResizeWithGrip">
+    <DockPanel Margin="10">
+        <!-- Bottom buttons -->
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
+                    HorizontalAlignment="Right" Margin="0,10,0,0">
+            <Button Content="Save"   Click="OnSave"   IsDefault="True" Padding="14,6" Margin="0,0,8,0"/>
+            <Button Content="Cancel" Click="OnCancel" IsCancel="True"  Padding="14,6"/>
+        </StackPanel>
+
+        <TabControl>
+            <TabItem Header="Colors">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="260"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Left: categories and keys -->
+            <Border Grid.Column="0" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                    Background="{DynamicResource BgPanelBrush}">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="Properties" FontWeight="SemiBold"
+                               Padding="6,4" Background="{DynamicResource BgLightBrush}"/>
+                    <TreeView x:Name="Tree" BorderThickness="0"
+                              Background="Transparent"
+                              Foreground="{DynamicResource FgBrush}"
+                              SelectedItemChanged="OnTreeSelected"/>
+                </DockPanel>
+            </Border>
+
+            <GridSplitter Grid.Column="1" Width="5" Background="{DynamicResource BorderBrush}"
+                          HorizontalAlignment="Center" VerticalAlignment="Stretch"/>
+
+            <!-- Right: color editor -->
+            <Border Grid.Column="2" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                    Background="{DynamicResource BgPanelBrush}" Margin="4,0,0,0">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="10">
+
+                        <!-- Foreground -->
+                        <TextBlock Text="Color" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                        <UniformGrid x:Name="FgSwatches" Columns="10" Rows="3" Margin="0,0,0,8"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                            <TextBox x:Name="FgHex" Width="110" Padding="4,2"
+                                     Background="{DynamicResource BgBrush}"
+                                     Foreground="{DynamicResource FgBrush}"
+                                     BorderBrush="{DynamicResource BorderBrush}"
+                                     TextChanged="OnFgHexChanged"/>
+                            <Border x:Name="FgPreview" Width="28" Height="22" Margin="8,0,0,0"
+                                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"/>
+                        </StackPanel>
+
+                        <!-- Background (optional) -->
+                        <StackPanel x:Name="BgGroup" Visibility="Collapsed">
+                            <TextBlock Text="Background Color" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                            <UniformGrid x:Name="BgSwatches" Columns="10" Rows="3" Margin="0,0,0,8"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                                <TextBox x:Name="BgHex" Width="110" Padding="4,2"
+                                         Background="{DynamicResource BgBrush}"
+                                         Foreground="{DynamicResource FgBrush}"
+                                         BorderBrush="{DynamicResource BorderBrush}"
+                                         TextChanged="OnBgHexChanged"/>
+                                <Border x:Name="BgPreview" Width="28" Height="22" Margin="8,0,0,0"
+                                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"/>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- Preview -->
+                        <TextBlock Text="Preview" FontWeight="SemiBold" Margin="0,6,0,4"/>
+                        <Border x:Name="PreviewBorder"
+                                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                Padding="18" MinHeight="48" HorizontalAlignment="Left">
+                            <TextBlock x:Name="PreviewText" Text="Example Text" FontFamily="Lucida Console" FontSize="14"/>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+            </TabItem>
+            <TabItem Header="Font">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="14">
+                        <TextBlock Text="Per-panel font settings. Pick a monospaced font (e.g. Lucida Console, Consolas, Cascadia Mono) for code panels."
+                                   TextWrapping="Wrap" Margin="0,0,0,14" Foreground="{DynamicResource FgDimBrush}"/>
+
+                        <!-- Disassembly -->
+                        <TextBlock Text="Disassembly" FontWeight="SemiBold" Margin="0,6,0,4"/>
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="80"/>
+                            </Grid.ColumnDefinitions>
+                            <ComboBox x:Name="DisasmFontCombo" Grid.Column="0"/>
+                            <TextBox   x:Name="DisasmFontSize" Grid.Column="1" Margin="6,0,0,0"
+                                       Background="{DynamicResource BgBrush}"
+                                       Foreground="{DynamicResource FgBrush}"
+                                       BorderBrush="{DynamicResource BorderBrush}"
+                                       Padding="4,2"/>
+                        </Grid>
+                        <Border x:Name="DisasmPreview" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                Padding="10" Margin="0,0,0,18">
+                            <TextBlock x:Name="DisasmPreviewText"
+                                       Text="00007FF6`7FB41570  48 83 EC 28   sub rsp, 0x28"/>
+                        </Border>
+
+                        <!-- Hex Dump -->
+                        <TextBlock Text="Hex Dump" FontWeight="SemiBold" Margin="0,6,0,4"/>
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="80"/>
+                            </Grid.ColumnDefinitions>
+                            <ComboBox x:Name="HexFontCombo" Grid.Column="0"/>
+                            <TextBox   x:Name="HexFontSize" Grid.Column="1" Margin="6,0,0,0"
+                                       Background="{DynamicResource BgBrush}"
+                                       Foreground="{DynamicResource FgBrush}"
+                                       BorderBrush="{DynamicResource BorderBrush}"
+                                       Padding="4,2"/>
+                        </Grid>
+                        <Border x:Name="HexPreview" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                Padding="10" Margin="0,0,0,18">
+                            <TextBlock x:Name="HexPreviewText"
+                                       Text="00007FF6`7FB41570  48 83 EC 28 48 8D 0D 2D  H..(H..-"/>
+                        </Border>
+
+                        <!-- Stack -->
+                        <TextBlock Text="Stack" FontWeight="SemiBold" Margin="0,6,0,4"/>
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="80"/>
+                            </Grid.ColumnDefinitions>
+                            <ComboBox x:Name="StackFontCombo" Grid.Column="0"/>
+                            <TextBox   x:Name="StackFontSize" Grid.Column="1" Margin="6,0,0,0"
+                                       Background="{DynamicResource BgBrush}"
+                                       Foreground="{DynamicResource FgBrush}"
+                                       BorderBrush="{DynamicResource BorderBrush}"
+                                       Padding="4,2"/>
+                        </Grid>
+                        <Border x:Name="StackPreview" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                Padding="10" Margin="0,0,0,18">
+                            <TextBlock x:Name="StackPreviewText"
+                                       Text="RSP+00  00007FFBE77E7374  return to KERNEL32!BaseThreadInitThunk"/>
+                        </Border>
+
+                        <!-- Registers -->
+                        <TextBlock Text="Registers" FontWeight="SemiBold" Margin="0,6,0,4"/>
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="80"/>
+                            </Grid.ColumnDefinitions>
+                            <ComboBox x:Name="RegistersFontCombo" Grid.Column="0"/>
+                            <TextBox   x:Name="RegistersFontSize" Grid.Column="1" Margin="6,0,0,0"
+                                       Background="{DynamicResource BgBrush}"
+                                       Foreground="{DynamicResource FgBrush}"
+                                       BorderBrush="{DynamicResource BorderBrush}"
+                                       Padding="4,2"/>
+                        </Grid>
+                        <Border x:Name="RegistersPreview" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                Padding="10" Margin="0,0,0,18">
+                            <TextBlock x:Name="RegistersPreviewText"
+                                       Text="RAX  00007FF67FB41570  rc4_strings!+0x1570"/>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>

@@ -55,6 +55,10 @@ public partial class MainWindow : Window
         SetupFlagsGrid();
         StackList.Tag = _stackCols;
         _console = new Services.CommandConsole(VM);
+        VM.LiveHintsChanged += () => RefreshDisasmView();
+        Loaded += (_, _) => HookColumnOverlayScroll();
+        PopulateThemesMenu();
+        ApplyPanelFonts();
         // AddHandler with handledEventsToo so we intercept wheel even if a ScrollViewer
         // upstream marked it Handled (the default tunneling route misses some cases).
         AddHandler(PreviewMouseWheelEvent, new MouseWheelEventHandler(OnCtrlMouseWheel), true);
@@ -842,6 +846,48 @@ public partial class MainWindow : Window
         ConsoleInput.CaretIndex = ConsoleInput.Text.Length;
         ConsolePopup.IsOpen = false;
         ConsoleInput.Focus();
+    }
+
+    private void PopulateThemesMenu()
+    {
+        ThemesMenu.Items.Clear();
+        foreach (var name in ViewModels.MainViewModel.ListThemePresets())
+        {
+            var item = new MenuItem { Header = name };
+            string captured = name;
+            item.Click += (_, _) =>
+            {
+                VM.ApplyThemePreset(captured);
+                ApplyThemeColors(VM.ThemeColors);
+                RefreshDisasmView();
+            };
+            ThemesMenu.Items.Add(item);
+        }
+    }
+
+    private void HookColumnOverlayScroll()
+    {
+        HookInnerScroll(StackList, sv => sv.ScrollChanged += (_, e) => StackColumnXform.X = -e.HorizontalOffset);
+        HookInnerScroll(RegistersGrid, sv => sv.ScrollChanged += (_, e) => RegColumnXform.X = -e.HorizontalOffset);
+    }
+
+    private static void HookInnerScroll(DependencyObject root, Action<ScrollViewer> hook)
+    {
+        var sv = FindDescendant<ScrollViewer>(root);
+        if (sv != null) hook(sv);
+    }
+
+    private static T? FindDescendant<T>(DependencyObject root) where T : DependencyObject
+    {
+        int n = System.Windows.Media.VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < n; i++)
+        {
+            var child = System.Windows.Media.VisualTreeHelper.GetChild(root, i);
+            if (child is T t) return t;
+            var rec = FindDescendant<T>(child);
+            if (rec != null) return rec;
+        }
+        return null;
     }
 
     private void OnFlagClick(object sender, MouseButtonEventArgs e)
@@ -1857,6 +1903,65 @@ public partial class MainWindow : Window
         HexDumpControl.SetData(data, VM.HexAddress, bpAddrs);
     }
 
+    private void OnAppearanceClick(object sender, RoutedEventArgs e)
+    {
+        // Data panels default to monospaced fonts so columns (mnemonic/operand/
+        // hex/stack offset) stay aligned line-to-line.
+        var dDisasm = new AppearanceWindow.FontChoice(VM.UiFontDisasm ?? "Lucida Console",
+                                                      VM.UiFontDisasmSize ?? 12);
+        var dHex    = new AppearanceWindow.FontChoice(VM.UiFontHex ?? "Lucida Console",
+                                                      VM.UiFontHexSize ?? 12);
+        var dStack  = new AppearanceWindow.FontChoice(VM.UiFontStack ?? "Lucida Console",
+                                                      VM.UiFontStackSize ?? 11);
+        var dRegs   = new AppearanceWindow.FontChoice(VM.UiFontRegisters ?? "Lucida Console",
+                                                      VM.UiFontRegistersSize ?? 12);
+        var dlg = new AppearanceWindow(VM.ThemeColors, dDisasm, dHex, dStack, dRegs) { Owner = this };
+        if (dlg.ShowDialog() == true)
+        {
+            VM.ThemeColors = dlg.ResultColors;
+            VM.UiFontDisasm        = dlg.DisasmFont.Family;
+            VM.UiFontDisasmSize    = dlg.DisasmFont.Size;
+            VM.UiFontHex           = dlg.HexFont.Family;
+            VM.UiFontHexSize       = dlg.HexFont.Size;
+            VM.UiFontStack         = dlg.StackFont.Family;
+            VM.UiFontStackSize     = dlg.StackFont.Size;
+            VM.UiFontRegisters     = dlg.RegistersFont.Family;
+            VM.UiFontRegistersSize = dlg.RegistersFont.Size;
+            VM.SaveThemeColors();
+            ApplyThemeColors(dlg.ResultColors);
+            ApplyPanelFonts();
+            RefreshDisasmView();
+        }
+    }
+
+    private void ApplyPanelFonts()
+    {
+        if (VM.UiFontDisasm is not null)
+        {
+            DisasmControl.FontFamily = AppearanceWindow.ResolveFontFamily(VM.UiFontDisasm);
+            DisasmControl.LineFontSize = VM.UiFontDisasmSize ?? 11;
+        }
+        if (VM.UiFontHex is not null)
+        {
+            HexDumpControl.FontFamily = AppearanceWindow.ResolveFontFamily(VM.UiFontHex);
+            HexDumpControl.LineFontSize = VM.UiFontHexSize ?? 12;
+        }
+        if (VM.UiFontStack is not null)
+        {
+            StackList.FontFamily = AppearanceWindow.ResolveFontFamily(VM.UiFontStack);
+            Resources["StackFontSize"] = VM.UiFontStackSize ?? 11.0;
+        }
+        if (VM.UiFontRegisters is not null)
+        {
+            var fam = AppearanceWindow.ResolveFontFamily(VM.UiFontRegisters);
+            var sz = VM.UiFontRegistersSize ?? 12;
+            RegistersGrid.FontFamily = fam;
+            RegistersGrid.FontSize = sz;
+            FlagsGrid.FontFamily = fam;
+            FlagsGrid.FontSize = sz;
+        }
+    }
+
     private void OnSettingsClick(object sender, RoutedEventArgs e)
     {
         var builtIn = new HashSet<string>(SettingsWindow.TabNames);
@@ -1918,6 +2023,12 @@ public partial class MainWindow : Window
             ["DsmBpRow"]        = "BpRowBrush",
             ["DsmCurrentLine"]  = "DsmCurrentLineBrush",
             ["DsmFunction"]     = "DsmFunctionBrush",
+            // Column splitters + jump arrows
+            ["SplitterDash"]    = "SplitterDashBrush",
+            ["JumpArrow"]       = "JumpArrowBrush",
+            ["JumpArrowTaken"]  = "JumpArrowTakenBrush",
+            ["JumpArrowNotTaken"] = "JumpArrowNotTakenBrush",
+            ["JumpArrowRip"]    = "JumpArrowRipBrush",
             // Stack
             ["StackOffset"]     = "StackOffsetBrush",
             ["StackAddress"]    = "StackAddressBrush",
