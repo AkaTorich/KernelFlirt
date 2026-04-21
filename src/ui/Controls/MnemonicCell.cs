@@ -47,9 +47,7 @@ public sealed class MnemonicCell : FrameworkElement
         UseLayoutRounding = true;
         Focusable = false;
         Cursor = Cursors.Arrow;
-        System.Windows.Media.TextOptions.SetTextRenderingMode(this, TextRenderingMode.Aliased);
-        System.Windows.Media.TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
-        System.Windows.Media.TextOptions.SetTextHintingMode(this, TextHintingMode.Fixed);
+        // Let the rest of the app's ClearType rendering apply uniformly.
     }
 
     /// <summary>

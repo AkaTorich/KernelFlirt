@@ -4,9 +4,6 @@
              FontFamily="Lucida Console" FontSize="12"
              Background="{DynamicResource BgBrush}"
              Foreground="{DynamicResource FgBrush}"
-             TextOptions.TextRenderingMode="Aliased"
-             TextOptions.TextFormattingMode="Display"
-             TextOptions.TextHintingMode="Fixed"
              UseLayoutRounding="True"
              SnapsToDevicePixels="True">
 
