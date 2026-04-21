@@ -338,7 +338,12 @@ typedef struct _KF_DIR_ENTRY {
 typedef struct _KF_CREATE_PROCESS_OUT {
     ULONG   ProcessId;
     ULONG   ThreadId;
-    ULONG64 ImageBase;      /* PEB.ImageBaseAddress — valid even while suspended */
+    ULONG64 ImageBase;         /* PEB.ImageBaseAddress — valid even while suspended */
+    ULONG64 EntryPointAddress; /* Absolute address of AddressOfEntryPoint (0 if patch skipped) */
+    UCHAR   EntryOriginalBytes[2]; /* Original 1-2 bytes at EntryPointAddress */
+    UCHAR   EntryPatchBytes;   /* Number of bytes patched (1 for 0xCC, 2 for EB FE) */
+    UCHAR   EntryIs32Bit;      /* 1 if the target image is 32-bit (WoW64) */
+    UCHAR   Reserved[4];
 } KF_CREATE_PROCESS_OUT, *PKF_CREATE_PROCESS_OUT;
 
 /* IOCTL_KF_LOAD_DRIVER input: null-terminated wide .sys path on VM */

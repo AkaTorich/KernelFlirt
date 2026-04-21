@@ -309,6 +309,82 @@ static BOOL HandleCreateProcess(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, D
         }
     }
 
+    /* Patch entry point with 0xCC (INT3) so the loader can fully finish
+     * running (TLS callbacks, DllMain, import resolution) and only *then*
+     * trip our debug hook on the first byte of the real entry. This is
+     * substantially more reliable than patching EB FE in memory after
+     * CreateProcessSuspended — ReadProcessMemory works here because we're
+     * the parent that just created the process, and WPM on an image-mapped
+     * page triggers a COW fault that the kernel resolves synchronously. */
+    ULONG64 epAddr = 0;
+    UCHAR   epOrigBytes[2] = {0, 0};
+    UCHAR   epPatchBytes = 0;
+    UCHAR   epIs32Bit = 0;
+    if (imageBase) {
+        SIZE_T br = 0;
+        IMAGE_DOS_HEADER dos;
+        if (ReadProcessMemory(pi.hProcess, (LPCVOID)imageBase, &dos, sizeof(dos), &br)
+            && dos.e_magic == IMAGE_DOS_SIGNATURE) {
+            IMAGE_NT_HEADERS64 nt;
+            if (ReadProcessMemory(pi.hProcess,
+                                  (LPCVOID)((BYTE*)imageBase + dos.e_lfanew),
+                                  &nt, sizeof(nt), &br)
+                && nt.Signature == IMAGE_NT_SIGNATURE)
+            {
+                DWORD entryRva = 0;
+                if (nt.OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC) {
+                    entryRva = nt.OptionalHeader.AddressOfEntryPoint;
+                } else {
+                    epIs32Bit = 1;
+                    IMAGE_NT_HEADERS32 nt32;
+                    if (ReadProcessMemory(pi.hProcess,
+                                          (LPCVOID)((BYTE*)imageBase + dos.e_lfanew),
+                                          &nt32, sizeof(nt32), &br))
+                        entryRva = nt32.OptionalHeader.AddressOfEntryPoint;
+                }
+                if (entryRva) {
+                    epAddr = imageBase + entryRva;
+                    /* Always use EB FE (2-byte spin loop) for both 32- and
+                     * 64-bit targets. INT3 (0xCC) gets eaten by Windows 10's
+                     * optimized exception dispatch before our kernel hook can
+                     * see it, causing the target to terminate with
+                     * STATUS_BREAKPOINT. Spinning is ugly but works everywhere:
+                     * the UI polls the thread IP, suspends when it reaches
+                     * entry, then restores the original 2 bytes. */
+                    SIZE_T patchLen = 2u;
+                    UCHAR orig[2] = {0, 0};
+                    if (ReadProcessMemory(pi.hProcess, (LPCVOID)epAddr, orig, patchLen, &br)
+                        && br == patchLen)
+                    {
+                        DWORD oldProt = 0;
+                        if (VirtualProtectEx(pi.hProcess, (LPVOID)epAddr, patchLen,
+                                             PAGE_EXECUTE_READWRITE, &oldProt))
+                        {
+                            UCHAR patch[2] = { 0xEB, 0xFE };
+                            if (WriteProcessMemory(pi.hProcess, (LPVOID)epAddr,
+                                                   patch, patchLen, &br) && br == patchLen)
+                            {
+                                epOrigBytes[0] = orig[0];
+                                epOrigBytes[1] = orig[1];
+                                epPatchBytes   = (UCHAR)patchLen;
+                                FlushInstructionCache(pi.hProcess, (LPCVOID)epAddr, patchLen);
+                                printf("[relay] Entry 0x%llX patched: %02X %02X -> EB FE (%s)\n",
+                                       epAddr, orig[0], orig[1],
+                                       epIs32Bit ? "32-bit" : "64-bit");
+                            } else {
+                                printf("[relay] WriteProcessMemory(entry) failed: %lu\n", GetLastError());
+                            }
+                            DWORD _tmp = 0;
+                            VirtualProtectEx(pi.hProcess, (LPVOID)epAddr, patchLen, oldProt, &_tmp);
+                        } else {
+                            printf("[relay] VirtualProtectEx(entry) failed: %lu\n", GetLastError());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /* Close previous child handle if any */
     if (g_hChildProcess) {
         CloseHandle(g_hChildProcess);
@@ -324,9 +400,14 @@ static BOOL HandleCreateProcess(BYTE *inputBuf, DWORD inputSize, BYTE **ppOut, D
 
     KF_CREATE_PROCESS_OUT *out = (KF_CREATE_PROCESS_OUT *)calloc(1, sizeof(KF_CREATE_PROCESS_OUT));
     if (!out) return FALSE;
-    out->ProcessId = pi.dwProcessId;
-    out->ThreadId  = pi.dwThreadId;
-    out->ImageBase = imageBase;
+    out->ProcessId            = pi.dwProcessId;
+    out->ThreadId             = pi.dwThreadId;
+    out->ImageBase            = imageBase;
+    out->EntryPointAddress    = epAddr;
+    out->EntryOriginalBytes[0] = epOrigBytes[0];
+    out->EntryOriginalBytes[1] = epOrigBytes[1];
+    out->EntryPatchBytes      = epPatchBytes;
+    out->EntryIs32Bit         = epIs32Bit;
 
     *ppOut = (BYTE *)out;
     *pOutSize = sizeof(KF_CREATE_PROCESS_OUT);

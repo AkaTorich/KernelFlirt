@@ -143,30 +143,29 @@ KfReadMemory(
     }
 
     /*
-     * MmCopyVirtualMemory -> MmProbeAndLockPages can BUGCHECK (0x50) on some
-     * non-present PTE patterns instead of raising an SEH exception, so
-     * pre-validate each page in the target process with MmSecureVirtualMemory
-     * style probing. We switch to the target process and call MmIsAddressValid
-     * for each 4 KB page — if any is not mapped, return STATUS_ACCESS_VIOLATION
-     * instead of invoking MmCopyVirtualMemory.
+     * Pre-flight canonical-address check only — MmIsAddressValid would reject
+     * paged-out or demand-loaded image pages (e.g. .text section right after
+     * CreateProcessSuspended). MmCopyVirtualMemory handles paging in properly;
+     * the earlier BSOD was on a completely bogus address (0x0000ffed00b86000),
+     * not a valid-but-paged-out one. Reject kernel addresses and non-canonical
+     * user addresses; everything else goes through MmCopyVirtualMemory under SEH.
      */
-    KAPC_STATE apc;
-    BOOLEAN ok = TRUE;
-    KeStackAttachProcess((PRKPROCESS)process, &apc);
     {
-        ULONG_PTR start = (ULONG_PTR)input->Address;
-        ULONG_PTR end = start + (SIZE_T)input->Size;
-        for (ULONG_PTR p = start & ~(ULONG_PTR)0xFFF; p < end; p += 0x1000)
-        {
-            if (!MmIsAddressValid((PVOID)p)) { ok = FALSE; break; }
+        ULONG_PTR a = (ULONG_PTR)input->Address;
+        /* Valid x64 user-mode range is 0 < a < 0x7FFFFFFEFFFF; above that is
+         * kernel or non-canonical garbage. */
+        if (a == 0 || a >= 0x00007FFFFFFF0000ULL) {
+            ObDereferenceObject(process);
+            Irp->IoStatus.Information = 0;
+            return STATUS_ACCESS_VIOLATION;
         }
-    }
-    KeUnstackDetachProcess(&apc);
-
-    if (!ok) {
-        ObDereferenceObject(process);
-        Irp->IoStatus.Information = 0;
-        return STATUS_ACCESS_VIOLATION;
+        /* End address must not wrap and must stay in user range. */
+        ULONG_PTR endA = a + (SIZE_T)input->Size;
+        if (endA < a || endA > 0x00007FFFFFFF0000ULL) {
+            ObDereferenceObject(process);
+            Irp->IoStatus.Information = 0;
+            return STATUS_ACCESS_VIOLATION;
+        }
     }
 
     __try {

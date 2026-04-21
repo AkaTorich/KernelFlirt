@@ -27,6 +27,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private Breakpoint? _hitSwBp;
     // True if paused via thread suspend (not debug event)
     private bool _isPausedViaSuspend;
+    // Relay patches the first 1-2 bytes of the target's entry point before
+    // returning from CreateRemoteProcess: 0xCC for 64-bit (our debug hook
+    // catches INT3), or EB FE spin loop for 32-bit/WoW64 (INT3 bypasses
+    // KiDebugRoutine on WoW64, so we have to suspend the spinning thread).
+    private ulong _relayPatchedEntryAddr;
+    private byte  _relayPatchedEntryByte0;
+    private byte  _relayPatchedEntryByte1;
+    private byte  _relayPatchedEntryLen;
     // Driver debugging state
     private string? _loadedDriverServiceName;
     private byte _driverOriginalByte;
@@ -713,7 +721,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         Log($"Creating process: {exePath}");
         StatusText = "Creating remote process...";
 
-        var result = await Task.Run(() => _driver.CreateRemoteProcess(exePath));
+        var result = await Task.Run(() => _driver.CreateRemoteProcessEx(exePath));
         if (result == null)
         {
             Log("Failed to create remote process");
@@ -721,8 +729,23 @@ public partial class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
-        var (pid, tid, imageBase) = result.Value;
+        var (pid, tid, imageBase, entryAddr, entryOrig0, entryOrig1, patchLen, is32Bit) = result.Value;
         Log($"Process created: PID={pid} TID={tid} ImageBase={imageBase:X16} (suspended)");
+        if (patchLen > 0)
+        {
+            Log($"Relay patched entry 0x{entryAddr:X} (orig {entryOrig0:X2} {entryOrig1:X2}, {patchLen} byte, {(is32Bit ? "EB FE" : "CC")})");
+            _relayPatchedEntryAddr = entryAddr;
+            _relayPatchedEntryByte0 = entryOrig0;
+            _relayPatchedEntryByte1 = entryOrig1;
+            _relayPatchedEntryLen = patchLen;
+        }
+        else
+        {
+            _relayPatchedEntryAddr = 0;
+            _relayPatchedEntryByte0 = 0;
+            _relayPatchedEntryByte1 = 0;
+            _relayPatchedEntryLen = 0;
+        }
 
         // With CREATE_SUSPENDED the exe is mapped but the loader hasn't run yet.
         // Strategy: install hook, set BP at PE entry point, resume, catch BP.
@@ -793,63 +816,54 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         Log($"PE entry point: {entryPoint:X16}");
 
-        if (Is32Bit)
+        // Relay patched EB FE (spin loop) at entry for both 32- and 64-bit
+        // targets. INT3 doesn't survive Windows 10's WoW64 / user-mode
+        // exception fast-path without our driver being already attached; the
+        // spin loop is reliable: resume, poll IP until it sits on entry,
+        // suspend, restore 2 bytes.
+        if (_relayPatchedEntryAddr != 0 && _relayPatchedEntryLen == 2)
         {
-            // WoW64 processes: Windows 10 has optimized exception dispatch for
-            // WoW64 that bypasses KiDebugRoutine, so INT3/HW BP are not caught.
-            // Instead, patch entry point with infinite loop (EB FE = JMP $),
-            // let loader run, then suspend thread at entry point and restore.
-            Log("WoW64: patching entry point with spin loop (EB FE)...");
-
-            // Save original 2 bytes
-            var origBytes = await Task.Run(() => _driver.ReadMemory(pid, entryPoint, 2));
-            if (origBytes == null || origBytes.Length < 2)
-            {
-                Log("Failed to read entry point bytes — falling back to poll attach");
-                await Task.Run(() => _driver.ResumeThread(tid));
-                await Task.Delay(1500);
-                await DoAttachAsync();
-                return;
-            }
-
-            // Write EB FE (JMP $) at entry point
-            var spinLoop = new byte[] { 0xEB, 0xFE };
-            var writeOk = await Task.Run(() => _driver.WriteMemory(pid, entryPoint, spinLoop));
-            if (!writeOk)
-            {
-                Log("Failed to write spin loop — falling back to poll attach");
-                await Task.Run(() => _driver.ResumeThread(tid));
-                await Task.Delay(1500);
-                await DoAttachAsync();
-                return;
-            }
-
-            Log("Resuming thread (will spin at entry point)...");
+            Log($"Relay patched EB FE at entry — resuming {(Is32Bit ? "WoW64" : "x64")} thread...");
             StatusText = "Running to entry point...";
             await Task.Run(() => _driver.ResumeThread(tid));
 
-            // Wait for loader to finish and thread to reach entry point
-            await Task.Delay(2000);
-
-            // Suspend main thread
-            await Task.Run(() => _driver.SuspendThread(tid));
-
-            // Verify EIP is at entry point
-            var regs32 = await Task.Run(() => _driver.ReadRegisters(pid, tid, true));
-            var eip = regs32.FirstOrDefault(r => r.Name == "EIP");
-            if (eip != null)
-                Log($"Thread suspended: EIP = {eip.Value:X8} (expect {entryPoint:X8})");
+            string ipName = Is32Bit ? "EIP" : "RIP";
+            ulong ipAtEntry = _relayPatchedEntryAddr;
+            bool reached = false;
+            for (int attempt = 0; attempt < 80; attempt++)   // up to 8 s
+            {
+                await Task.Delay(100);
+                await Task.Run(() => _driver.SuspendThread(tid));
+                var rProbe = await Task.Run(() => _driver.ReadRegisters(pid, tid, Is32Bit));
+                var ipProbe = rProbe.FirstOrDefault(r => r.Name == ipName);
+                if (ipProbe != null && ipProbe.Value == ipAtEntry)
+                {
+                    reached = true;
+                    Log($"Thread reached entry after {(attempt + 1) * 100} ms");
+                    break;
+                }
+                await Task.Run(() => _driver.ResumeThread(tid));
+            }
+            if (!reached)
+            {
+                Log("Thread did not reach EB FE within 8 s — suspending where it is");
+                await Task.Run(() => _driver.SuspendThread(tid));
+            }
 
             // Restore original bytes
-            await Task.Run(() => _driver.WriteMemory(pid, entryPoint, origBytes));
-            Log("Entry point restored");
+            var restore = new byte[] { _relayPatchedEntryByte0, _relayPatchedEntryByte1 };
+            await Task.Run(() => _driver.WriteMemory(pid, _relayPatchedEntryAddr, restore));
+            Log($"Restored entry bytes at 0x{_relayPatchedEntryAddr:X}");
+            _relayPatchedEntryAddr = 0;
 
             SelectedThreadId = tid;
             _isPausedViaSuspend = true;
-
-            // Now continue with module enumeration (same as 64-bit path below)
             goto enumModules;
         }
+
+        // Fallback for old relay that didn't patch entry: leave empty — the
+        // main 64-bit SetBreakpoint path still works; 32-bit without relay
+        // patch was never reliable anyway.
 
         // Native 64-bit: set software breakpoint at entry point
         var bpHandle = await Task.Run(() => _driver.SetBreakpoint(pid, 0, entryPoint, BreakpointType.Software));
@@ -960,12 +974,27 @@ public partial class MainViewModel : ObservableObject, IDisposable
         await Task.WhenAll(disasmTask, stackTask, hexTask);
 
         var disasmData = disasmTask.Result;
-        if (disasmData != null)
+        // If the first read came back empty the target page may still be
+        // lazily mapping after a new process just hit its entry point.
+        // Retry once after a short delay before giving up.
+        if (disasmData == null || disasmData.Length == 0)
+        {
+            await Task.Delay(100);
+            disasmData = await Task.Run(() => _driver.ReadMemory(pid, disasmAddr, 4096));
+        }
+        if (disasmData != null && disasmData.Length > 0)
         {
             PatchBpBytesForDisasm(disasmData, disasmAddr);
             var instrs = _disasm.Disassemble(disasmData, disasmAddr);
             AnnotateInstructionsWithSymbols(instrs);
             Instructions.ReplaceAll(instrs);
+        }
+        else
+        {
+            // Last-resort: route through the normal refresh path which has its
+            // own fast/slow paths and BP marker sync.
+            Log("First disasm read failed — invoking RefreshDisassembly fallback");
+            RefreshDisassembly();
         }
 
         var stackData = stackTask.Result;
@@ -5057,12 +5086,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
             if (addr >= first && addr < lastEnd)
             {
                 bool changed = false;
+                var bpSet = new HashSet<ulong>(Breakpoints.Select(b => b.Address));
                 foreach (var ins in Instructions)
                 {
                     bool isCur = ins.Address == addr;
                     if (ins.IsCurrentInstruction != isCur)
                     {
                         ins.IsCurrentInstruction = isCur;
+                        changed = true;
+                    }
+                    bool isBp = bpSet.Contains(ins.Address);
+                    if (ins.HasBreakpoint != isBp)
+                    {
+                        ins.HasBreakpoint = isBp;
                         changed = true;
                     }
                 }

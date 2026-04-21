@@ -385,7 +385,7 @@ Write-Host "  bin\Relay\       KfRelay.exe"
 Write-Host "  bin\UI\          KernelFlirt.exe"
 Write-Host ""
 Write-Host "Usage:" -ForegroundColor Yellow
-Write-Host "  1. On VM: KfLoader.exe"
+Write-Host "  1. On VM: KfLoader.exe load"
 Write-Host "  2. On VM: KfRelay.exe (listens on port 31337)"
 Write-Host "  3. On Host: KernelFlirt.exe -> Connect -> vm_ip:31337"
 Write-Host "  -- OR local: KernelFlirt.exe -> Connect -> (blank for local driver)"

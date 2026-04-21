@@ -291,11 +291,16 @@ public class DriverComm : IDisposable
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
-    private struct KF_CREATE_PROCESS_OUT
+    private unsafe struct KF_CREATE_PROCESS_OUT
     {
         public uint ProcessId;
         public uint ThreadId;
         public ulong ImageBase;
+        public ulong EntryPointAddress;
+        public fixed byte EntryOriginalBytes[2];
+        public byte  EntryPatchBytes;   // 0 = not patched, 1 = CC (64-bit), 2 = EB FE (32-bit)
+        public byte  EntryIs32Bit;
+        public uint  Reserved;
     }
 
     private const int KF_MAX_SERVICE_NAME = 64;
@@ -1301,12 +1306,31 @@ public class DriverComm : IDisposable
 
     public (uint pid, uint tid, ulong imageBase)? CreateRemoteProcess(string exePath)
     {
+        var full = CreateRemoteProcessEx(exePath);
+        if (full == null) return null;
+        return (full.Value.pid, full.Value.tid, full.Value.imageBase);
+    }
+
+    /// <summary>
+    /// Full result of CreateRemoteProcess: also returns the relay-patched entry
+    /// point address + the original bytes (1 for 64-bit INT3 patch, 2 for 32-bit
+    /// EB FE spin-loop patch) so the UI can restore them after the target
+    /// reaches entry.
+    /// </summary>
+    public unsafe (uint pid, uint tid, ulong imageBase, ulong entryAddr,
+                   byte entryOrig0, byte entryOrig1, byte patchLen, bool is32Bit)?
+        CreateRemoteProcessEx(string exePath)
+    {
         byte[] input = System.Text.Encoding.Unicode.GetBytes(exePath + "\0");
         var (ok, data) = SendIoctl(IOCTL_KF_CREATE_PROCESS, input, Marshal.SizeOf<KF_CREATE_PROCESS_OUT>());
         if (!ok || data == null) return null;
 
         var result = BytesToStruct<KF_CREATE_PROCESS_OUT>(data);
-        return (result.ProcessId, result.ThreadId, result.ImageBase);
+        byte o0 = result.EntryOriginalBytes[0];
+        byte o1 = result.EntryOriginalBytes[1];
+        return (result.ProcessId, result.ThreadId, result.ImageBase,
+                result.EntryPointAddress, o0, o1, result.EntryPatchBytes,
+                result.EntryIs32Bit != 0);
     }
 
     public (string serviceName, uint entryRva, byte originalByte)? LoadRemoteDriver(string sysPath)
