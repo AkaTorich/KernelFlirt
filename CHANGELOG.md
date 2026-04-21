@@ -1,5 +1,42 @@
 # Changelog
 
+## v1.9.1 — 2026-04-22
+
+### Process Launch (Relay-side entry-point patch)
+
+- **Relay now patches the entry point** before returning from `CreateRemoteProcess`. Previously the UI had to read the exe's entry-point bytes through the driver right after `CREATE_SUSPENDED`, but `.text` pages are demand-loaded, so `ReadMemory` came back empty and we fell through to a poll-attach that stopped somewhere deep in `wow64cpu!` instead of the real entry.
+- Patch is always a 2-byte `EB FE` spin loop (both 32-bit and 64-bit). INT3 doesn't survive Windows 10's optimized exception dispatch before our driver is attached — the process would just terminate with `STATUS_BREAKPOINT (0x80000003)`. The spin loop is ugly but reliable: the UI resumes the thread, polls IP until it sits on entry, suspends, then restores the original bytes.
+- New `KF_CREATE_PROCESS_OUT` fields: `EntryPointAddress`, `EntryOriginalBytes[2]`, `EntryPatchBytes`, `EntryIs32Bit`.
+- **File on disk is not touched** — everything goes through `WriteProcessMemory` under `VirtualProtectEx(PAGE_EXECUTE_READWRITE)`. The image-mapped page triggers a copy-on-write fault resolved synchronously by the kernel.
+
+### Driver Safety Tightened
+
+- `MmIsAddressValid` probe (introduced in v1.9.0) replaced with a canonical-address-range check. `MmIsAddressValid` rejects valid-but-paged-out user-mode pages, which broke reading `.text` right after entry — `MmCopyVirtualMemory` handles those pages correctly via demand-paging. The canonical check still blocks the obviously-bogus addresses (`0x0000ffed00b86000`-style) that used to bugcheck the VM.
+
+### Disassembly
+
+- **Fast-path `RefreshDisassembly` now syncs BP markers too.** When RIP fell inside the current window, the fast path only toggled `IsCurrentInstruction`; newly set breakpoints stayed invisible in the view until you navigated away. Now every visible row's `HasBreakpoint` is recomputed from the `Breakpoints` list on each refresh.
+
+### Hex Dump
+
+- **Non-printable byte replacement changed** from `.` (low dot, easily lost between rows at high zoom) to `·` (middle dot — centered on the glyph, visible at every zoom level).
+- **Row height dropped in favour of padding.** Fixed `Border.Height = fontSize × 1.3/1.5` made adjacent glyphs touch at large zoom levels; replaced with natural WPF row-height + 2 px vertical padding on the row border.
+
+### Appearance Window
+
+- **Theme-aware tree text.** TreeView items (`General`, `Disassembly`, `Stack` …) and their expanded leaves read their `Foreground` from a new `AppearanceTextBrush` theme key. Previously the default `ContentPresenter` ignored the inherited `TreeViewItem.Foreground` and showed black text on the dark panel. Each of the 10 shipped themes got a colour picked to match its palette.
+- **Preview foreground falls back to `FgBrush`** when no color is entered, so `Example Text` stays readable after the dialog opens without a selection.
+
+### Font / Layout Persistence Fix
+
+- **Panel fonts now applied *before* persisted layout.** `ApplyLineFontSize` scales column widths by `LineFontSize / 11`, so applying layout before fonts meant the saved widths got stomped by a subsequent font change. Order is now `ApplyPanelFonts → ApplyPersistedLayout`.
+- **Row/Column splitter ratios restored as a pair.** Only setting one side of a paired `GridSplitter` (e.g. `TopRow` but not `BottomRow`) mixed star + auto units and ended up with one row collapsed to zero. Top+Bottom rows, top Disasm↔Registers columns, and bottom HexDump↔Stack columns are now applied only when both sides of the pair have a value.
+- `IsBreakState = true` now set after the EB FE polling path so register editing and flag-toggle clicks work on the very first break (previously greyed out until the user stepped once).
+
+### Command-Line Tools
+
+- `KfLoader.exe` with no arguments defaults to `load` (already shipped in v1.9.0, reaffirmed as the documented behaviour).
+
 ## v1.9.0 — 2026-04-21
 
 ### Command Console
