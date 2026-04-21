@@ -1,5 +1,129 @@
 # Changelog
 
+## v1.9.0 — 2026-04-21
+
+### Command Console
+
+- **OllyDbg/x64dbg-style command bar** at the bottom of the main window (above the status bar).
+- **Commands**: `g`/`go`/`run`, `t`/`sti`, `p`/`sto`, `bp <expr>`, `bc <expr>`, `bl`, `d <expr>`, `dis`/`u <expr>`, `r <reg>[=<expr>]`, `? <expr>`/`eval`, `findall <pattern>`, `clear`/`cls`.
+- **Expression evaluator** — registers (`rax`, `rip`, `eflags` …), hex literals (`0x1234`, `1234h`, bare hex), decimals, `module!symbol`, `+ - * /`, parentheses, `[mem]` dereference (qword).
+- **History** — `↑` / `↓` browse previous commands. `Esc` clears and drops focus.
+- **`:` (Shift+;) anywhere** — focuses the console (vim-style), unless you're already typing in a TextBox.
+- **Autocomplete popup** with ghost-text hint when empty; `Tab` / click picks a suggestion.
+- **Documentation**: [`docs/cmd_commands.md`](docs/cmd_commands.md).
+
+### Appearance
+
+- **View → Appearance…** — x64dbg-inspired color editor: tree of categories on the left (General / Disassembly / Stack / Plugins / Tabs / Script / Jump Arrows / Scroll Bars), 30-swatch palette + hex input + live preview on the right.
+- **Foreground + Background** — a second BG picker appears only for keys that actually have a paired background (breakpoint row, current-line highlight).
+- **Font tab** — per-panel monospace font + size picker for Disassembly / Hex Dump / Stack / Registers. Shows a live preview line for each panel.
+- **Embedded fonts** — Intel One Mono (SIL OFL 1.1) shipped with the app in 8 weights; always available in the font picker regardless of system install.
+- **View → Themes** — all theme presets from the `themes/` folder surfaced as a submenu; one click applies the theme.
+
+### Theme System
+
+- **New theme keys**: `SplitterDashBrush`, `JumpArrowBrush`, `JumpArrowTakenBrush`, `JumpArrowNotTakenBrush`, `JumpArrowRipBrush`, `SelectionBrush` (newly respected by panels). Previously-hardcoded colors in Hex Dump, Disassembly selection and jump arrow overlays are now read from the active theme.
+- **All ten shipped themes** (`default-dark`, `dracula`, `hacker`, `ida-pro`, `long_night`, `monokai`, `ollydbg`, `ollydbg-light`, `sakura`, `x64dbg`) updated with the new keys.
+
+### Disassembly View
+
+- **Five resizable columns** — BP marker / Jumps gutter / Address / Bytes / Mnemonic+Hints. Columns are separated by dashed vertical splitters which can be dragged; positions persist across sessions.
+- **Jump-arrow gutter** (`JumpArrowsCanvas`) — custom `FrameworkElement` renders jmp/jcc/call arrows via `DrawingContext`. Lane-assignment avoids overlapping parallel jumps. Dedicated styles for RIP (yellow horizontal), taken branch (red), non-taken branch (grey dashed), normal (theme green).
+- **Mnemonic cell** — custom renderer (`MnemonicCell : FrameworkElement`) draws mnemonic + operands + clickable symbol + trailing comment with proper ellipsis and per-token color. Colors are read from the active theme on every paint so live theme swaps take effect instantly.
+- **x64dbg-style live hints** (opt-in via View → Live Hints) — register values next to the instruction (`rdx:rc4_strings+1570`) plus batched memory deref previews (`[rip+0x1b2d]="[*] RC4 String Decryptor"`). Background enrichment reads one 4 KB page per cluster of operands so hints cost at most a handful of reads per break.
+- **MemHint split** — memory-deref previews stored in a separate field (`Instruction.MemHint`) so sync and async passes can't duplicate each other's output.
+- **Column widths scale with zoom** — `ApplyLineFontSize` multiplies BP/Addr/Bytes/Mnem widths by `LineFontSize / 11` so columns stay aligned at any zoom level.
+
+### Ctrl+Wheel Zoom
+
+- **Per-panel zoom** (`Disasm` / `Registers+Flags` / `Hex Dump` / `Stack`) bound to `Ctrl+Wheel`, `Ctrl++`, `Ctrl+-`, `Ctrl+0`. Range 0.5× – 6.0× (font 11pt → up to ~66pt).
+- **Column widths scale together with font** so columns stay aligned at any zoom level.
+- **Dashed splitters and jump arrows** follow the horizontal scroll offset via `TranslateTransform`.
+- **Persisted** — zoom level for each of the four panels saved in `kf_settings.txt` (`Ui.Zoom.*`).
+- **Mouse-wheel handler** uses `AddHandler(PreviewMouseWheelEvent, …, handledEventsToo: true)` — works even if a ScrollViewer marked the event Handled first.
+
+### Live Hints — Quiet by Default
+
+- **Opt-in** — `View → Live Hints (x64dbg-style)`. Off by default because rebuilding clickable InlineUIContainer values for every visible row adds latency on each step. Setting persisted as `Ui.LiveHints=1`.
+- **User-code only** — hints are emitted only for instructions inside the main `.exe` module. System-DLL frames stay clean.
+- **Sub-register deduplication** — `al`/`ax`/`eax` don't emit a hint if `rax` already did (same underlying value).
+- **Tiny-value filter** — values below `0x10000` are treated as constants, not pointers, and skip symbol resolution.
+- **Row-over-row dedup** — identical `rax:X, rdx:Y` on adjacent rows is shown only on the first.
+
+### Zoom & Step Latency
+
+- **Fast-path `RefreshDisassembly`** — when the new RIP falls inside the currently displayed instruction window, the refresh only flips the `IsCurrentInstruction` marker instead of re-reading 2 KB of memory and re-disassembling. Cuts typical stepping latency from ~700 ms to ~one network round-trip.
+- **`RefreshDisassembly`** read size lowered from 8 KB / 512 instructions to 2 KB / 128 instructions.
+- **Register annotation moved to background** — raw register values are pushed to the UI immediately; symbol + string annotation runs on a worker thread and patches the existing Register entries when ready.
+- **Stack annotation** — the sync pass now produces symbol-only annotations using cached dbghelp + module lists (no per-entry `TryReadStringAtAsync` / `IsReturnAddressAsync`, which had been doing ~64 per-break round-trips). `"return to"` prefixes and string previews are filled in from a background task afterwards.
+
+### Jump Arrows
+
+- **Custom `FrameworkElement`** (`JumpArrowsCanvas`) with `OnRender` replaces the original Shape-per-line Canvas. Lane assignment for overlapping arrows; Rip/Taken/NotTaken/Normal pens sourced from theme resources on every paint.
+
+### Column Splitters / Resizing
+
+- **Disassembly**: 5 dashed splitters (BP | Jumps | Address | Bytes | Mnemonic | Hint).
+- **Hex Dump**: 2 splitters (Address | Hex | ASCII).
+- **Stack**: 2 splitters (Offset | Address | Annotation).
+- **Registers**: 2 splitters (Name | Value | Annotation).
+- **Horizontal scroll sync** — dashed splitters in all panels track their inner `ScrollViewer.HorizontalOffset` through a `TranslateTransform`.
+
+### Window / Dock Layout Persistence
+
+- Window position, size, and maximized state saved to `kf_settings.txt` on close and restored on launch.
+- GridSplitter ratios for top/bottom rows and for the two column pairs (Disasm↔Registers, HexDump↔Stack) persist.
+- Per-panel column widths (`Ui.Col.Disasm.*`, `Ui.Col.Hex.*`, `Ui.Col.Stack.*`, `Ui.Col.Reg.*`) persist.
+
+### Flags Panel
+
+- CF/PF/AF/ZF/SF/TF/IF/DF/OF moved out of the vertical register list into a 3×3 grid at the bottom of the Registers panel. Clicking a flag toggles it.
+- `1` values are highlighted red; `0` values use the normal foreground color.
+
+### Toolbar & Icons
+
+- **SVG icons for every toolbar button** (glossy Aqua-style, drawn in-project) — Run / Pause / Continue / Restart / Step Into / Step Over / Step Out / Run to Cursor / BP / HW BP / Watch Write / Watch R/W / Memory BP / Go to / Attach / Open / Connect / Disconnect (orange lightning bolt).
+- **Tab icons** — all 16 built-in tabs and all 17 plugin tabs have custom SVG icons. Plugin tabs keep their per-tab FG/BG colors from the theme via `Tag`-based identification.
+- **Menu icons** — every pulldown item in File / Debug / Search / View / Symbols / Help gets a matching 16×16 SVG icon.
+- **Toolbar expanded** — every menu item now has a matching toolbar button grouped by category (File / Process / Execution / Breakpoints / Search / View / Symbols / Service / Help / Go-to).
+- **SharpVectors.Reloaded** added as a NuGet reference for runtime SVG rendering.
+
+### Driver Safety
+
+- `MmCopyVirtualMemory` now pre-validated — before calling it the IOCTL attaches to the target process and probes each 4 KB page with `MmIsAddressValid`. If any page is unmapped it returns `STATUS_ACCESS_VIOLATION` instead of bugchecking. Previously bad user-mode addresses (page-faulting deep inside `MmProbeAndLockPages`) could crash the VM with `PAGE_FAULT_IN_NONPAGED_AREA (0x50)`.
+
+### Driver Loader
+
+- `KfLoader.exe` with no arguments now defaults to **`load`** — the common case. Explicit `unload`, `status`, `info` still work as before.
+
+### Fonts
+
+- **Project-wide default** changed to `Lucida Console` so monospaced data panels (Disassembly / Hex Dump / Stack / Registers) render with aligned columns. UI chrome (menu, toolbar, tabs, status bar) inherits the same family for a uniform look.
+- **Per-panel override** in Appearance → Font — each data panel's font family and size are saved as `Ui.Font.*` / `Ui.FontSize.*` in `kf_settings.txt` and re-applied on launch.
+- **Embedded Intel One Mono** family resolved through a `pack://` URI so the font works even if the user has never installed it system-wide.
+
+### Disassembly Hints Off-by-Default Performance
+
+- Even when Live Hints are disabled the previous `RebuildLiveHints` pass fired on every `Instructions.CollectionChanged`. That pass now short-circuits immediately if `LiveHintsEnabled == false`, so there's no cost for users who never enabled it.
+
+### Disasm / Hex Layout Fixes
+
+- Per-row `Grid.Height` fixed to `ceil(fontSize × 1.3)` so column sizing changes can't cause blank rows between items.
+- Each text cell wrapped in a fixed-Width `Border` with `ClipToBounds` so long symbol names (`InlineUIContainer` children) can't push the Grid to remeasure a wider column and bleed into neighbours.
+- `Lucida Console` forced on all four data panels so hex bytes, addresses, and ASCII previews share the same glyph grid.
+
+### Address Column Simplification
+
+- Disassembly Address column now always shows the hex address (`00007FF6\`12340000`). Previously the column was overwritten with the resolved symbol name for function-start addresses, which looked like a group header and hid the real address.
+
+### "Not in main module" hint gating
+
+- Live hints in the disassembly column are emitted only for instructions whose address falls inside the main `.exe` module. System-DLL frames (ntdll, kernelbase, msvcrt, …) stay clean of hint spam.
+
+### Dump Analysis Tooling
+
+- `python parse_minidump.py <dump.dmp>` — minimal, dependency-free minidump parser. Reads DUMP\_HEADER64 (bugcheck code + four args), extracts the saved CONTEXT (RIP/RAX/RCX/…), and lists every `.sys` path referenced in the dump. Does not download symbols, does not load `kd.exe`, does not hit the Microsoft symbol server, does not explode the RAM of your host while you're trying to debug the VM.
+
 ## v1.8.1 — 2026-04-19
 
 ### Debugger UX

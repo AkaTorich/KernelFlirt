@@ -59,6 +59,7 @@
     <Resource Include="Resources\Icons\attach-process.svg" />
     <Resource Include="Resources\Icons\open-file.svg" />
     <Resource Include="Resources\Icons\connect.svg" />
+    <Resource Include="Resources\Icons\connect-green.svg" />
     <Resource Include="Resources\Icons\Tabs\disassembly.svg" />
     <Resource Include="Resources\Icons\Tabs\breakpoints.svg" />
     <Resource Include="Resources\Icons\Tabs\modules.svg" />

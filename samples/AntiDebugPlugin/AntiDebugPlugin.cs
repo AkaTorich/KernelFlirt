@@ -227,9 +227,9 @@ public class AntiDebugPanel : ScrollViewer
         root.Children.Add(MakeGroup("Kernel Debugger", [ChkKdDebuggerEnabled, ChkKdDebuggerNotPresent]));
 
         // ── NtQueryInformationProcess ──
-        ChkDebugPort = MakeCheckBox("ProcessDebugPort", true, "Clear EPROCESS.DebugPort (defeats DebugPort/DebugObjectHandle/DebugFlags)", true);
-        ChkDebugObjectHandle = MakeCheckBox("ProcessDebugObjectHandle", true, "Cleared by DebugPort zeroing", true);
-        ChkDebugFlags = MakeCheckBox("ProcessDebugFlags", true, "Cleared by DebugPort zeroing", true);
+        ChkDebugPort = MakeCheckBox("ProcessDebugPort", false, "Clear EPROCESS.DebugPort (defeats DebugPort/DebugObjectHandle/DebugFlags)", true);
+        ChkDebugObjectHandle = MakeCheckBox("ProcessDebugObjectHandle", false, "Cleared by DebugPort zeroing", true);
+        ChkDebugFlags = MakeCheckBox("ProcessDebugFlags", false, "Cleared by DebugPort zeroing", true);
         root.Children.Add(MakeGroup("NtQueryInformationProcess (via ClearDebugPort)", [ChkDebugPort, ChkDebugObjectHandle, ChkDebugFlags]));
 
         // ── NtQuerySystemInformation ──
@@ -245,7 +245,7 @@ public class AntiDebugPanel : ScrollViewer
         root.Children.Add(MakeGroup("NtSetInformationThread (via ClearThreadHide)", [ChkThreadHideFromDebugger]));
 
         // ── NtClose ──
-        ChkNtClose = MakeCheckBox("NtClose", true, "Cleared by DebugPort zeroing (no debug object = no invalid handle exception)", true);
+        ChkNtClose = MakeCheckBox("NtClose", false, "Cleared by DebugPort zeroing (no debug object = no invalid handle exception)", true);
         root.Children.Add(MakeGroup("NtClose (via ClearDebugPort)", [ChkNtClose]));
 
         // ── NtQueryObject ──
@@ -284,7 +284,7 @@ public class AntiDebugPanel : ScrollViewer
         root.Children.Add(MakeGroup("Miscellaneous", [ChkOutputDebugString, ChkBlockInput, ChkNtYieldExecution, ChkRemoveDebugPrivileges]));
 
         // ── Auto-apply ──
-        ChkAutoApply = MakeCheckBox("Auto-apply on every break", true, "Automatically apply patches when debugger breaks (recommended for packed files)", true);
+        ChkAutoApply = MakeCheckBox("Auto-apply on every break", false, "Automatically apply patches when debugger breaks (recommended for packed files)", true);
         root.Children.Add(MakeGroup("Automation", [ChkAutoApply]));
 
         // ── Unpacker ──

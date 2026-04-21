@@ -244,13 +244,13 @@
                         ToolTip="Connect to kernel driver"
                         Visibility="{Binding IsConnected, Converter={StaticResource InverseBoolVisConv}}"
                         Padding="3">
-                    <svgc:SvgViewbox Source="/Resources/Icons/connect.svg" Width="20" Height="20"/>
+                    <svgc:SvgViewbox Source="/Resources/Icons/connect-green.svg" Width="20" Height="20"/>
                 </Button>
                 <Button Command="{Binding DisconnectKernelCommand}"
                         ToolTip="Disconnect from kernel driver"
                         Visibility="{Binding IsConnected, Converter={StaticResource BoolVisConv}}"
                         Padding="3">
-                    <svgc:SvgViewbox Source="/Resources/Icons/Menu/disconnect.svg" Width="20" Height="20"/>
+                    <svgc:SvgViewbox Source="/Resources/Icons/connect.svg" Width="20" Height="20"/>
                 </Button>
 
                 <Rectangle Width="1" Fill="{DynamicResource BorderBrush}" Margin="8,2" />
@@ -301,6 +301,9 @@
                 <Button Command="{Binding StepOverCommand}" ToolTip="Step Over (F8)" Padding="3">
                     <svgc:SvgViewbox Source="/Resources/Icons/step-over.svg" Width="20" Height="20"/>
                 </Button>
+                <Button Command="{Binding SkipInstructionCommand}" ToolTip="Skip instruction (Ctrl+F8)" Padding="3">
+                    <svgc:SvgViewbox Source="/Resources/Icons/Menu/skip.svg" Width="20" Height="20"/>
+                </Button>
                 <Button Command="{Binding StepOutCommand}" ToolTip="Step Out (Ctrl+F9)" Padding="3">
                     <svgc:SvgViewbox Source="/Resources/Icons/step-out.svg" Width="20" Height="20"/>
                 </Button>
@@ -333,13 +336,6 @@
                 </Button>
                 <Button Command="{Binding RemoveAllBreakpointsCommand}" ToolTip="Remove all breakpoints" Padding="3">
                     <svgc:SvgViewbox Source="/Resources/Icons/Menu/bp-remove-all.svg" Width="20" Height="20"/>
-                </Button>
-
-                <Rectangle Width="1" Fill="{DynamicResource BorderBrush}" Margin="8,2" />
-
-                <!-- Step Out is already above; Skip Instruction goes here -->
-                <Button Command="{Binding SkipInstructionCommand}" ToolTip="Skip instruction (Ctrl+F8)" Padding="3">
-                    <svgc:SvgViewbox Source="/Resources/Icons/Menu/skip.svg" Width="20" Height="20"/>
                 </Button>
 
                 <Rectangle Width="1" Fill="{DynamicResource BorderBrush}" Margin="8,2" />

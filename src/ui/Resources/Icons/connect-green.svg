@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="cnBoltG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#7FFF7F"/>
+      <stop offset="45%" stop-color="#3AD13A"/>
+      <stop offset="100%" stop-color="#0A5A0A"/>
+    </linearGradient>
+    <linearGradient id="cnGlossG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="cnShG"><feGaussianBlur stdDeviation="0.4"/></filter>
+  </defs>
+  <path d="M9.5 1 L3 9 H7 L5.5 15 L12.5 6.5 H8.5 Z"
+        fill="#000" opacity="0.45" filter="url(#cnShG)" transform="translate(0.3,0.4)"/>
+  <path d="M9.5 1 L3 9 H7 L5.5 15 L12.5 6.5 H8.5 Z"
+        fill="url(#cnBoltG)" stroke="#083A08" stroke-width="0.6" stroke-linejoin="round"/>
+  <path d="M9 1.5 L3.8 8.2 H6.5 L6 10 L9 6.5 L8.5 5 Z"
+        fill="url(#cnGlossG)"/>
+  <path d="M9.3 1.5 L3.7 8.7 H5" fill="none" stroke="#D6FFD6" stroke-width="0.35" opacity="0.7"/>
+</svg>
