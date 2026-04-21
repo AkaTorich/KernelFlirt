@@ -14,11 +14,17 @@ public class Instruction
     public string? Comment { get; set; }
 
     /// <summary>
-    /// Dynamic x64dbg-style annotation derived from live register values, e.g.
-    /// "rcx:ZwQueryInformationThread+14, [rcx+30]:..." — updated each time the
-    /// target breaks. Shown to the right of Mnemonic/Comment in DisasmView.
+    /// Register-side live hint (e.g. "rdx:rc4_strings+1570, rax:...").
+    /// Rebuilt synchronously on every Instructions change.
     /// </summary>
     public string? LiveHint { get; set; }
+
+    /// <summary>
+    /// Memory-side live hint (e.g. "[rip+0x1b0b]=\"s3cr3tK3y!\"").
+    /// Rebuilt asynchronously — requires ReadMemory, so kept separate
+    /// so the sync pass never emits it and the async pass never duplicates.
+    /// </summary>
+    public string? MemHint { get; set; }
 
     /// <summary>Symbol name for the address column (e.g. "nt!KiSystemCall64" at function entry).</summary>
     public string? AddressLabel { get; set; }

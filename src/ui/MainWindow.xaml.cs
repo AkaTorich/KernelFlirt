@@ -573,18 +573,23 @@ public partial class MainWindow : Window
 
     private string? FindPanelUnderCursor()
     {
-        var pos = Mouse.GetPosition(this);
-        var hit = InputHitTest(pos) as DependencyObject;
-        while (hit != null)
-        {
-            if (hit is Controls.DisasmView) return "Disasm";
-            if (hit is Controls.HexDumpView) return "Hex";
-            if (hit is System.Windows.Controls.ListBox lb && lb.Name == "StackList") return "Stack";
-            if (hit is System.Windows.Controls.DataGrid dg && dg.Name == "RegistersGrid") return "Registers";
-            if (hit is FrameworkElement fe && fe.Name == "FlagsGrid") return "Registers";
-            hit = System.Windows.Media.VisualTreeHelper.GetParent(hit);
-        }
+        // Check each panel's bounding rect in window coordinates — avoids
+        // InputHitTest/VisualTree traversal issues caused by overlay canvases
+        // that sit on top of the real content.
+        if (IsMouseOver(DisasmControl))   return "Disasm";
+        if (IsMouseOver(HexDumpControl))  return "Hex";
+        if (IsMouseOver(StackList))       return "Stack";
+        if (IsMouseOver(RegistersGrid))   return "Registers";
+        if (IsMouseOver(FlagsGrid))       return "Registers";
+        if (IsMouseOver(RegistersPanel))  return "Registers";
         return null;
+    }
+
+    private bool IsMouseOver(FrameworkElement el)
+    {
+        if (el == null || !el.IsVisible) return false;
+        var pos = Mouse.GetPosition(el);
+        return pos.X >= 0 && pos.Y >= 0 && pos.X <= el.ActualWidth && pos.Y <= el.ActualHeight;
     }
 
     private const double BaseFont = 11.0;

@@ -465,15 +465,25 @@ public partial class DisasmView : UserControl
         TextElement.SetFontSize(mnemCell, LineFontSize);
 
         // Live-hint column (x64dbg-style register/mem annotations) with per-value Copy.
+        // LiveHint is produced synchronously (registers), MemHint asynchronously
+        // (memory previews). Rendered together here — each pass owns its own
+        // field so duplicate appends aren't possible.
         var hintTb = MakeCellTb();
-        if (!string.IsNullOrEmpty(instr.LiveHint))
+        string combined = (instr.LiveHint, instr.MemHint) switch
         {
-            BuildHintInlines(hintTb, instr.LiveHint);
+            (null or "", null or "") => "",
+            (var a, null or "") => a!,
+            (null or "", var b) => b!,
+            (var a, var b) => $"{a}, {b}",
+        };
+        if (!string.IsNullOrEmpty(combined))
+        {
+            BuildHintInlines(hintTb, combined);
             hintTb.ContextMenu = new ContextMenu
             {
                 Items =
                 {
-                    CreateSymMenuItem("Copy all hints", () => Clipboard.SetText(instr.LiveHint!)),
+                    CreateSymMenuItem("Copy all hints", () => Clipboard.SetText(combined)),
                 }
             };
         }

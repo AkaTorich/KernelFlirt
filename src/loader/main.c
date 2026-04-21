@@ -51,12 +51,13 @@ int main(int argc, char *argv[])
     char        defaultPath[MAX_PATH];
     int         i;
 
+    /* With no arguments, default to "load" — the common case.
+     * Explicit commands (unload/status/info) still work. */
     if (argc < 2) {
-        PrintUsage();
-        return 1;
+        command = "load";
+    } else {
+        command = argv[1];
     }
-
-    command = argv[1];
 
     /* Parse optional arguments */
     for (i = 2; i < argc; i++) {

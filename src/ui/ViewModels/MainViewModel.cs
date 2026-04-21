@@ -3550,6 +3550,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private void DoRebuildLiveHints()
     {
         if (Instructions.Count == 0) return;
+        // Clear stale MemHints — they'll be repopulated by EnrichMemHintsAsync.
+        foreach (var i in Instructions) i.MemHint = null;
 
         // Determine user-code range (the main .exe). Hints are suppressed inside
         // system DLLs (ntdll, kernelbase, msvcrt runtime init, etc.) because
@@ -3657,6 +3659,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
 
         // Append preview to each instruction's LiveHint
+        // Collect per-instruction memory previews. Store them in MemHint, never
+        // concatenate into LiveHint — that split is the whole point of having
+        // two fields: sync-pass owns LiveHint, async-pass owns MemHint.
+        var perIdx = new Dictionary<int, List<string>>();
         foreach (var (idx, expr, addr) in targets)
         {
             ulong page = addr & ~(PAGE - 1);
@@ -3665,11 +3671,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
             if (off < 0 || off >= bytes.Length - 1) continue;
             var preview = TryPreviewAt(bytes, off);
             if (preview == null) continue;
-
-            var cur = Instructions[idx].LiveHint;
-            var add = $"[{expr}]={preview}";
-            Instructions[idx].LiveHint = string.IsNullOrEmpty(cur) ? add : $"{cur}, {add}";
+            if (!perIdx.TryGetValue(idx, out var list)) perIdx[idx] = list = new();
+            list.Add($"[{expr}]={preview}");
         }
+        // Clear previous MemHints and set the fresh ones.
+        for (int i = 0; i < Instructions.Count; i++)
+            Instructions[i].MemHint = perIdx.TryGetValue(i, out var l) ? string.Join(", ", l) : null;
     }
 
     /// <summary>Try to interpret bytes starting at off as ASCII/UTF-16 string, else null.</summary>
