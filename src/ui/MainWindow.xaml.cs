@@ -51,14 +51,17 @@ public partial class MainWindow : Window
         InitializeComponent();
         if (VM.ThemeColors.Count > 0)
             ApplyThemeColors(VM.ThemeColors);
-        ApplyPersistedLayout();
         SetupFlagsGrid();
         StackList.Tag = _stackCols;
         _console = new Services.CommandConsole(VM);
         VM.LiveHintsChanged += () => RefreshDisasmView();
         Loaded += (_, _) => HookColumnOverlayScroll();
         PopulateThemesMenu();
+        // Fonts first — they drive LineFontSize which ApplyLineFontSize uses
+        // to scale column widths. Then persisted layout (column widths,
+        // splitter positions) can apply on top without being overwritten.
         ApplyPanelFonts();
+        ApplyPersistedLayout();
         // AddHandler with handledEventsToo so we intercept wheel even if a ScrollViewer
         // upstream marked it Handled (the default tunneling route misses some cases).
         AddHandler(PreviewMouseWheelEvent, new MouseWheelEventHandler(OnCtrlMouseWheel), true);
@@ -610,12 +613,23 @@ public partial class MainWindow : Window
 
     private void ApplyDockLayout()
     {
-        if (VM.UiTopRowRatio is { } v && v > 0) TopRow.Height = new GridLength(v, GridUnitType.Star);
-        if (VM.UiBotRowRatio is { } v2 && v2 > 0) BottomRow.Height = new GridLength(v2, GridUnitType.Star);
-        if (VM.UiTopLeftRatio is { } v3 && v3 > 0) TopLeftCol.Width = new GridLength(v3, GridUnitType.Star);
-        if (VM.UiTopRightRatio is { } v4 && v4 > 0) TopRightCol.Width = new GridLength(v4, GridUnitType.Star);
-        if (VM.UiBotLeftRatio is { } v5 && v5 > 0) BotLeftCol.Width = new GridLength(v5, GridUnitType.Star);
-        if (VM.UiBotRightRatio is { } v6 && v6 > 0) BotRightCol.Width = new GridLength(v6, GridUnitType.Star);
+        // Row/column star ratios — saved as absolute pixels, applied as
+        // relative star shares so the layout scales with the window size.
+        if (VM.UiTopRowRatio is { } v && v > 0 && VM.UiBotRowRatio is { } v2 && v2 > 0)
+        {
+            TopRow.Height    = new GridLength(v,  GridUnitType.Star);
+            BottomRow.Height = new GridLength(v2, GridUnitType.Star);
+        }
+        if (VM.UiTopLeftRatio is { } v3 && v3 > 0 && VM.UiTopRightRatio is { } v4 && v4 > 0)
+        {
+            TopLeftCol.Width  = new GridLength(v3, GridUnitType.Star);
+            TopRightCol.Width = new GridLength(v4, GridUnitType.Star);
+        }
+        if (VM.UiBotLeftRatio is { } v5 && v5 > 0 && VM.UiBotRightRatio is { } v6 && v6 > 0)
+        {
+            BotLeftCol.Width  = new GridLength(v5, GridUnitType.Star);
+            BotRightCol.Width = new GridLength(v6, GridUnitType.Star);
+        }
 
         // Panel column widths
         if (VM.UiColDisasmBp is { } cdb && cdb > 0) DragColumn(0, cdb - DisasmControl.BpColWidth);

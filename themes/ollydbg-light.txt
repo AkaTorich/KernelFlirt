@@ -130,3 +130,4 @@ Color.JumpArrow=#008000
 Color.JumpArrowTaken=#FF0000
 Color.JumpArrowNotTaken=#808080
 Color.JumpArrowRip=#FFB000
+Color.AppearanceText=#101010

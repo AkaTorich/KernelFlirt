@@ -190,14 +190,13 @@ public partial class HexDumpView : UserControl
         for (int j = 0; j < bytesInLine; j++)
         {
             byte b = _data[offset + j];
-            asciiSb.Append(b >= 0x20 && b < 0x7F ? (char)b : '.');
+            asciiSb.Append(b >= 0x20 && b < 0x7F ? (char)b : '·');
         }
         var asciiRun = new Run(asciiSb.ToString()) { Foreground = AsciiColor };
         asciiRun.MouseRightButtonDown += (s, e) => { SelectLine(lineIdx); };
         asciiTb.Inlines.Add(asciiRun);
 
         double scale = LineFontSize / 11.0;
-        double rowH = Math.Ceiling(LineFontSize * 1.3);
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(AddressColWidth * scale) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(HexColWidth * scale) });
@@ -215,9 +214,10 @@ public partial class HexDumpView : UserControl
         {
             Child = grid,
             Background = bgBrush,
-            Padding = new Thickness(4, 0, 4, 0),
+            // Add vertical padding to separate lines visually so glyphs from
+            // adjacent rows never touch even at large zoom levels.
+            Padding = new Thickness(4, 2, 4, 2),
             BorderThickness = new Thickness(0),
-            Height = rowH,
         };
         border.ContextMenu = BuildContextMenu();
         return border;
@@ -385,7 +385,7 @@ public partial class HexDumpView : UserControl
         for (int i = 0; i < len; i++)
         {
             byte b = _data[off + i];
-            sb.Append(b >= 0x20 && b < 0x7F ? (char)b : '.');
+            sb.Append(b >= 0x20 && b < 0x7F ? (char)b : '·');
         }
         Clipboard.SetText(sb.ToString());
     }
@@ -400,7 +400,7 @@ public partial class HexDumpView : UserControl
             for (int j = 0; j < len; j++)
             {
                 byte b = _data[i + j];
-                sb.Append(b >= 0x20 && b < 0x7F ? (char)b : '.');
+                sb.Append(b >= 0x20 && b < 0x7F ? (char)b : '·');
             }
             sb.AppendLine();
         }
@@ -440,7 +440,7 @@ public partial class HexDumpView : UserControl
         for (int j = 0; j < len; j++)
         {
             byte b = _data[offset + j];
-            sb.Append(b >= 0x20 && b < 0x7F ? (char)b : '.');
+            sb.Append(b >= 0x20 && b < 0x7F ? (char)b : '·');
         }
         return sb.ToString();
     }

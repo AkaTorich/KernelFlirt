@@ -51,6 +51,9 @@
     <!-- Column splitters (dashed vertical resize indicators) -->
     <SolidColorBrush x:Key="SplitterDashBrush" Color="#8899A0" />
 
+    <!-- Appearance window tree text -->
+    <SolidColorBrush x:Key="AppearanceTextBrush" Color="#D4D4D4" />
+
     <!-- Jump arrows in the disassembly gutter -->
     <SolidColorBrush x:Key="JumpArrowBrush" Color="#4CAF50" />
     <SolidColorBrush x:Key="JumpArrowTakenBrush" Color="#FF6B6B" />

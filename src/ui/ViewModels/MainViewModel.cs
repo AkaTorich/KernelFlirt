@@ -858,6 +858,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
             SelectedThreadId = tid;
             _isPausedViaSuspend = true;
+            IsBreakState = true;
             goto enumModules;
         }
 

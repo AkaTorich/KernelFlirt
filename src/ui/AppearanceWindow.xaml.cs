@@ -142,10 +142,20 @@ public partial class AppearanceWindow : Window
                 .ToList();
             if (keys.Count == 0) continue;
 
-            var node = new TreeViewItem { Header = group, IsExpanded = false };
+            // Header is a TextBlock with explicit DynamicResource Foreground —
+            // the plain string Header gets rendered by a ContentPresenter that
+            // ignores the inherited TreeViewItem.Foreground, so child items
+            // would stay on the system default colour. Using a TextBlock
+            // forces the binding to pick up AppearanceTextBrush from the theme.
+            TextBlock MakeHdr(string text) => new()
+            {
+                Text = text,
+                Foreground = (System.Windows.Media.Brush)FindResource("AppearanceTextBrush"),
+            };
+            var node = new TreeViewItem { Header = MakeHdr(group), IsExpanded = false };
             foreach (var k in keys)
             {
-                node.Items.Add(new TreeViewItem { Header = PrettyName(k), Tag = k });
+                node.Items.Add(new TreeViewItem { Header = MakeHdr(PrettyName(k)), Tag = k });
             }
             Tree.Items.Add(node);
         }
@@ -239,12 +249,23 @@ public partial class AppearanceWindow : Window
 
     private void UpdatePreviewText()
     {
-        try { PreviewText.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(FgHex.Text)); }
-        catch { }
-        if (_currentBgKey != null)
+        // Only override the Foreground if we actually parsed a hex — otherwise
+        // let the Preview inherit FgBrush so the text stays visible against
+        // the dark/light background.
+        if (!string.IsNullOrWhiteSpace(FgHex.Text))
+        {
+            try { PreviewText.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(FgHex.Text)); }
+            catch { PreviewText.ClearValue(TextBlock.ForegroundProperty); }
+        }
+        else
+        {
+            PreviewText.ClearValue(TextBlock.ForegroundProperty);
+        }
+
+        if (_currentBgKey != null && !string.IsNullOrWhiteSpace(BgHex.Text))
         {
             try { PreviewBorder.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(BgHex.Text)); }
-            catch { }
+            catch { /* fall through to default bg */ PreviewBorder.ClearValue(Border.BackgroundProperty); }
         }
         else
         {

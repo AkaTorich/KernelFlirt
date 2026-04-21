@@ -32,7 +32,25 @@
                     <TreeView x:Name="Tree" BorderThickness="0"
                               Background="Transparent"
                               Foreground="{DynamicResource FgBrush}"
-                              SelectedItemChanged="OnTreeSelected"/>
+                              SelectedItemChanged="OnTreeSelected">
+                        <TreeView.ItemContainerStyle>
+                            <Style TargetType="TreeViewItem">
+                                <Setter Property="Foreground" Value="{DynamicResource AppearanceTextBrush}"/>
+                                <Setter Property="Background" Value="Transparent"/>
+                            </Style>
+                        </TreeView.ItemContainerStyle>
+                        <TreeView.Resources>
+                            <!-- Override system selection colors so the
+                                 highlighted item still shows theme text on
+                                 top of the selection brush -->
+                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}"
+                                             Color="#3A3A5A"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}"
+                                             Color="#3A3A5A"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}"
+                                             Color="#FFFFFF"/>
+                        </TreeView.Resources>
+                    </TreeView>
                 </DockPanel>
             </Border>
 
@@ -78,7 +96,8 @@
                         <Border x:Name="PreviewBorder"
                                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
                                 Padding="18" MinHeight="48" HorizontalAlignment="Left">
-                            <TextBlock x:Name="PreviewText" Text="Example Text" FontFamily="Lucida Console" FontSize="14"/>
+                            <TextBlock x:Name="PreviewText" Text="Example Text" FontFamily="Lucida Console" FontSize="14"
+                                       Foreground="{DynamicResource FgBrush}"/>
                         </Border>
                     </StackPanel>
                 </ScrollViewer>
