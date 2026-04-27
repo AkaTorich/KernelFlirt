@@ -36,7 +36,7 @@ typedef struct _SYSTEM_KERNEL_DEBUGGER_INFORMATION {
 
 static PUCHAR  g_NtQsiAddr        = NULL;    /* Address of NtQuerySystemInformation */
 static PUCHAR  g_NtQsiTrampoline  = NULL;    /* Trampoline: fixed bytes + jmp back  */
-static UCHAR   g_NtQsiOrigBytes[14];         /* Saved original 14 bytes            */
+static UCHAR   g_NtQsiOrigBytes[14] = {0};   /* Saved original 14 bytes            */
 static BOOLEAN g_NtQsiHookActive  = FALSE;
 static ULONG   g_NtQsiCopyLen     = 0;       /* Actual bytes copied to trampoline  */
 
@@ -245,7 +245,9 @@ static BOOLEAN FixupRipRelative(PUCHAR trampoline, PUCHAR origAddr, ULONG offset
     newDisp = (LONG_PTR)(origAddr + offset + insnLen + origDisp) -
               (LONG_PTR)(trampoline + offset + insnLen);
 
-    if (newDisp > 0x7FFFFFFF || newDisp < -0x7FFFFFFF) {
+    /* Полный знаковый 32-битный диапазон: [-0x80000000, 0x7FFFFFFF].
+     * Прежняя проверка отсекала валидное значение INT32_MIN. */
+    if (newDisp > 0x7FFFFFFFLL || newDisp < -0x80000000LL) {
         DbgPrint("[KernelFlirt] NtQsiHook: RIP-relative fixup out of range: %lld\n", newDisp);
         return FALSE;
     }

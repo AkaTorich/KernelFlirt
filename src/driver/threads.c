@@ -98,6 +98,11 @@ KfEnumThreads(
 
     status = ZwQuerySystemInformation(SystemProcessInformation, buffer, bufferSize, &returnLength);
     if (status == STATUS_INFO_LENGTH_MISMATCH) {
+        if (returnLength == 0 || returnLength > 0x4000000UL) {
+            ExFreePoolWithTag(buffer, 'fTkK');
+            Irp->IoStatus.Information = 0;
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
         ExFreePoolWithTag(buffer, 'fTkK');
         bufferSize = returnLength + 0x10000;
         buffer = ExAllocatePoolWithTag(NonPagedPool, bufferSize, 'fTkK');

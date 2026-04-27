@@ -312,6 +312,24 @@ KfWriteMemory(
     }
 
     /*
+     * Канонический диапазон x64 user-mode и контроль переполнения.
+     * Без этого ZwProtectVirtualMemory может быть вызван на kernel-странице
+     * (если usermode подал Address >= KERNEL_SPACE_START для не-PID-4 процесса)
+     * — это может привести к ATTEMPTED_WRITE_TO_READONLY_MEMORY bugcheck.
+     */
+    {
+        ULONG_PTR a = (ULONG_PTR)input->Address;
+        if (a == 0 || a >= 0x00007FFFFFFF0000ULL) {
+            Irp->IoStatus.Information = 0;
+            return STATUS_INVALID_PARAMETER;
+        }
+        if ((SIZE_T)input->Size > (SIZE_T)(0x00007FFFFFFF0000ULL - a)) {
+            Irp->IoStatus.Information = 0;
+            return STATUS_INVALID_PARAMETER;
+        }
+    }
+
+    /*
      * User-space: use KeStackAttachProcess + ZwProtectVirtualMemory
      * to handle code pages (PAGE_EXECUTE_READ) that MmCopyVirtualMemory
      * cannot write to. Same approach as KfWriteProcessMemory in breakpoint.c.

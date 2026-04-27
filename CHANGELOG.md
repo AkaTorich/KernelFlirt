@@ -1,5 +1,46 @@
 # Changelog
 
+## v2.0.0 — 2026-04-27
+
+### Stepping Regression Fix (CRITICAL)
+
+- **Single-step on x64 native targets stopped working** after the relay switched to `EB FE`-based entry-point synchronization (v1.9.1). When the entry was reached, the UI suspended the thread via `SuspendThread` and set `_isPausedViaSuspend = true` (line 860 of `MainWindow.xaml.cs`), but a leftover line 1017 (`if (!Is32Bit) _isPausedViaSuspend = false;`) — written for the older INT3-based entry-stop flow — unconditionally cleared the flag for native 64-bit. As a result `StepIn` for x64 always took the `Continue + WaitDebugEvent` branch, which only works when the thread is blocked inside `KfReportAndBlock`. The thread was suspended at the OS scheduler level, so `Continue` had nothing to wake, TF was never written into the thread's `KTRAP_FRAME`, no `STATUS_SINGLE_STEP` ever fired, and the UI's `WaitDebugEvent` timed out after 5 s on every step. The stale comment on line 1017 has been removed; `_isPausedViaSuspend` now correctly retains the value set by the calling code (`true` for the EB FE entry path and WoW64 attach, `false` for INT3 stops).
+- **New `StepIn` branch for `_isPausedViaSuspend && !Is32Bit`** — when the thread is suspended via `SuspendThread`, `Continue + Wait` is replaced with `IOCTL_KF_SINGLE_STEP` (force-sets the TF bit at `KTRAP_FRAME + 0x178`) → `ResumeThread` → `WaitDebugEvent`. After the first `STATUS_SINGLE_STEP` the thread is sitting in `KfReportAndBlock`, so `_isPausedViaSuspend` is reset to `false` and subsequent steps go through the normal `Continue + Wait` path.
+
+### Driver: IOCTL Validation
+
+- **`IOCTL_KF_ALLOC_MEMORY` (CRITICAL)** — added an upper bound (100 MB) on the user-supplied `reqSize`. Previously a forged `reqSize = 0xFFFFFFFFFFFFFFFF` from usermode was passed straight into `ZwAllocateVirtualMemory`, producing a kernel-side commit-charge DoS or OOM.
+- **`IOCTL_KF_FREE_MEMORY` (HIGH)** — handler now returns the real `NTSTATUS` from `ZwFreeVirtualMemory` instead of unconditionally `STATUS_SUCCESS`. SDK/UI clients can now distinguish a successful free from a failure on an invalid base.
+- **`KfWriteMemory` canonical-range check (HIGH)** — `KfReadMemory` already rejected addresses outside the x64 user-mode canonical range, but `KfWriteMemory` did not. A non-PID-4 caller could pass `Address >= 0xFFFF800000000000` and reach `ZwProtectVirtualMemory` against a kernel page → `ATTEMPTED_WRITE_TO_READONLY_MEMORY` bugcheck. Same canonical bound + integer-overflow guard on `Address + Size` now applied symmetrically to both read and write paths.
+
+### Driver: System-Information Buffers
+
+- **`kmodules.c` (HIGH)** — `STATUS_INFO_LENGTH_MISMATCH` retry path now caps `returnLength` at 16 MB. A forged or pathological `returnLength` from `ZwQuerySystemInformation` previously could trigger an integer overflow on `returnLength + 0x1000` and request an enormous nonpaged allocation.
+- **`process.c` and `threads.c` (MEDIUM)** — same upper bound (64 MB) applied to the `SystemProcessInformation` retry loop in both files.
+
+### Driver: NtQuerySystemInformation Hook
+
+- **`g_NtQsiOrigBytes` initializer (LOW)** — explicitly zero-initialised so the buffer cannot accidentally contain stale bytes from a previous installation if static layout assumptions ever change.
+- **RIP-relative `disp32` bound fixed (LOW)** — the previous range check (`newDisp > 0x7FFFFFFF || newDisp < -0x7FFFFFFF`) excluded `INT32_MIN` (`-0x80000000`), which is a valid signed 32-bit displacement. Bound corrected to the full `[-0x80000000, 0x7FFFFFFF]` range.
+
+### Driver: Register Editing Safety
+
+- **`KfWriteRegisters` segment-selector and canonical-address validation (MEDIUM)** — usermode clients with `SeDebugPrivilege` could supply arbitrary CS/SS values and non-canonical RIP/RSP, which on `IRET` from the trap caused `#GP`/`#SS` and a kernel BSOD. CS is now restricted to `0x10` (kernel code), `0x33` (user x64) or `0x23` (user x86/WoW64); SS to `0x18` (kernel data), `0x2B` (user data) or `0x00`; RIP/RSP must be canonical (bits 47..63 either all-zero or all-one). Anything else is rejected with `STATUS_INVALID_PARAMETER` before touching the trap frame.
+- **`KfWriteRip` canonical-address validation (MEDIUM)** — same canonical range check on `NewRip` and (when `KF_WRIP_SET_RSP` is set) `NewRsp`. Prevents a non-canonical RIP from reaching `IRET`.
+
+### Driver: Breakpoint Subsystem
+
+- **`KfSetMemoryBreakpoint` page-guard rollback (MEDIUM)** — when all 256 BP slots are exhausted and `KfFindFreeSlot` returns `-1`, the function previously returned `STATUS_INSUFFICIENT_RESOURCES` without restoring the page protection. The target process was left with a stuck `PAGE_GUARD` on the address — every subsequent access raised `STATUS_GUARD_PAGE_VIOLATION` for the lifetime of the process. Now the original `oldProtect` is reapplied via a fresh `ZwProtectVirtualMemory` call before returning.
+- **`KfBpInit` atomic initialization (LOW)** — replaced the unsynchronized `if (!g_BpInitialized) { ... g_BpInitialized = TRUE; }` pattern with a 3-state `InterlockedCompareExchange` machine (`0` → `1` → `2`). Two parallel IOCTLs racing to install the very first breakpoint can no longer both call `KeInitializeSpinLock` on the same lock object. The legacy `g_BpInitialized` symbol is preserved as a macro alias for `KfFindSwBpOrigByte` / `KfFindAnySwBpOrigByte` / `KfRemoveAllBreakpoints`.
+
+### UI: Build Warnings
+
+- **`MainWindow.IsMouseOver(FrameworkElement)` renamed to `IsMouseOverElement` (CS0108)** — the local helper was hiding the inherited `UIElement.IsMouseOver` property. Renamed at all six call sites; UI now builds clean (zero warnings, zero errors).
+
+### Notes
+
+- **No changes to the hot exception-handler path** in `debughook.c` (`KfDebugHandler`, `KfReportAndBlock`, IRP cancel/complete cycle, BP/SS/AV branches, `g_DebugEvent` / `g_StepPast` / `g_Transparent`). Several latent races exist in the multi-threaded-target case (single shared `g_DebugEvent`, single `g_ContinueMode` / `g_ContinueFlags` / `g_ContinueNewRip`-`Rsp` reused across threads) but require a synchronization redesign rather than a point patch and were intentionally left for a follow-up. See `docs/known_issues.md` if/when added.
+
 ## v1.9.1 — 2026-04-22
 
 ### Process Launch (Relay-side entry-point patch)

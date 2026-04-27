@@ -206,6 +206,15 @@ KfDispatchIoctl(
         reqSize = *(PULONG64)(pIn + 4);
         prot    = *(PULONG)(pIn + 12);
 
+        /* Защита от подстановки огромного reqSize из usermode:
+         * без лимита злоупотребление IOCTL_KF_ALLOC_MEMORY превращается в DoS
+         * памяти ядра (kernel commit charge через ZwAllocateVirtualMemory). */
+        if (reqSize == 0 || reqSize > 0x6400000ULL) {  /* 100 МБ — как и в WriteMemory */
+            status = STATUS_INVALID_PARAMETER;
+            Irp->IoStatus.Information = 0;
+            break;
+        }
+
         status = PsLookupProcessByProcessId((HANDLE)(ULONG_PTR)pid2, &proc2);
         if (NT_SUCCESS(status)) {
             sz2 = (SIZE_T)reqSize;
@@ -249,11 +258,15 @@ KfDispatchIoctl(
 
         status = PsLookupProcessByProcessId((HANDLE)(ULONG_PTR)pid3, &proc3);
         if (NT_SUCCESS(status)) {
+            NTSTATUS freeStatus;
             KeStackAttachProcess(proc3, &apc3);
-            ZwFreeVirtualMemory(ZwCurrentProcess(), &base3, &sz3, MEM_RELEASE);
+            /* Возвращаем реальный код ошибки от ZwFreeVirtualMemory.
+             * Старый код всегда выставлял STATUS_SUCCESS — UI/SDK не мог понять
+             * что освобождение упало (например, на невалидном Base). */
+            freeStatus = ZwFreeVirtualMemory(ZwCurrentProcess(), &base3, &sz3, MEM_RELEASE);
             KeUnstackDetachProcess(&apc3);
             ObDereferenceObject(proc3);
-            status = STATUS_SUCCESS;
+            status = freeStatus;
         }
         Irp->IoStatus.Information = 0;
         break;

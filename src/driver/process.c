@@ -60,6 +60,12 @@ KfEnumProcesses(
 
     status = ZwQuerySystemInformation(SystemProcessInformation, buffer, bufferSize, &returnLength);
     if (status == STATUS_INFO_LENGTH_MISMATCH) {
+        /* Лимит: 64 МБ — больше, чем когда-либо может занять SystemProcessInformation. */
+        if (returnLength == 0 || returnLength > 0x4000000UL) {
+            ExFreePoolWithTag(buffer, 'ePkK');
+            Irp->IoStatus.Information = 0;
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
         ExFreePoolWithTag(buffer, 'ePkK');
         bufferSize = returnLength + 0x10000;
         buffer = ExAllocatePoolWithTag(NonPagedPool, bufferSize, 'ePkK');

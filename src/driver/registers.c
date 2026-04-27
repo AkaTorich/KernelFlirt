@@ -241,6 +241,41 @@ KfWriteRegisters(
         return STATUS_UNSUCCESSFUL;
     }
 
+    /*
+     * Защита от записи мусорных сегментных селекторов и неканонических RIP/RSP.
+     * Без этой проверки usermode-вызов с подделанными значениями приведёт к
+     * IRET с #GP/#SS на возврате — это BSOD ядра.
+     *
+     * Допустимые селекторы для обычного исполнения на x64:
+     *   CS  : 0x10 (kernel code), 0x33 (user code x64), 0x23 (user code x86 / WOW64)
+     *   SS  : 0x18 (kernel data), 0x2B (user data)
+     *   DS/ES/FS/GS : 0 (null), 0x2B (user data) или прежние значения
+     * Любой другой селектор — отвергаем.
+     */
+    {
+        USHORT cs = input->Registers.Cs;
+        USHORT ss = input->Registers.Ss;
+        ULONG64 rip = input->Registers.Rip;
+        ULONG64 rsp = input->Registers.Rsp;
+        BOOLEAN ripCanonical =
+            (rip < 0x0000800000000000ULL) ||
+            (rip >= 0xFFFF800000000000ULL);
+        BOOLEAN rspCanonical =
+            (rsp < 0x0000800000000000ULL) ||
+            (rsp >= 0xFFFF800000000000ULL);
+        BOOLEAN csOk = (cs == 0x10 || cs == 0x33 || cs == 0x23);
+        BOOLEAN ssOk = (ss == 0x18 || ss == 0x2B || ss == 0x00);
+
+        if (!csOk || !ssOk || !ripCanonical || !rspCanonical) {
+            DbgPrint("[KernelFlirt] WriteRegs(TID %u): rejected — CS=0x%X SS=0x%X "
+                     "RIP=%p RSP=%p\n",
+                     input->Target.ThreadId, cs, ss, (PVOID)rip, (PVOID)rsp);
+            ObDereferenceObject(thread);
+            Irp->IoStatus.Information = 0;
+            return STATUS_INVALID_PARAMETER;
+        }
+    }
+
     __try {
         /* Write volatile registers */
         *(ULONG64 *)((UCHAR *)pTrapFrame + TF_RAX) = input->Registers.Rax;
@@ -333,6 +368,28 @@ KfWriteRip(
         ObDereferenceObject(thread);
         Irp->IoStatus.Information = 0;
         return STATUS_UNSUCCESSFUL;
+    }
+
+    /*
+     * RIP и RSP должны быть каноническими адресами x64
+     * (биты 47..63 одинаковы — иначе IRET даст #GP/#SS).
+     */
+    {
+        BOOLEAN ripOk =
+            (input->NewRip < 0x0000800000000000ULL) ||
+            (input->NewRip >= 0xFFFF800000000000ULL);
+        BOOLEAN rspOk = TRUE;
+        if (input->Flags & KF_WRIP_SET_RSP) {
+            rspOk = (input->NewRsp < 0x0000800000000000ULL) ||
+                    (input->NewRsp >= 0xFFFF800000000000ULL);
+        }
+        if (!ripOk || !rspOk) {
+            DbgPrint("[KernelFlirt] WriteRip(TID %u): non-canonical RIP=%p RSP=%p\n",
+                     input->ThreadId, (PVOID)input->NewRip, (PVOID)input->NewRsp);
+            ObDereferenceObject(thread);
+            Irp->IoStatus.Information = 0;
+            return STATUS_INVALID_PARAMETER;
+        }
     }
 
     __try {

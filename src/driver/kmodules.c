@@ -60,6 +60,14 @@ KfEnumKernelModules(
 
     status = ZwQuerySystemInformation(SystemModuleInformation, buffer, bufferSize, &returnLength);
     if (status == STATUS_INFO_LENGTH_MISMATCH) {
+        /* Лимит расширения: 16 МБ хватит на тысячи модулей ядра, при этом
+         * подделанный returnLength = 0xFFFFFFFF не вызовет integer overflow
+         * и не закажет огромный nonpaged pool. */
+        if (returnLength == 0 || returnLength > 0x1000000UL) {
+            ExFreePoolWithTag(buffer, 'mKkK');
+            Irp->IoStatus.Information = 0;
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
         ExFreePoolWithTag(buffer, 'mKkK');
         bufferSize = returnLength + 0x1000;
         buffer = ExAllocatePoolWithTag(NonPagedPool, bufferSize, 'mKkK');

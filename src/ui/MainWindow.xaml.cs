@@ -579,16 +579,16 @@ public partial class MainWindow : Window
         // Check each panel's bounding rect in window coordinates — avoids
         // InputHitTest/VisualTree traversal issues caused by overlay canvases
         // that sit on top of the real content.
-        if (IsMouseOver(DisasmControl))   return "Disasm";
-        if (IsMouseOver(HexDumpControl))  return "Hex";
-        if (IsMouseOver(StackList))       return "Stack";
-        if (IsMouseOver(RegistersGrid))   return "Registers";
-        if (IsMouseOver(FlagsGrid))       return "Registers";
-        if (IsMouseOver(RegistersPanel))  return "Registers";
+        if (IsMouseOverElement(DisasmControl))   return "Disasm";
+        if (IsMouseOverElement(HexDumpControl))  return "Hex";
+        if (IsMouseOverElement(StackList))       return "Stack";
+        if (IsMouseOverElement(RegistersGrid))   return "Registers";
+        if (IsMouseOverElement(FlagsGrid))       return "Registers";
+        if (IsMouseOverElement(RegistersPanel))  return "Registers";
         return null;
     }
 
-    private bool IsMouseOver(FrameworkElement el)
+    private bool IsMouseOverElement(FrameworkElement el)
     {
         if (el == null || !el.IsVisible) return false;
         var pos = Mouse.GetPosition(el);

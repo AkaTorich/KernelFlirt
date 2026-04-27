@@ -52,15 +52,41 @@ typedef struct _KF_BP_ENTRY {
 static KF_BP_ENTRY g_Breakpoints[KF_MAX_BREAKPOINTS];
 static ULONG       g_NextHandle = 1;
 static KSPIN_LOCK  g_BpLock;
-static BOOLEAN     g_BpInitialized = FALSE;
+
+/*
+ * Состояния g_BpInitState:
+ *   0 — не инициализирован
+ *   1 — поток-инициализатор работает
+ *   2 — инициализация завершена
+ *
+ * Атомарный CAS защищает от двойного KeInitializeSpinLock при гонке двух
+ * параллельных IOCTL до первой установки точки останова. Чтение g_BpInitialized
+ * как BOOLEAN без барьеров теоретически могло пропустить ещё-не-видимую запись
+ * KeInitializeSpinLock на другом ядре.
+ */
+static volatile LONG g_BpInitState = 0;
+#define KF_BP_FLAG_INIT_DONE  2
+
+/* Backwards-compat alias используется в KfFindSwBpOrigByte/KfFindAnySwBpOrigByte/
+ * KfRemoveAllBreakpoints для быстрой проверки «вообще что-то регистрировали?». */
+#define g_BpInitialized (g_BpInitState == KF_BP_FLAG_INIT_DONE)
 
 static void KfBpInit(void)
 {
-    if (!g_BpInitialized) {
+    LONG prev = InterlockedCompareExchange(&g_BpInitState, 1, 0);
+    if (prev == 0) {
+        /* Мы выиграли гонку — инициализируем. */
         KeInitializeSpinLock(&g_BpLock);
         RtlZeroMemory(g_Breakpoints, sizeof(g_Breakpoints));
-        g_BpInitialized = TRUE;
+        InterlockedExchange(&g_BpInitState, KF_BP_FLAG_INIT_DONE);
+    } else if (prev == 1) {
+        /* Другой поток инициализирует прямо сейчас — крутимся до окончания. */
+        while (InterlockedCompareExchange(&g_BpInitState, KF_BP_FLAG_INIT_DONE,
+                                          KF_BP_FLAG_INIT_DONE) != KF_BP_FLAG_INIT_DONE) {
+            YieldProcessor();
+        }
     }
+    /* prev == 2 — уже инициализировано, просто возвращаемся. */
 }
 
 /* Find a free slot in the BP array */
@@ -561,7 +587,26 @@ static NTSTATUS KfSetMemoryBreakpoint(PKF_SET_BP_IN input, PULONG outHandle)
     slot = KfFindFreeSlot();
     if (slot == (ULONG)-1) {
         KeReleaseSpinLock(&g_BpLock, oldIrql);
-        /* Try to restore - best effort */
+
+        /*
+         * Все слоты заняты — нужно откатить PAGE_GUARD на странице,
+         * иначе target огребёт STATUS_GUARD_PAGE_VIOLATION при первом
+         * обращении к этой странице, причём navсегда (пока процесс жив).
+         */
+        {
+            HANDLE   restoreHandle = NULL;
+            NTSTATUS rs;
+            PVOID    rb  = (PVOID)(input->Address & ~0xFFFULL);
+            SIZE_T   rsz = 0x1000;
+            ULONG    discard = 0;
+
+            rs = KfOpenProcessHandle(input->ProcessId, &restoreHandle);
+            if (NT_SUCCESS(rs)) {
+                ZwProtectVirtualMemory(restoreHandle, &rb, &rsz,
+                                       oldProtect, &discard);
+                ZwClose(restoreHandle);
+            }
+        }
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
