@@ -1012,9 +1012,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
         RefreshCallStack();
         _ = RefreshFunctionsAsync();
 
-        // For 64-bit: stopped on debug event (not via SuspendThread).
-        // For WoW64: stopped via SuspendThread (_isPausedViaSuspend already set at line 439).
-        if (!Is32Bit) _isPausedViaSuspend = false;
+        // _isPausedViaSuspend уже выставлен корректно вызывающим кодом:
+        //   - EB FE entry path (релей патчит entry, UI делает SuspendThread) -> TRUE
+        //   - INT3 BP path (поток заблокирован в KfReportAndBlock)            -> FALSE
+        //   - WoW64 attach path                                                 -> TRUE
+        // Раньше здесь стоял безусловный сброс в FALSE для 64-bit — это была
+        // регрессия после перехода релея на EB FE: после неё StepIn уходил в
+        // ветку Continue+Wait и навечно зависал, потому что поток был SUSPENDED,
+        // а не блокирован в хуке.
         _hitSwBp = null;
         IsBreakState = true;
         IsRunning = false;
@@ -2588,6 +2593,51 @@ public partial class MainViewModel : ObservableObject, IDisposable
             IsRunning = false;
             StatusText = ok ? $"Step - PID {TargetPid} TID {SelectedThreadId}" : "Step failed";
             _hitSwBp = null;
+            return;
+        }
+
+        // Native 64-bit, остановлены через SuspendThread (вход в процесс,
+        // выход из плагина, ручной Pause): поток не блокирован в KfReportAndBlock,
+        // поэтому ContinueDebugEvent ничего не разбудит и TF никогда не выставится.
+        // Правильный путь: явно поставить TF в KTRAP_FRAME через IOCTL_KF_SINGLE_STEP,
+        // возобновить поток, дождаться STATUS_SINGLE_STEP в хуке.
+        if (_isPausedViaSuspend && !Is32Bit)
+        {
+            Log("Step: paused-via-suspend path — SingleStep + ResumeThread + WAIT");
+            var waitTaskSs = Task.Run(() => _driver.WaitDebugEvent());
+            var ssOk = await Task.Run(() => _driver.SingleStep((uint)TargetPid, (uint)SelectedThreadId));
+            if (!ssOk)
+            {
+                Log("Step: SingleStep IOCTL failed");
+                IsBreakState = true; IsRunning = false; StatusText = "Step failed";
+                return;
+            }
+            await Task.Run(() => _driver.ResumeThread(SelectedThreadId));
+            _hitSwBp = null;
+
+            var completedSs = await Task.WhenAny(waitTaskSs, Task.Delay(5000));
+            if (completedSs == waitTaskSs)
+            {
+                var stepEvt = await waitTaskSs;
+                if (stepEvt != null)
+                {
+                    Log($"Step: event received at {stepEvt.Address:X16}");
+                    // После SS-исключения поток уже сидит в KfReportAndBlock —
+                    // дальнейшие шаги пойдут по обычному Continue+Wait пути.
+                    _isPausedViaSuspend = false;
+                    OnDebugEvent(stepEvt);
+                }
+                else
+                {
+                    Log("Step: WaitDebugEvent returned null");
+                    IsBreakState = true; IsRunning = false; StatusText = "Step failed";
+                }
+            }
+            else
+            {
+                Log("Step: TIMEOUT 5s in suspend-path — thread may still be suspended");
+                IsBreakState = true; IsRunning = false; StatusText = "Step timed out";
+            }
             return;
         }
 
