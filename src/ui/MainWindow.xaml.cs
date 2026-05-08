@@ -67,6 +67,14 @@ public partial class MainWindow : Window
         AddHandler(PreviewMouseWheelEvent, new MouseWheelEventHandler(OnCtrlMouseWheel), true);
         LoadDecompilerHighlighting();
         VM.Instructions.CollectionChanged += (_, _) => RefreshDisasmView();
+        // Быстрая перерисовка только маркера текущей строки — без пересоздания
+        // элементов разметки. Срабатывает на шаге по прямому коду (RIP внутри
+        // уже отрисованного окна и набор BP не менялся).
+        VM.DisasmCurrentLineChanged += rip =>
+        {
+            DisasmControl.UpdateCurrentLine(rip);
+            RefreshNavBar();
+        };
         VM.FilteredSections.CollectionChanged += (_, _) => RefreshNavBar();
         NavBar.SizeChanged += (_, _) => RefreshNavBar();
         VM.DisasmAppend += (instrs, trimTop) =>

@@ -2806,8 +2806,20 @@ public partial class MainViewModel : ObservableObject, IDisposable
             _tempBpHandle = tmpHandle.Value;
 
         StartDebugListener();
-        await Task.Run(() => _driver.ContinueDebugEvent(
-            _hitSwBp != null ? DriverComm.CONTINUE_STEP_PAST : DriverComm.CONTINUE_RUN));
+
+        // Если поток приостановлен через SuspendThread (вход на entry-point
+        // через EB FE), Continue его не разбудит — поток сидит на уровне
+        // планировщика, не в KfReportAndBlock. Возобновляем явно.
+        if (_isPausedViaSuspend && !Is32Bit)
+        {
+            await Task.Run(() => _driver.ResumeThread(SelectedThreadId));
+            _isPausedViaSuspend = false;
+        }
+        else
+        {
+            await Task.Run(() => _driver.ContinueDebugEvent(
+                _hitSwBp != null ? DriverComm.CONTINUE_STEP_PAST : DriverComm.CONTINUE_RUN));
+        }
         _hitSwBp = null;
     }
 
@@ -2884,8 +2896,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
             IsRunning = true;
             StatusText = $"Running to {addr:X16}...";
             StartDebugListener();
-            await Task.Run(() => _driver.ContinueDebugEvent(
-                _hitSwBp != null ? DriverComm.CONTINUE_STEP_PAST : DriverComm.CONTINUE_RUN));
+
+            // suspend-path (entry-point через EB FE): Continue не разбудит
+            // SUSPENDED поток. Запускаем планировщиком через ResumeThread.
+            if (_isPausedViaSuspend && !Is32Bit)
+            {
+                await Task.Run(() => _driver.ResumeThread(tid));
+                _isPausedViaSuspend = false;
+            }
+            else
+            {
+                await Task.Run(() => _driver.ContinueDebugEvent(
+                    _hitSwBp != null ? DriverComm.CONTINUE_STEP_PAST : DriverComm.CONTINUE_RUN));
+            }
             _hitSwBp = null;
         }
         else
@@ -5120,15 +5143,26 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// Быстрое обновление маркера текущей строки в дизассемблере без перерисовки.
+    /// Подписчик (MainWindow) вызывает DisasmControl.UpdateCurrentLine, который
+    /// перекрашивает только две строки (старый и новый RIP) — никаких пересозданий
+    /// Border/TextBlock/MnemonicCell. Возникает только когда RIP остаётся внутри
+    /// уже отрисованного окна инструкций (обычный шаг по прямому коду).
+    /// </summary>
+    public event Action<ulong?>? DisasmCurrentLineChanged;
+
     public async void RefreshDisassembly()
     {
         if (!IsConnected || TargetPid == 0) return;
         var addr = DisasmAddress;
         var pid = TargetPid;
 
-        // Fast path: if the new RIP is already in our current instruction window,
-        // just update the "current" marker — no network read, no disasm, no symbol
-        // lookup. This is the common case for single-stepping through straight code.
+        // Fast path: если новый RIP попадает в уже отрисованное окно — не читаем
+        // память, не дизассемблируем, не лезем за символами. Когда меняется только
+        // current-маркер (типичный шаг по прямому коду) — даём событие
+        // DisasmCurrentLineChanged: View перекрасит только две строки. NotifyReset
+        // (полная перерисовка) дёргается только если поменялся набор BP.
         if (Instructions.Count > 0)
         {
             var first = Instructions[0].Address;
@@ -5136,7 +5170,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
             ulong lastEnd = last.Address + (ulong)last.Size;
             if (addr >= first && addr < lastEnd)
             {
-                bool changed = false;
+                bool currentChanged = false;
+                bool bpChanged = false;
                 var bpSet = new HashSet<ulong>(Breakpoints.Select(b => b.Address));
                 foreach (var ins in Instructions)
                 {
@@ -5144,16 +5179,24 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     if (ins.IsCurrentInstruction != isCur)
                     {
                         ins.IsCurrentInstruction = isCur;
-                        changed = true;
+                        currentChanged = true;
                     }
                     bool isBp = bpSet.Contains(ins.Address);
                     if (ins.HasBreakpoint != isBp)
                     {
                         ins.HasBreakpoint = isBp;
-                        changed = true;
+                        bpChanged = true;
                     }
                 }
-                if (changed) Instructions.NotifyReset();
+                if (currentChanged || bpChanged)
+                {
+                    // UpdateCurrentLine в DisasmView перекрашивает только нужные
+                    // строки И обновляет BP-маркер «●» в колонке 0 — поэтому даже
+                    // при изменении набора BP (Run to Cursor удаляет temp BP,
+                    // ручная установка/снятие точки в видимом окне) полной
+                    // перерисовки не требуется.
+                    DisasmCurrentLineChanged?.Invoke(addr);
+                }
                 _disasmLoadingMore = false;
                 return;
             }

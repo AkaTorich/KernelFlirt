@@ -1,5 +1,23 @@
 # Changelog
 
+## v2.1.0 — 2026-04-27
+
+### Disassembly View — Stepping Latency
+
+- **Stepping through straight code no longer re-renders the disassembly view.** Previously `RefreshDisassembly`'s fast path called `Instructions.NotifyReset()`, which forced `DisasmView.SetInstructions` to recreate all ~128 `Border` / `TextBlock` / `MnemonicCell` elements on every step. The fast path now raises a new `DisasmCurrentLineChanged` event; `MainWindow` subscribes to it and calls `DisasmControl.UpdateCurrentLine(rip)`, which walks the already-built `Border`s in `InstructionList.Items` and touches only two rows: the old RIP location and the new one. The only mutations on each row are `Border.Background` (`CurrentLineColor` ↔ `BpLineColor` ↔ `Transparent`) and optionally a `Run("●")` in the BP column. No `ReadMemory`, no `Disassemble`, no `AnnotateInstructionsWithSymbols` — step latency drops from tens of milliseconds to a couple of milliseconds.
+- **Auto-scroll on step is now conservative.** The view scrolls to the new RIP only if the row is actually outside the visible region (`ViewportHeight` check). Previously every step nudged the scrollbar; now the view stays put as long as the RIP remains visible.
+- **Breakpoint changes in the visible window also avoid re-render.** `UpdateCurrentLine` additionally maintains the `●` BP marker in column 0 by adding/removing the `Run` in `TextBlock.Inlines`. This lets the fast path handle cases where the BP set changes during a step — most notably `RunToCursor`, which deletes the temp BP inside `OnDebugEvent` right before `RefreshDisassembly` runs. Previously any change to the `Breakpoints` collection that touched a visible row triggered `NotifyReset` → full re-render.
+- **Full refresh still happens** in the natural cases: `call` out of the current window, `ret` out, `Step Out` to an address outside the window, `Run to Cursor` to an address outside the window, or any navigation past the 128-instruction window. `RefreshDisassembly` falls back to the slow path (`ReadMemory` + `Disassemble` + `Instructions.ReplaceAll` → `CollectionChanged` → `SetInstructions`). Registers, stack, and hex dump are unchanged in this release — they continue to refresh on every step via `OnDebugEvent`.
+
+### Step Out / Run to Cursor — Suspend-Path Fix
+
+- **`StepOut` and `RunToCursor` did not work from a suspend-path stop (entry-point break).** The native-64-bit branch of both methods called `StartDebugListener()` + `ContinueDebugEvent(...)`, which only wakes a thread that is already blocked inside `KfReportAndBlock`. After an entry-point stop via the `EB FE` spin loop the thread is physically suspended through `SuspendThread` (`_isPausedViaSuspend == true`); `Continue` does nothing — the thread never reaches the temp BP, and the `WAIT_DEBUG_EVENT` IRP hangs forever. Both methods now use the same branch already present in `Run` (lines ~3091–3106): when `_isPausedViaSuspend && !Is32Bit`, after the temp BP is installed they call `ResumeThread` instead of `ContinueDebugEvent` and clear `_isPausedViaSuspend`. The thread is then released by the scheduler, hits the BP, goes through the hook → `KfReportAndBlock` → listener → `OnDebugEvent` as usual. After the first hit subsequent commands (StepIn, StepOut, RunToCursor, Run) fall back to the normal `Continue` path.
+
+### Notes
+
+- **No driver changes in this release.** All edits are in `src/ui/Controls/DisasmView.xaml.cs`, `src/ui/ViewModels/MainViewModel.cs`, and `src/ui/MainWindow.xaml.cs`. `KernelFlirt.sys` is binary-identical to v2.0.0.
+- Registers (`Registers.ReplaceAll`), stack (`RefreshStack`), hex dump (`HexData` when `HexAddress` is set), and plugin filters are unchanged: every step still pushes fresh values through `OnDebugEvent`.
+
 ## v2.0.0 — 2026-04-27
 
 ### Stepping Regression Fix (CRITICAL)

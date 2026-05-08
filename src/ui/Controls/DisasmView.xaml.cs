@@ -388,6 +388,92 @@ public partial class DisasmView : UserControl
         Dispatcher.InvokeAsync(DrawJumpArrows, System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
+    /// <summary>
+    /// Быстрая перерисовка маркеров (RIP-cursor + BP) без пересоздания
+    /// Border/TextBlock/MnemonicCell — используется fast-path в RefreshDisassembly
+    /// и при удалении временного BP (Run to Cursor) когда новый RIP попадает
+    /// в уже отрисованное окно. Шаг, переход через инструкцию (Skip) и Run to
+    /// Cursor работают без сетевого чтения, без дизассемблирования и без rebuild Items.
+    /// </summary>
+    public void UpdateCurrentLine(ulong? newRip)
+    {
+        if (_instructions == null) return;
+        _currentRip = newRip;
+
+        int newRipIdx = -1;
+        for (int i = 0; i < InstructionList.Items.Count && i < _instructions.Count; i++)
+        {
+            if (InstructionList.Items[i] is not Border border) continue;
+            var instr = _instructions[i];
+            bool isCur = newRip.HasValue && instr.Address == newRip.Value;
+
+            // Точно та же логика что и в CreateInstructionLine — bgBrush.
+            Brush bg;
+            if (isCur)
+                bg = CurrentLineColor;
+            else if (instr.HasBreakpoint)
+                bg = BpLineColor;
+            else
+                bg = Brushes.Transparent;
+
+            if (!ReferenceEquals(border.Background, bg))
+                border.Background = bg;
+
+            // Обновим BP-маркер «●» в колонке 0 — нужно для случая когда
+            // RunToCursor удалил temp BP, или пользователь поставил/снял
+            // BP в видимом окне. Без этого пришлось бы делать полный refresh.
+            if (border.Child is Grid grid)
+            {
+                foreach (var ch in grid.Children)
+                {
+                    if (ch is Border cellBorder &&
+                        Grid.GetColumn(cellBorder) == 0 &&
+                        cellBorder.Child is TextBlock bpTb)
+                    {
+                        bool hasMarker = bpTb.Inlines.Count > 0;
+                        if (instr.HasBreakpoint && !hasMarker)
+                        {
+                            bpTb.Inlines.Add(new Run("●")
+                            { Foreground = BpMarkerColor, FontWeight = FontWeights.Bold });
+                        }
+                        else if (!instr.HasBreakpoint && hasMarker)
+                        {
+                            bpTb.Inlines.Clear();
+                        }
+                        break;
+                    }
+                }
+            }
+
+            if (isCur) newRipIdx = i;
+        }
+
+        // Авто-скролл к новому RIP, если он за пределами видимой области
+        if (newRipIdx >= 0)
+        {
+            int idx = newRipIdx;
+            Dispatcher.InvokeAsync(() =>
+            {
+                if (idx < InstructionList.Items.Count &&
+                    InstructionList.Items[idx] is Border ripBorder)
+                {
+                    var pos = ripBorder.TranslatePoint(new Point(0, 0), ScrollArea);
+                    double y = pos.Y;
+                    double h = ripBorder.ActualHeight;
+                    double viewH = ScrollArea.ViewportHeight;
+                    // Скроллим только если строка не видна — чтобы не дёргать вид при каждом шаге
+                    if (y < 0 || y + h > viewH)
+                    {
+                        ScrollArea.ScrollToVerticalOffset(ScrollArea.VerticalOffset + y);
+                    }
+                }
+            }, System.Windows.Threading.DispatcherPriority.Loaded);
+        }
+
+        // Стрелки переходов зависят от RIP (highlight «taken») — перерисуем
+        Dispatcher.InvokeAsync(DrawJumpArrows, System.Windows.Threading.DispatcherPriority.Loaded);
+    }
+
     /// <summary>Append instructions to the bottom of the view (called by scroll-down loading).</summary>
     public void AppendInstructions(IReadOnlyList<Instruction> newInstrs)
     {
