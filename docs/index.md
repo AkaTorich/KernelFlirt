@@ -39,6 +39,14 @@ KernelFlirt.exe → Connect → VM IP
 |----------|----|----|
 | **SDK & Plugin Development** | [SDK-en.md](SDK-en.md) | [SDK-ru.md](SDK-ru.md) |
 | **C# Scripting Reference** | [scripting-reference-en.md](scripting-reference-en.md) | [scripting-reference-ru.md](scripting-reference-ru.md) |
+| **CLI (KfConsole)** | [cli.md](cli.md) | — |
+
+## Console Front-End
+
+Don't want the WPF UI? `KfConsole.exe` (in `bin\Console\`) is a WinDbg/x64dbg-style REPL
+over the same driver. ANSI colors, dbghelp-resolved symbols, expression parser
+(`bp ntdll!NtCreateFile if rcx!=0`), conditional breakpoints, anti-debug primitives,
+Step Into/Over/Out, and full WoW64 support. See [cli.md](cli.md) for the command reference.
 
 ## Links
 

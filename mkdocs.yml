@@ -55,6 +55,7 @@ nav:
     - Features: features.md
     - Keyboard Shortcuts: shortcuts.md
     - Command Console: cmd_commands.md
+    - KfConsole (CLI): cli.md
     - Themes: themes.md
     - Plugins: plugins.md
     - Navigation Bar: navbar.md

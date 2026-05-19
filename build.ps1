@@ -39,11 +39,12 @@ foreach ($p in $extraPaths) {
 }
 
 $Root = $PSScriptRoot
-$BinDir    = Join-Path $Root "bin"
-$BinUI     = Join-Path $BinDir "UI"
-$BinDriver = Join-Path $BinDir "Driver"
-$BinLoader = Join-Path $BinDir "Loader"
-$BinRelay  = Join-Path $BinDir "Relay"
+$BinDir     = Join-Path $Root "bin"
+$BinUI      = Join-Path $BinDir "UI"
+$BinDriver  = Join-Path $BinDir "Driver"
+$BinLoader  = Join-Path $BinDir "Loader"
+$BinRelay   = Join-Path $BinDir "Relay"
+$BinConsole = Join-Path $BinDir "Console"
 
 # ── Clean ─────────────────────────────────────────────────────────────────────
 
@@ -57,7 +58,7 @@ if ($Clean) {
 
 # ── Create output dirs ──────────────────────────────────────────────────────
 
-foreach ($d in @($BinUI, $BinDriver, $BinLoader, $BinRelay)) {
+foreach ($d in @($BinUI, $BinDriver, $BinLoader, $BinRelay, $BinConsole)) {
     if (!(Test-Path $d)) { New-Item -ItemType Directory -Path $d -Force | Out-Null }
 }
 
@@ -276,6 +277,32 @@ if (Test-Path $kdSrc) {
     Write-Host "  -> bin\UI\dbgeng DLLs (symbol engine)" -ForegroundColor DarkGreen
 }
 
+# ── Build Console (KfConsole) ───────────────────────────────────────────────
+
+if (!$UIOnly) {
+    Write-Host "`nBuilding Console ($Configuration) ..." -ForegroundColor Green
+    $cliProj = Join-Path $Root "src\cli\KfConsole.csproj"
+    & dotnet publish $cliProj `
+        -c $Configuration `
+        -o $BinConsole `
+        --nologo `
+        -v minimal
+    if ($LASTEXITCODE -ne 0) { throw "Console build failed." }
+    Write-Host "  -> bin\Console\KfConsole.exe" -ForegroundColor DarkGreen
+
+    # Свежие dbghelp.dll + symsrv.dll нужны для скачивания PDB с msdl.
+    # Системные версии в System32 часто без symsrv'a и SymFindFileInPathW тихо
+    # отказывается качать. UI делает то же самое для своего bin\UI.
+    $kdSrc = Join-Path $Root "KD"
+    if (Test-Path $kdSrc)
+    {
+        foreach ($dll in Get-ChildItem "$kdSrc\*.dll") {
+            Copy-Item $dll.FullName $BinConsole -Force
+        }
+        Write-Host "  -> bin\Console\dbgeng DLLs (symbol engine)" -ForegroundColor DarkGreen
+    }
+}
+
 # ── Sign Drivers ─────────────────────────────────────────────────────────────
 
 $driversToSign = @()
@@ -383,10 +410,12 @@ Write-Host "  bin\Driver\      KernelFlirt.sys"
 Write-Host "  bin\Loader\      KfLoader.exe"
 Write-Host "  bin\Relay\       KfRelay.exe"
 Write-Host "  bin\UI\          KernelFlirt.exe"
+Write-Host "  bin\Console\     KfConsole.exe"
 Write-Host ""
 Write-Host "Usage:" -ForegroundColor Yellow
 Write-Host "  1. On VM: KfLoader.exe load"
 Write-Host "  2. On VM: KfRelay.exe (listens on port 31337)"
-Write-Host "  3. On Host: KernelFlirt.exe -> Connect -> vm_ip:31337"
-Write-Host "  -- OR local: KernelFlirt.exe -> Connect -> (blank for local driver)"
+Write-Host "  3. On Host (GUI):     KernelFlirt.exe -> Connect -> vm_ip:31337"
+Write-Host "     On Host (console): KfConsole.exe vm_ip:31337"
+Write-Host "  -- OR local: KernelFlirt.exe / KfConsole.exe local"
 Write-Host ""

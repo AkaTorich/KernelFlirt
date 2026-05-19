@@ -13,6 +13,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "KernelFlirt.Loader", "src\l
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "KernelFlirt.Relay", "src\relay\relay.vcxproj", "{D3E4F5A6-B7C8-9012-DEFA-345678901234}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KfConsole", "src\cli\KfConsole.csproj", "{E5F6A7B8-C9D0-1234-EFAB-456789012345}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -39,5 +41,9 @@ Global
 		{F1A2B3C4-D5E6-7890-ABCD-123456789DEF}.Debug|x64.Build.0 = Debug|Any CPU
 		{F1A2B3C4-D5E6-7890-ABCD-123456789DEF}.Release|x64.ActiveCfg = Release|Any CPU
 		{F1A2B3C4-D5E6-7890-ABCD-123456789DEF}.Release|x64.Build.0 = Release|Any CPU
+		{E5F6A7B8-C9D0-1234-EFAB-456789012345}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{E5F6A7B8-C9D0-1234-EFAB-456789012345}.Debug|x64.Build.0 = Debug|Any CPU
+		{E5F6A7B8-C9D0-1234-EFAB-456789012345}.Release|x64.ActiveCfg = Release|Any CPU
+		{E5F6A7B8-C9D0-1234-EFAB-456789012345}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

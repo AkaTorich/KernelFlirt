@@ -1,5 +1,78 @@
 # Changelog
 
+## v2.2.0 — 2026-05-20
+
+### New Front-End: KfConsole
+
+- **`KfConsole.exe` — a WinDbg/x64dbg-style console debugger** for the KernelFlirt driver. New project under `src/cli/`, ~2500 lines across `Program.cs`, `KfClient.cs`, `KfStructs.cs`, `Disasm.cs`, `Expr.cs`, `Symbols.cs`, `Ansi.cs`. Output goes to `bin\Console\KfConsole.exe`; `dotnet publish` (and `build.ps1`) copy `dbghelp.dll` + `symsrv.dll` + friends from `KD/` next to the EXE via `<Content>` items in the `.csproj` so PDB downloads from `msdl.microsoft.com` work out of the box.
+- **REPL** with WinDbg-style prompt that shows live target state — PID, TID, arch (`x64`/`x86`), and status (`brk`/`run`). Connects either locally (`KfConsole.exe local` → opens `\\.\KernelFlirt`) or to a relay (`KfConsole.exe <host>[:<port>]`, default port 31337).
+- **All major debugger flows** ported from the UI: `open` (relay-side `CreateProcess` + `EB FE`-patch + entry stop), `attach <pid>` (auto-detects WoW64 via `Peb32Address`), `detach`, `reset`.
+- **25+ commands** covering registers (`r`/`r <name>`/`r <name>=<expr>`), memory (`d`, `dq`, `u`, `e`), breakpoints (`bp`, `bp ... if <cond>`, `bl`, `bc`), execution (`g`, `t`, `p`, `o`, `ss`, `wait`, `interrupt`), process inspection (`procs`, `mods`, `threads`, `tid`), anti-debug primitives (`ad clr_debug_port`, `ad clr_thread_hide`, `ad ntqsi on|off`, `ad spoof on|off`), and misc (`color`, `help`, `q`). Full reference in [docs/cli.md](docs/cli.md).
+
+### Expression Evaluator
+
+- **WinDbg-style expression parser** (`src/cli/Expr.cs`) accepted by every command that takes an address: hex literals (`0x...`, `1234h`, bare hex), registers (`rip`, `rsp+8`, `eax`, `r10`, full 64-bit and 32-bit aliases), symbols (`ntdll!NtCreateFile`, `module!Name`), pointer dereference (`[rsp]`, `[rax+8]`, `[rip+0x1234]`), arithmetic (`+ - * /`, parentheses, `<<`, `>>`, `&`, `|`, `^`). Numbers default to hex.
+- **Conditional breakpoints**: `bp ntdll!NtCreateFile if rcx!=0`. After each hit the CLI evaluates the expression with the freshly-arrived register snapshot; if the result is 0, the thread is silently released via `ContinueDebugEvent(Run)` and no event is shown to the user.
+
+### Symbol Resolution
+
+- **dbghelp-based symbol service** (`src/cli/Symbols.cs`) ported from the UI's `Symbols.cs`. On `open`/`attach`, every loaded module is processed: the driver reads the target's PE-header via `IOCTL_KF_READ_MEMORY`, the CLI parses the Debug Directory and extracts the RSDS GUID + Age + PDB name, then `SymFindFileInPathW` locates the PDB locally or downloads it via the symbol server. `SymLoadModuleExW` is called with the resolved PDB path, and `SymGetModuleInfoW64` verifies that `SymType == Pdb` — strictly. No `module+offset` fallbacks: if a PDB is missing, that module simply produces no annotations rather than fake placeholder labels.
+- **Disassembly with symbol annotations** — each `call`/`jmp`/`jcc` whose target resolves to a known symbol gets a green `; module!func` tail in the line. The current RIP is highlighted with a red `►`. Live symbol lookup also annotates qword dumps (`dq`), thread start addresses (`threads`), and breakpoint listings (`bl`).
+- **`Iced.Intel`** is the underlying decoder; the same library backs the UI's disassembly view, so opcode parsing is consistent between GUI and CLI. The CLI uses `NasmFormatter` by default; can be swapped to `IntelFormatter`/`MasmFormatter` in `Disasm.cs` with a one-line change.
+
+### Anti-Debug Primitives
+
+- New commands route to the existing driver IOCTLs that originally backed the UI's Anti-Debug menu:
+  - `ad clr_debug_port` → `IOCTL_KF_CLEAR_DEBUG_PORT` (zero `EPROCESS.DebugPort`).
+  - `ad clr_thread_hide` → `IOCTL_KF_CLEAR_THREAD_HIDE` (clear `HideFromDebugger` on every thread of the target).
+  - `ad ntqsi on|off` → `IOCTL_KF_INSTALL_NTQSI_HOOK` / `IOCTL_KF_REMOVE_NTQSI_HOOK` (spoof `SystemKernelDebuggerInformation` class 0x23).
+  - `ad spoof on|off` → `IOCTL_KF_SPOOF_SHARED_DATA` (toggle `KUSER_SHARED_DATA.KdDebuggerEnabled` spoofing while keeping the kernel variable `TRUE` for `KdTrap`).
+
+### Stepping
+
+- **Native x64 Step Into/Over/Out** through the standard `ContinueDebugEvent` path when the thread is parked in `KfReportAndBlock`.
+- **Native x64 suspend-path** (right after `open` when the thread sits on entry through `SuspendThread`): Step Into uses `IOCTL_KF_SINGLE_STEP` + `ResumeThread` to set TF in `KTRAP_FRAME` and release the thread; the resulting `STATUS_SINGLE_STEP` is caught by the background event listener.
+- **WoW64 (x86)** — full parity with the UI's `Wow64SpinStep` ported. `t`/`p`/`o` all use the `EB FE` spin-trap mechanism since the KdTrap hook doesn't catch 32-bit exceptions. The current instruction is decoded with Iced (32-bit decoder), `[ip + size]` plus optional `jcc` branch target is used as the spin-trap landing set, EIP is polled across all threads of the process, byes are restored once a target lands.
+- **Step Over** computes targets from `FlowControl`: `Next`/`Call`/indirect → `[ip + size]`; `ConditionalBranch` → `[ip + size, branch_target]`; unconditional `jmp` → `[branch_target]`.
+- **Step Out** reads the return address from `[rsp]` (8 bytes) on x64 or `[esp]` (4 bytes) on WoW64.
+- **Unified temp-BP model** for x64: each Step Over/Out places `BpRec` entries with `IsTemp = true` (visible in `bl` with `[temp]` tag). `OnDebugEvent` calls `ClearTempBreakpoints()` before user-visible processing, which removes them from both the driver and the local list. The same cleanup happens on the suspend-state path through `ReportSuspendStop`. WoW64 doesn't create temp records in `Sess.Breakpoints` at all — `Wow64SpinStep` restores bytes in place once the spin-trap is hit.
+
+### TrapFrame Reliability
+
+- **TrapFrame keeper thread** — every 2 seconds while the target is in suspend-state, `KfClient.ReadRegisters` is called silently on the current TID. This forces kernel-MM to touch the thread's kernel stack via `MmIsAddressValid`, preventing it from being paged out during a long idle on the prompt. Without it, `IOCTL_KF_SINGLE_STEP` and `IOCTL_KF_READ_REGISTERS` would intermittently return `STATUS_UNSUCCESSFUL` after a minute or two — the driver's `MmIsAddressValid` check fails because Windows pages out kernel stacks of long-suspended threads. Keeper stops on `detach` / `disconnect` / `quit`.
+- **Retry policy** in `KfClient.ReadRegisters` / `WriteRegisters` / `SingleStep`: up to 5 attempts with 50ms delay between them. Catches transient page-out cases that the keeper occasionally misses (e.g. very first call right after entry stop).
+- **Auto-`ReadRegisters` after `open`** — fills `Sess.LastRegs` immediately so the expression parser knows `rip`/`rsp`/etc. for the first command, and primes the TrapFrame page so subsequent IOCTLs succeed on the first try.
+
+### Memory Write & Inline Edit
+
+- **`e <addr> <hex bytes>`** — writes arbitrary bytes through the driver's `IOCTL_KF_WRITE_MEMORY`. Accepts either space-separated (`e 401570 90 90 c3`) or solid (`e 401570 9090c3`) hex. Works on RX `.text` pages via the same MDL-based path used by software BPs.
+
+### Readline & History
+
+- **`ReadLine.Reboot` 3.4.1** integrated for interactive line editing: `↑` / `↓` browse history, `Ctrl+R` reverse search, `Tab` completes commands by prefix from the built-in vocabulary, full emacs bindings (`Ctrl+A`/`E`/`K`/`W`). History persists across sessions in `%APPDATA%\KernelFlirt\history.txt`.
+- **Pipe / redirect detection**: when `Console.IsInputRedirected == true`, the REPL falls back to plain `Console.ReadLine` so batch input (`type cmds.txt | KfConsole.exe`) works correctly.
+
+### ANSI Coloring
+
+- **Custom Iced output colorizer** (`src/cli/Ansi.cs`) — opcodes split by category (regular mnemonics blue, control-flow magenta), registers cyan, immediates orange, address column gray, symbol annotations yellow. RIP row marked with a red `►`.
+- **Color across the whole CLI**: prompt (PID/TID cyan, state red/green, arch yellow), `r` (cyan names + orange values), `d` (gray addr + orange hex + green ASCII), `dq` (with yellow symbol if address resolves), `mods` / `procs` / `threads` (yellow names, cyan IDs), `bl` (red `[handle]` + magenta `if` + green expression), event banners (magenta `BP`/`STEP`/red `AV` + yellow symbol + cyan PID/TID), success/error markers (`✓`/`✗`).
+- **`color [on|off]`** toggle. On by default, even when stdout is redirected — VT processing is enabled explicitly via `SetConsoleMode(ENABLE_VIRTUAL_TERMINAL_PROCESSING)` so it works on legacy consoles.
+
+### Structures & Layout Fix
+
+- **`KF_PROCESS_ENTRY` / `KF_MODULE_ENTRY` name reading** rewritten. The original `fixed char Name[260]` field in `unsafe struct` with `Pack = 1` produced a broken layout on the MSVC C# compiler — `p[1]` would read the second byte of the first UTF-16 character (always `0x00` for ASCII), and `GetName()` truncated every name to one character. Both structs now use `Pack = 8, Size = N` with explicit `NameOffset`/`NameMaxChars` constants, and `KfClient` reads the wide string with `Encoding.Unicode.GetString(buf, offset, length)` directly from the IOCTL response buffer. `EnumProcesses` and `EnumModules` return new `ProcEntry`/`ModEntry` records with pre-parsed `Name`.
+
+### Solution & Build Integration
+
+- `KernelFlirt.sln` updated with a `KfConsole` project entry.
+- `build.ps1` builds the CLI alongside the rest of the suite (gated by `!$UIOnly`, so `-UIOnly` skips it the same way it skips driver/relay).
+- Final `bin\Console\` layout: `KfConsole.exe`, `KfConsole.dll`, `Iced.dll`, `ReadLine.Reboot.dll`, plus the bundled `dbghelp.dll` + `symsrv.dll` + `dbgcore.dll` + `srcsrv.dll` + `DbgModel.dll` from `KD/`.
+
+### Documentation
+
+- New page [docs/cli.md](docs/cli.md) — full command reference, prompt syntax, symbol resolution flow, color palette, readline keys, worked example, known limitations.
+- [docs/index.md](docs/index.md) and `mkdocs.yml` cross-link to the new page under User Guide.
+
 ## v2.1.0 — 2026-04-27
 
 ### Disassembly View — Stepping Latency
