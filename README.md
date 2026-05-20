@@ -24,6 +24,7 @@ Windows kernel-level debugger with an OllyDbg/IDA Pro-style interface. Designed 
 | **KernelFlirt.sys** | C / WDM | Kernel driver — memory, breakpoints, KdTrap inline hook |
 | **KfRelay.exe** | C | TCP relay on VM, proxies IOCTLs over network |
 | **KfLoader.exe** | C | CLI to load/unload the driver via SCM |
+| **KfConsole.exe** | C# / .NET 9 | Console debugger — WinDbg/x64dbg-style REPL over the same driver |
 | **KernelFlirt.SDK** | C# / .NET 9 | Plugin SDK — full debugger API for extensions |
 
 ## Quick Start
@@ -43,6 +44,36 @@ KernelFlirt.exe → Connect → VM IP
 4. Set breakpoints, step through code, inspect memory and registers
 
 Kernel driver debugging: open **Kernel Modules** tab, find your driver, set breakpoints on any function — user-mode and kernel-mode.
+
+## Console Front-End (KfConsole)
+
+Don't need the WPF UI? `KfConsole.exe` (in `bin\Console\`) is a WinDbg/x64dbg-style REPL
+over the same driver and relay.
+
+```text
+kf> connect 10.100.102.6:31337
+✓ connected (10.100.102.6:31337), driver v0x10000
+
+kf*> open C:\Temp\target.exe
+✓ created PID=8424 TID=10136 ImageBase=00007FF7`2EA10000 (x64)
+symbols: 3/4 modules loaded
+
+kf(8424:10136/x64/brk)> bp ntdll!NtCreateFile if rcx!=0
+✓ bp [1] 00007FFF`BBF8E030  ntdll!NtCreateFile  if rcx!=0
+
+kf(8424:10136/x64/brk)> g
+*** BP at 00007FFF`BBF8E030  ntdll!NtCreateFile
+
+kf(8424:10136/x64/brk)> u rip 5
+►  00007FFF`BBF8E030  4c 8b d1  mov r10, rcx  ntdll!NtCreateFile
+```
+
+**Highlights:** x64 + WoW64 (x86) targets, PDB symbol resolution via Microsoft Symbol Server,
+expression evaluator (`rsp+8`, `[rsp]`, `module!func`), conditional breakpoints,
+Step Into / Step Over / Step Out, anti-debug primitives, ANSI-colored output,
+readline with persistent history.
+
+Full command reference: [docs/cli.md](docs/cli.md)
 
 ## Features
 
@@ -124,6 +155,7 @@ All plugins share a common SDK with access to memory, breakpoints, symbols, UI, 
 |----------|----|----|
 | **SDK & Plugin Development** | [SDK-en.md](docs/SDK-en.md) | [SDK-ru.md](docs/SDK-ru.md) |
 | **C# Scripting Reference** | [scripting-reference-en.md](docs/scripting-reference-en.md) | [scripting-reference-ru.md](docs/scripting-reference-ru.md) |
+| **CLI (KfConsole)** | [cli.md](docs/cli.md) | — |
 | **Changelog** | [CHANGELOG.md](CHANGELOG.md) | |
 
 ### SDK (~55 pages)
@@ -141,7 +173,7 @@ C# REPL scripting guide: all shortcuts and API methods with parameters, 12 data 
 .\build.ps1 -Configuration Debug     # Debug
 ```
 
-Output: `bin/Driver/`, `bin/Loader/`, `bin/Relay/`, `bin/UI/` (+ plugins + themes)
+Output: `bin/Driver/`, `bin/Loader/`, `bin/Relay/`, `bin/UI/` (+ plugins + themes), `bin/Console/`
 
 ## Safety
 

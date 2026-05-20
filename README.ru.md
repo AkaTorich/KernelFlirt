@@ -24,6 +24,7 @@
 | **KernelFlirt.sys** | C / WDM | Драйвер ядра — память, брейкпоинты, inline hook на KdTrap |
 | **KfRelay.exe** | C | TCP relay на VM, проксирует IOCTL по сети |
 | **KfLoader.exe** | C | CLI для загрузки/выгрузки драйвера через SCM |
+| **KfConsole.exe** | C# / .NET 9 | Консольный отладчик — REPL в стиле WinDbg/x64dbg поверх того же драйвера |
 | **KernelFlirt.SDK** | C# / .NET 9 | SDK плагинов — полный API отладчика для расширений |
 
 ## Быстрый старт
@@ -43,6 +44,36 @@ KernelFlirt.exe → Connect → IP виртуальной машины
 4. Ставьте брейкпоинты, пошагово выполняйте, инспектируйте память и регистры
 
 Отладка драйверов: вкладка **Kernel Modules**, найдите драйвер, ставьте брейкпоинты на любые функции — user-mode и kernel-mode.
+
+## Консольный отладчик (KfConsole)
+
+Не нужен WPF-интерфейс? `KfConsole.exe` (в `bin\Console\`) — REPL в стиле WinDbg/x64dbg
+поверх того же драйвера и relay.
+
+```text
+kf> connect 10.100.102.6:31337
+✓ connected (10.100.102.6:31337), driver v0x10000
+
+kf*> open C:\Temp\target.exe
+✓ created PID=8424 TID=10136 ImageBase=00007FF7`2EA10000 (x64)
+symbols: 3/4 modules loaded
+
+kf(8424:10136/x64/brk)> bp ntdll!NtCreateFile if rcx!=0
+✓ bp [1] 00007FFF`BBF8E030  ntdll!NtCreateFile  if rcx!=0
+
+kf(8424:10136/x64/brk)> g
+*** BP at 00007FFF`BBF8E030  ntdll!NtCreateFile
+
+kf(8424:10136/x64/brk)> u rip 5
+►  00007FFF`BBF8E030  4c 8b d1  mov r10, rcx  ntdll!NtCreateFile
+```
+
+**Возможности:** x64 + WoW64 (x86), разрешение PDB-символов через Microsoft Symbol Server,
+вычислитель выражений (`rsp+8`, `[rsp]`, `module!func`), условные точки останова,
+Step Into / Step Over / Step Out, средства обхода антиотладки, цветной вывод (ANSI),
+readline с сохранением истории между сессиями.
+
+Полный справочник команд: [docs/cli.md](docs/cli.md)
 
 ## Возможности
 
@@ -127,7 +158,7 @@ KernelFlirt.exe → Connect → IP виртуальной машины
 .\build.ps1 -Configuration Debug     # Debug
 ```
 
-Результат: `bin/Driver/`, `bin/Loader/`, `bin/Relay/`, `bin/UI/` (+ plugins + themes)
+Результат: `bin/Driver/`, `bin/Loader/`, `bin/Relay/`, `bin/UI/` (+ plugins + themes), `bin/Console/`
 
 ## Безопасность
 
