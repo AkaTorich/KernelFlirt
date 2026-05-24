@@ -1,5 +1,73 @@
 # Changelog
 
+## v2.3.0 — 2026-05-24
+
+### KfConsole — New Commands
+
+#### Hardware & Memory Breakpoints
+
+- **`ba <e|r|w><len> <addr>`** — hardware breakpoints / watchpoints via DR0-3. The driver's
+  `IOCTL_KF_SET_BREAKPOINT` already accepted a `Type` (`KF_BP_HARDWARE`/`HW_WRITE`/`HW_READWRITE`)
+  and a `Length` field; the CLI previously always sent `0` (software INT3). Mode `e` = execute,
+  `w` = write watchpoint, `r` = read/write watchpoint; `len ∈ {1,2,4,8}`. Example: `ba w4 401000`.
+- **`bm <addr> [size]`** — memory breakpoint (`KF_BP_MEMORY`, PAGE_GUARD-backed).
+- **`bl` now tags each entry with its kind** (`<hw-e>`, `<hw-w>`, `<hw-rw>`, `<mem>`); software
+  BPs stay untagged. `BpRec` gained a `Kind` field.
+- The C# mirror struct `KF_SET_BP_IN.Reserved` was renamed to `Length` to match `kf_shared.h`,
+  and `KfClient.SetBreakpoint` gained an optional `length` parameter.
+
+#### Typed Memory Dumps & Strings
+
+- **`dd` / `dw`** — DWORD / WORD dumps (4 per row / 8 per row).
+- **`dp`** — pointer-sized dump (4 bytes on WoW64, 8 on x64) with symbol resolution per value.
+- **`da` / `du`** — ASCII / UTF-16 string dump, stopping at NUL or the requested count.
+
+#### Memory Search
+
+- **`s <addr> <len> <pattern>`** — byte-pattern search over a region read with
+  `IOCTL_KF_READ_MEMORY`. Patterns: hex bytes with `??` wildcards (`s 401000 1000 48 8b ?? c3`),
+  quoted ASCII (`"MZ"`), or `L"unicode"`. Caps at 4 MB per call and 256 reported hits.
+
+#### Memory Allocation & Protection
+
+- **`.alloc <size> [prot]`** → `IOCTL_KF_ALLOC_MEMORY` (returns the new base address).
+- **`.free <addr>`** → `IOCTL_KF_FREE_MEMORY`.
+- **`.protect <addr> <size> <prot>`** → `IOCTL_KF_PROTECT_MEMORY` (prints the old protection).
+- Protection accepts mnemonics (`rwx`, `rw`, `rx`, `r`/`ro`, `na`, `x`) or a raw hex value.
+
+#### Execution & Inspection
+
+- **`g <addr>`** — run-to-cursor: installs a temporary software BP at the target and continues,
+  auto-removed in `OnDebugEvent` like Step Over/Out temps. (WoW64 prints a hint to use `bp` + `g`,
+  since the KdTrap hook doesn't catch 32-bit exceptions.)
+- **`k [frames]`** — call stack via frame-pointer (RBP/EBP) unwinding with symbol resolution.
+  Accurate for classic prologues; approximate under FPO/leaf functions (a limitation of the
+  method, not the driver).
+- **`kmods`** — kernel module list (`IOCTL_KF_ENUM_KERNEL_MODULES`); new `KF_KERNEL_MODULE_ENTRY`
+  mirror struct (ANSI names) and `KfClient.EnumKernelModules`.
+- **`!peb`** — parses the target PEB (`IOCTL_KF_GET_PEB_ADDRESS` + memory read): `BeingDebugged`
+  (red when set), `ImageBaseAddress`, `Ldr`, `ProcessParameters`, `NtGlobalFlag`. Picks the
+  32-bit PEB layout for WoW64 targets, 64-bit otherwise.
+- **`stats`** — inline-hook diagnostics (`IOCTL_KF_GET_HOOK_STATS`): call/BP/step counters,
+  `KiDebugRoutine` addr/orig/now, `KdpStub`/`KdTrap` addresses, trace counters. New
+  `KF_HOOK_STATS_OUT` mirror struct.
+- **`suspend [tid]` / `resume [tid]`** — explicit `IOCTL_KF_SUSPEND_THREAD` / `RESUME_THREAD`
+  (default to the current TID).
+
+#### Coloring & Help
+
+- All new commands emit colored output through the shared `Ansi` layer (gray addresses, orange
+  values/bytes, yellow symbols, blue BP-kind tags, green/red status markers). Field labels in
+  `!peb` and `stats` are cyan, matching register names in `r`. Everything still honors `color off`.
+- `help` text and Tab-completion vocabulary updated with all new commands.
+
+#### Not Included (host-side, not driver-backed)
+
+- Symbol listing (`x module!pattern`) and `ln` rely purely on dbghelp, not a driver IOCTL.
+- Inline assembler would need an encoder, not the driver.
+- XMM/YMM registers — the driver's `KF_REGISTERS` only carries GPRs, segment selectors and
+  DR0-3/6/7, so SIMD state isn't available to expose.
+
 ## v2.2.0 — 2026-05-20
 
 ### New Front-End: KfConsole

@@ -254,10 +254,10 @@ internal sealed class KfClient : IDisposable
         return false;
     }
 
-    public uint? SetBreakpoint(uint pid, uint tid, ulong addr, uint type = 0)
+    public uint? SetBreakpoint(uint pid, uint tid, ulong addr, uint type = 0, uint length = 0)
     {
         var input = new KF_SET_BP_IN
-        { ProcessId = pid, ThreadId = tid, Address = addr, Type = type };
+        { ProcessId = pid, ThreadId = tid, Address = addr, Type = type, Length = length };
         var (ok, data) = SendIoctl(Ioctl.SET_BREAKPOINT, StructUtil.ToBytes(input), 4);
         if (!ok || data == null || data.Length < 4) return null;
         return BitConverter.ToUInt32(data, 0);
@@ -338,6 +338,73 @@ internal sealed class KfClient : IDisposable
             result.Add(new ModEntry(s.BaseAddress, s.Size, name));
         }
         return result;
+    }
+
+    public sealed record KModEntry(ulong Base, uint Size, ushort LoadOrder, string Name);
+
+    /// <summary>Список модулей ядра (ntoskrnl + драйверы). Вход не нужен.</summary>
+    public List<KModEntry> EnumKernelModules()
+    {
+        var result = new List<KModEntry>();
+        int entrySize = Marshal.SizeOf<KF_KERNEL_MODULE_ENTRY>();
+        var (ok, data) = SendIoctl(Ioctl.ENUM_KERNEL_MODULES, null, entrySize * 1024);
+        if (!ok || data == null) return result;
+        int count = data.Length / entrySize;
+        for (int i = 0; i < count; i++)
+        {
+            int off = i * entrySize;
+            var s = StructUtil.FromBytes<KF_KERNEL_MODULE_ENTRY>(data, off);
+            string name = ReadAnsiString(data, off + KF_KERNEL_MODULE_ENTRY.NameOffset,
+                                         KF_KERNEL_MODULE_ENTRY.NameMaxChars);
+            result.Add(new KModEntry(s.BaseAddress, s.Size, s.LoadOrderIndex, name));
+        }
+        return result;
+    }
+
+    /// <summary>Выделить память в адресном пространстве target. Возвращает базовый адрес.</summary>
+    public ulong? AllocMemory(uint pid, ulong size, uint protection)
+    {
+        var input = new KF_ALLOC_MEMORY_IN { ProcessId = pid, Size = size, Protection = protection };
+        var (ok, data) = SendIoctl(Ioctl.ALLOC_MEMORY, StructUtil.ToBytes(input), 8);
+        if (!ok || data == null || data.Length < 8) return null;
+        return BitConverter.ToUInt64(data, 0);
+    }
+
+    /// <summary>Освободить ранее выделенный регион (MEM_RELEASE).</summary>
+    public bool FreeMemory(uint pid, ulong addr)
+    {
+        var input = new KF_FREE_MEMORY_IN { ProcessId = pid, Address = addr };
+        var (ok, _) = SendIoctl(Ioctl.FREE_MEMORY, StructUtil.ToBytes(input), 0);
+        return ok;
+    }
+
+    /// <summary>Сменить защиту региона. Возвращает старое значение защиты.</summary>
+    public uint? ProtectMemory(uint pid, ulong addr, uint size, uint newProtection)
+    {
+        var input = new KF_PROTECT_MEMORY_IN
+        { ProcessId = pid, Address = addr, Size = size, NewProtection = newProtection };
+        var (ok, data) = SendIoctl(Ioctl.PROTECT_MEMORY, StructUtil.ToBytes(input),
+                                   Marshal.SizeOf<KF_PROTECT_MEMORY_OUT>());
+        if (!ok || data == null) return null;
+        return StructUtil.FromBytes<KF_PROTECT_MEMORY_OUT>(data).OldProtection;
+    }
+
+    /// <summary>Статистика inline-хука: счётчики событий, адреса KiDebugRoutine/KdTrap и т.п.</summary>
+    public KF_HOOK_STATS_OUT? GetHookStats()
+    {
+        var (ok, data) = SendIoctl(Ioctl.GET_HOOK_STATS, null, Marshal.SizeOf<KF_HOOK_STATS_OUT>());
+        if (!ok || data == null) return null;
+        return StructUtil.FromBytes<KF_HOOK_STATS_OUT>(data);
+    }
+
+    /// <summary>Читает ANSI-строку из <paramref name="buf"/> по смещению, останавливаясь
+    /// на NUL-байте или достигнув <paramref name="maxChars"/>.</summary>
+    private static string ReadAnsiString(byte[] buf, int offset, int maxChars)
+    {
+        int end = offset;
+        int hardLimit = Math.Min(offset + maxChars, buf.Length);
+        while (end < hardLimit && buf[end] != 0) end++;
+        return System.Text.Encoding.ASCII.GetString(buf, offset, end - offset);
     }
 
     /// <summary>Читает UTF-16 (LE) строку из <paramref name="buf"/> по смещению,

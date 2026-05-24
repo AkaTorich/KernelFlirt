@@ -57,8 +57,9 @@ internal static class Program
         public ulong   Addr;
         public bool    IsTemp;
         public string? Condition;
-        public BpRec(uint h, ulong a, bool temp = false, string? cond = null)
-        { Handle = h; Addr = a; IsTemp = temp; Condition = cond; }
+        public string  Kind;     // "sw" | "hw-e" | "hw-w" | "hw-rw" | "mem"
+        public BpRec(uint h, ulong a, bool temp = false, string? cond = null, string kind = "sw")
+        { Handle = h; Addr = a; IsTemp = temp; Condition = cond; Kind = kind; }
     }
 #pragma warning restore CS0649
 
@@ -173,11 +174,12 @@ internal static class Program
         {
             "help", "quit", "connect", "disconnect",
             "open", "attach", "detach", "reset",
-            "procs", "mods", "threads", "tid",
-            "r", "d", "dq", "u", "e",
-            "bp", "bl", "bc",
-            "g", "t", "p", "o", "ss", "wait", "interrupt",
-            "color", "ad",
+            "procs", "mods", "kmods", "threads", "tid",
+            "r", "d", "dq", "dd", "dw", "dp", "da", "du", "s", "u", "e",
+            ".alloc", ".free", ".protect",
+            "bp", "ba", "bm", "bl", "bc",
+            "g", "t", "p", "o", "ss", "k", "wait", "interrupt", "suspend", "resume",
+            "!peb", "stats", "color", "ad",
         };
         public string[] GetSuggestions(string text, int index)
         {
@@ -237,7 +239,13 @@ internal static class Program
 
             case "procs": case "ps": CmdProcs(); break;
             case "mods": CmdMods(); break;
+            case "kmods": CmdKmods(); break;
             case "threads": case "tt": CmdThreads(); break;
+            case "k": case "stack": CmdStack(rest); break;
+            case "suspend": CmdSuspend(rest); break;
+            case "resume": CmdResume(rest); break;
+            case "!peb": case "peb": CmdPeb(); break;
+            case "stats": CmdStats(); break;
             case "open": case "launch": CmdOpen(rest); break;
             case "attach": CmdAttach(rest); break;
             case "detach": CmdDetach(); break;
@@ -246,14 +254,25 @@ internal static class Program
             case "r": case "reg": CmdRegisters(rest); break;
             case "d": case "db": CmdDump(rest, byteMode: true); break;
             case "dq": CmdDump(rest, byteMode: false); break;
+            case "dd": CmdDumpUnits(rest, unit: 4); break;
+            case "dw": CmdDumpUnits(rest, unit: 2); break;
+            case "dp": CmdDumpPointers(rest); break;
+            case "da": CmdDumpString(rest, wide: false); break;
+            case "du": CmdDumpString(rest, wide: true); break;
+            case "s": case "search": CmdSearch(rest); break;
             case "u": case "dis": CmdDisasm(rest); break;
             case "e": case "eb": CmdEdit(rest); break;
+            case ".alloc": CmdAlloc(rest); break;
+            case ".free": CmdFree(rest); break;
+            case ".protect": CmdProtect(rest); break;
 
             case "bp": CmdBp(rest); break;
+            case "ba": CmdBpHw(rest); break;
+            case "bm": CmdBpMem(rest); break;
             case "bl": CmdBpList(); break;
             case "bc": CmdBpClear(rest); break;
 
-            case "g": case "run": case "go": CmdGo(); break;
+            case "g": case "run": case "go": CmdGo(rest); break;
             case "t": case "sti": CmdStepInto(); break;
             case "p": case "sto": CmdStepOver(); break;
             case "o": case "out": CmdStepOut(); break;
@@ -279,6 +298,7 @@ internal static class Program
   open <path-to-exe>              запустить процесс под отладкой
   procs                           список процессов
   mods                            список модулей текущего target
+  kmods                           список модулей ядра (ntoskrnl + драйверы)
   threads                         список потоков текущего target
   attach <pid>                    взять процесс под отладку
   detach                          отвязаться от текущего процесса
@@ -287,23 +307,39 @@ internal static class Program
   r                               показать все регистры
   r <name>                        показать регистр
   r <name>=<expr>                 установить регистр
-  d <addr> [count=64]             hex dump
+  d <addr> [count=64]             hex dump (байты)
   dq <addr> [count=8]             qword dump (8 байт по 16-сс)
+  dd <addr> [count=16]            dword dump
+  dw <addr> [count=32]            word dump
+  dp <addr> [count=8]             дамп указателей (+символы)
+  da <addr> [count=64]            ASCII-строка
+  du <addr> [count=64]            UTF-16-строка
+  s <addr> <len> <pattern>        поиск (hex c ?? | ""строка"" | L""unicode"")
   u <addr> [count=16]             дизассемблер
   e <addr> <hex bytes...>         запись в память (e 401570 90 90 c3)
+  .alloc <size> [prot=rwx]        выделить память в target
+  .free <addr>                    освободить память
+  .protect <addr> <size> <prot>   сменить защиту (rwx|rw|rx|r|ro|na|hex)
 
-  bp <addr>                       поставить SW BP
+  bp <addr> [if <cond>]           поставить SW BP (INT3)
+  ba <e|r|w><len> <addr>          аппаратный BP/watchpoint (DR0-3)
+  bm <addr> [size]                memory BP (PAGE_GUARD)
   bl                              список BP
   bc <addr | handle | all>        снять BP
 
-  g                               продолжить выполнение (run)
+  g [addr]                        продолжить (g <addr> = run to cursor)
   t                               step into (одна инструкция)
   p                               step over (через call/loop)
   o                               step out (до return-адреса)
   ss                              принудительный single step (TF)
+  k [frames]                      стек вызовов (по frame-pointer)
   wait                            ждать debug event
   interrupt                       suspend текущий поток
+  suspend [tid]                   приостановить поток
+  resume [tid]                    возобновить поток
 
+  !peb                            разбор PEB target'а
+  stats                           счётчики/адреса inline-хука
   tid <tid>                       выбрать поток (regs/step применяются к нему)
   color [on|off]                  ANSI-подсветка дизасма / hex-dump
 
@@ -410,6 +446,151 @@ internal static class Program
                             + $"start={Ansi.Wrap(Ansi.Gray, Fa(t.StartAddress))}  "
                             + $"state={Ansi.Wrap(Ansi.Dim, t.State.ToString())}  "
                             + $"prio={Ansi.Wrap(Ansi.Dim, t.Priority.ToString())}{tail}");
+        }
+    }
+
+    private static void CmdKmods()
+    {
+        if (!Require(Client.IsConnected, "не подключено")) return;
+        var mods = Client.EnumKernelModules();
+        if (mods.Count == 0) { Info("нет модулей ядра (или ENUM FAIL)"); return; }
+        Info($"{Num(mods.Count)} kernel modules:");
+        foreach (var m in mods.OrderBy(x => x.Base))
+            Console.WriteLine($"  {Ansi.Wrap(Ansi.Gray, FormatAddr(m.Base, false))}  "
+                            + $"size={Ansi.Wrap(Ansi.Orange, m.Size.ToString("X8"))}  "
+                            + Ansi.Wrap(Ansi.Yellow, m.Name));
+    }
+
+    private static void CmdSuspend(string arg)
+    {
+        if (!Require(Client.IsConnected, "не подключено")) return;
+        uint tid;
+        if (arg.Length == 0) { lock (Sess.Lock) tid = Sess.CurrentTid; }
+        else if (!uint.TryParse(arg, out tid)) { Print("usage: suspend [tid]"); return; }
+        if (!Require(tid != 0, "TID не задан")) return;
+        if (Client.SuspendThread(tid)) Ok($"{Kw("suspended")} TID {Pid(tid)}");
+        else Err("SuspendThread FAIL");
+    }
+
+    private static void CmdResume(string arg)
+    {
+        if (!Require(Client.IsConnected, "не подключено")) return;
+        uint tid;
+        if (arg.Length == 0) { lock (Sess.Lock) tid = Sess.CurrentTid; }
+        else if (!uint.TryParse(arg, out tid)) { Print("usage: resume [tid]"); return; }
+        if (!Require(tid != 0, "TID не задан")) return;
+        if (Client.ResumeThread(tid)) Ok($"{Kw("resumed")} TID {Pid(tid)}");
+        else Err("ResumeThread FAIL");
+    }
+
+    /// <summary>!peb — разбор PEB target'а (BeingDebugged, ImageBase, Ldr, NtGlobalFlag).</summary>
+    private static void CmdPeb()
+    {
+        if (!Require(Client.IsConnected, "не подключено")) return;
+        uint pid; bool is32; lock (Sess.Lock) { pid = Sess.TargetPid; is32 = Sess.Is32Bit; }
+        if (!Require(pid != 0, "target не задан")) return;
+
+        var peb = Client.GetPebAddress(pid);
+        if (peb == null) { Err("GetPebAddress FAIL"); return; }
+        // Для WoW64-target показываем 32-битный PEB, иначе 64-битный.
+        ulong pebAddr = is32 && peb.Value.Peb32 != 0 ? peb.Value.Peb32 : peb.Value.Peb64;
+        if (pebAddr == 0) { Err("PEB-адрес = 0"); return; }
+
+        // Смещения полей PEB различаются для 32- и 64-битной структуры.
+        int ptr = is32 ? 4 : 8;
+        int offBeingDbg = 2;
+        int offImageBase = is32 ? 0x08 : 0x10;
+        int offLdr       = is32 ? 0x0C : 0x18;
+        int offParams    = is32 ? 0x10 : 0x20;
+        int offNtGlobal  = is32 ? 0x68 : 0xBC;
+
+        uint readSize = (uint)(offNtGlobal + 4);
+        var data = Client.ReadMemory(pid, pebAddr, readSize);
+        if (data == null) { Err("ReadMemory(PEB) FAIL"); return; }
+
+        ulong RP(int off) => (ulong)(ptr == 4 ? BitConverter.ToUInt32(data, off) : BitConverter.ToUInt64(data, off));
+
+        // Метка поля: фиксированная ширина ДО окраски (escape-коды не учитываются в длину).
+        string L(string s) => Ansi.Wrap(Ansi.Cyan, s.PadRight(18));
+        Info($"PEB @ {Addr(pebAddr)} ({(is32 ? "32-bit" : "64-bit")}):");
+        byte beingDbg = data[offBeingDbg];
+        string dbgColor = beingDbg != 0 ? Ansi.Wrap(Ansi.Red, beingDbg.ToString()) : Ansi.Wrap(Ansi.Green, "0");
+        Console.WriteLine($"    {L("BeingDebugged")}= {dbgColor}");
+        Console.WriteLine($"    {L("ImageBaseAddress")}= {Addr(RP(offImageBase))}");
+        Console.WriteLine($"    {L("Ldr")}= {Addr(RP(offLdr))}");
+        Console.WriteLine($"    {L("ProcessParameters")}= {Addr(RP(offParams))}");
+        uint ntGlobal = BitConverter.ToUInt32(data, offNtGlobal);
+        Console.WriteLine($"    {L("NtGlobalFlag")}= {Ansi.Wrap(Ansi.Orange, "0x" + ntGlobal.ToString("X"))}");
+    }
+
+    /// <summary>stats — счётчики и адреса inline-хука (IOCTL_KF_GET_HOOK_STATS).</summary>
+    private static void CmdStats()
+    {
+        if (!Require(Client.IsConnected, "не подключено")) return;
+        var s = Client.GetHookStats();
+        if (s == null) { Err("GetHookStats FAIL"); return; }
+        var v = s.Value;
+        string N(uint x) => Ansi.Wrap(Ansi.Orange, x.ToString());
+        string A(ulong x) => Ansi.Wrap(Ansi.Gray, FormatAddr(x, false));
+        string L(string x) => Ansi.Wrap(Ansi.Cyan, x);   // метка поля
+        Info("hook stats:");
+        Console.WriteLine($"    {L("HookCalls")}={N(v.HookCallCount)}  {L("BpHit")}={N(v.BpHitCount)}  "
+                        + $"{L("BpNotFound")}={N(v.BpNotFoundCount)}  {L("Steps")}={N(v.StepCount)}");
+        Console.WriteLine($"    {L("TargetCalls")}={N(v.TargetCallCount)}  {L("ThreadBlocked")}={N(v.ThreadBlocked)}  "
+                        + $"{L("ContinueMode")}={N(v.ContinueMode)}");
+        Console.WriteLine($"    {L("KdDebuggerEnabled")}={N(v.KdDebuggerEnabled)}  {L("KdDebuggerNotPresent")}={N(v.KdDebuggerNotPresent)}");
+        Console.WriteLine($"    {L("KiDebugRoutine")}: addr={A(v.KiDebugRoutineAddr)} orig={A(v.KiDebugRoutineOrig)} now={A(v.KiDebugRoutineNow)}");
+        Console.WriteLine($"    {L("HookedFunc(KdpStub)")}={A(v.HookedFuncAddr)}  {L("KdTrap")}={A(v.KdTrapAddr)}");
+        Console.WriteLine($"    {L("LastTargetAddr")}={A(v.LastTargetAddr)}  {L("LastTargetCode")}={Ansi.Wrap(Ansi.Orange, "0x" + v.LastTargetCode.ToString("X8"))}");
+        if (v.TraceActive != 0 || v.TraceStepCount != 0)
+            Console.WriteLine($"    {L("trace")}: active={N(v.TraceActive)} steps={N(v.TraceStepCount)} "
+                            + $"av={N(v.TraceAvCount)} int3={N(v.TraceInt3Count)} unk={N(v.TraceUnkCount)}");
+    }
+
+    /// <summary>
+    /// k — стек вызовов через раскрутку по frame-pointer (RBP/EBP).
+    /// Точно для кода с классическим прологом (push rbp; mov rbp,rsp); при FPO/leaf
+    /// результат приблизительный — это ограничение метода, а не драйвера.
+    /// </summary>
+    private static void CmdStack(string arg)
+    {
+        if (!Require(Client.IsConnected, "не подключено")) return;
+        uint pid, tid; bool is32; lock (Sess.Lock) { pid = Sess.TargetPid; tid = Sess.CurrentTid; is32 = Sess.Is32Bit; }
+        if (!Require(pid != 0 && tid != 0, "target/TID не задан")) return;
+
+        int maxFrames = 64;
+        if (arg.Length > 0 && int.TryParse(arg, out int mf) && mf > 0) maxFrames = Math.Min(mf, 256);
+
+        var regs = Client.ReadRegisters(pid, tid);
+        if (regs == null) { Err("ReadRegisters FAIL"); return; }
+        var r = regs.Value;
+        int ptr = is32 ? 4 : 8;
+        ulong ip = is32 ? (r.Rip & 0xFFFFFFFF) : r.Rip;
+        ulong fp = is32 ? (r.Rbp & 0xFFFFFFFF) : r.Rbp;
+
+        Info($"call stack (frame-pointer walk, TID {Pid(tid)}):");
+        void Frame(int n, ulong a)
+        {
+            string? sym = Syms.Resolve(a);
+            string symPart = sym != null ? "  " + Ansi.Wrap(Ansi.Yellow, sym) : "";
+            Console.WriteLine($"  {Ansi.Wrap(Ansi.Dim, n.ToString("D2"))}  {Addr(a)}{symPart}");
+        }
+
+        Frame(0, ip);
+        for (int n = 1; n < maxFrames; n++)
+        {
+            if (fp == 0) break;
+            var retData = Client.ReadMemory(pid, fp + (ulong)ptr, (uint)ptr);
+            if (retData == null || retData.Length < ptr) break;
+            ulong ret = is32 ? BitConverter.ToUInt32(retData, 0) : BitConverter.ToUInt64(retData, 0);
+            if (ret == 0) break;
+            Frame(n, ret);
+
+            var fpData = Client.ReadMemory(pid, fp, (uint)ptr);
+            if (fpData == null || fpData.Length < ptr) break;
+            ulong newFp = is32 ? BitConverter.ToUInt32(fpData, 0) : BitConverter.ToUInt64(fpData, 0);
+            if (newFp <= fp) break;   // стек раскручивается вверх — защита от петли
+            fp = newFp;
         }
     }
 
@@ -846,6 +1027,244 @@ internal static class Program
             + Ansi.Wrap(Ansi.Orange, string.Join(' ', bytes.Select(b => b.ToString("x2")))));
     }
 
+    // ── Дампы строк и типизированные дампы ───────────────────────────────
+
+    /// <summary>da/du — вывод ASCII / UTF-16 строки по адресу (до NUL или count символов).</summary>
+    private static void CmdDumpString(string arg, bool wide)
+    {
+        if (!Require(Client.IsConnected, "не подключено")) return;
+        uint pid; lock (Sess.Lock) pid = Sess.TargetPid;
+        if (!Require(pid != 0, "target не задан")) return;
+        var (saddr, scount) = Split(arg);
+        if (!TryParseValue(saddr, out ulong addr))
+        { Print($"usage: {(wide ? "du" : "da")} <addr> [count]"); return; }
+
+        int count = 64;
+        if (scount.Length > 0 && int.TryParse(scount, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) && n > 0)
+            count = n;
+
+        uint bytesToRead = (uint)(wide ? count * 2 : count);
+        var data = Client.ReadMemory(pid, addr, bytesToRead);
+        if (data == null) { Print("ReadMemory FAIL"); return; }
+
+        string text;
+        if (wide)
+        {
+            int chars = 0;
+            while (chars * 2 + 1 < data.Length)
+            {
+                ushort c = (ushort)(data[chars * 2] | (data[chars * 2 + 1] << 8));
+                if (c == 0) break;
+                chars++;
+            }
+            text = System.Text.Encoding.Unicode.GetString(data, 0, chars * 2);
+        }
+        else
+        {
+            int len = 0;
+            while (len < data.Length && data[len] != 0) len++;
+            text = System.Text.Encoding.ASCII.GetString(data, 0, len);
+        }
+        Console.WriteLine($"  {Addr(addr)}  \"{Ansi.Wrap(Ansi.Green, text)}\"");
+    }
+
+    /// <summary>dd/dw — дамп DWORD/WORD значениями. unit = 4 или 2 байта.</summary>
+    private static void CmdDumpUnits(string arg, int unit)
+    {
+        if (!Require(Client.IsConnected, "не подключено")) return;
+        uint pid; lock (Sess.Lock) pid = Sess.TargetPid;
+        if (!Require(pid != 0, "target не задан")) return;
+        var (saddr, scount) = Split(arg);
+        if (!TryParseValue(saddr, out ulong addr))
+        { Print($"usage: {(unit == 4 ? "dd" : "dw")} <addr> [count]"); return; }
+
+        int count = unit == 4 ? 16 : 32;
+        if (scount.Length > 0 && int.TryParse(scount, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) && n > 0)
+            count = n;
+
+        uint size = (uint)(count * unit);
+        var data = Client.ReadMemory(pid, addr, size);
+        if (data == null) { Print("ReadMemory FAIL"); return; }
+
+        int perRow = unit == 4 ? 4 : 8;
+        for (int i = 0; i + unit <= data.Length; i += unit * perRow)
+        {
+            var vals = new List<string>();
+            for (int j = 0; j < perRow && i + (j + 1) * unit <= data.Length; j++)
+            {
+                int off = i + j * unit;
+                string v = unit == 4
+                    ? BitConverter.ToUInt32(data, off).ToString("X8")
+                    : BitConverter.ToUInt16(data, off).ToString("X4");
+                vals.Add(Ansi.Wrap(Ansi.Orange, v));
+            }
+            Console.WriteLine($"  {Addr(addr + (ulong)i)}  {string.Join(' ', vals)}");
+        }
+    }
+
+    /// <summary>dp — дамп указателей (4 байта на x86, 8 на x64) с резолвом символов.</summary>
+    private static void CmdDumpPointers(string arg)
+    {
+        if (!Require(Client.IsConnected, "не подключено")) return;
+        uint pid; bool is32; lock (Sess.Lock) { pid = Sess.TargetPid; is32 = Sess.Is32Bit; }
+        if (!Require(pid != 0, "target не задан")) return;
+        var (saddr, scount) = Split(arg);
+        if (!TryParseValue(saddr, out ulong addr)) { Print("usage: dp <addr> [count]"); return; }
+
+        int count = 8;
+        if (scount.Length > 0 && int.TryParse(scount, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) && n > 0)
+            count = n;
+
+        int unit = is32 ? 4 : 8;
+        var data = Client.ReadMemory(pid, addr, (uint)(count * unit));
+        if (data == null) { Print("ReadMemory FAIL"); return; }
+        for (int i = 0; i + unit <= data.Length; i += unit)
+        {
+            ulong p = is32 ? BitConverter.ToUInt32(data, i) : BitConverter.ToUInt64(data, i);
+            string sym = Syms.Resolve(p) ?? "";
+            string tail = sym.Length > 0 ? "  " + Ansi.Wrap(Ansi.Yellow, sym) : "";
+            Console.WriteLine($"  {Addr(addr + (ulong)i)}  {Ansi.Wrap(Ansi.Orange, FormatAddr(p, is32))}{tail}");
+        }
+    }
+
+    /// <summary>
+    /// Поиск по памяти: `s <addr> <len> <pattern>`.
+    /// pattern — hex-байты с ?? wildcards (`s 401000 1000 48 8b ?? c3`),
+    /// либо строка в кавычках (`s 401000 2000 "MZ"`), либо L"unicode".
+    /// </summary>
+    private static void CmdSearch(string arg)
+    {
+        if (!Require(Client.IsConnected, "не подключено")) return;
+        uint pid; lock (Sess.Lock) pid = Sess.TargetPid;
+        if (!Require(pid != 0, "target не задан")) return;
+
+        var (saddr, rest1) = Split(arg);
+        var (slen, pat) = Split(rest1);
+        if (saddr.Length == 0 || slen.Length == 0 || pat.Length == 0)
+        { Print("usage: s <addr> <len> <pattern>   (pattern: hex c ?? | \"строка\" | L\"unicode\")"); return; }
+        if (!TryParseValue(saddr, out ulong addr)) { Print($"не разобрать адрес '{saddr}'"); return; }
+        if (!TryParseValue(slen, out ulong len) || len == 0) { Print($"не разобрать длину '{slen}'"); return; }
+        if (len > 0x400000) { Print("длина > 4 МБ — сузь диапазон"); return; }
+
+        if (!TryParsePattern(pat, out byte[] needle, out bool[] mask))
+        { Print("не смог разобрать паттерн"); return; }
+
+        var data = Client.ReadMemory(pid, addr, (uint)len);
+        if (data == null) { Print("ReadMemory FAIL"); return; }
+
+        int found = 0;
+        for (int i = 0; i + needle.Length <= data.Length; i++)
+        {
+            bool match = true;
+            for (int j = 0; j < needle.Length; j++)
+            {
+                if (mask[j] && data[i + j] != needle[j]) { match = false; break; }
+            }
+            if (!match) continue;
+            ulong hitAddr = addr + (ulong)i;
+            int show = Math.Min(needle.Length, 16);
+            var bytesHex = string.Join(' ', Enumerable.Range(0, show).Select(k => data[i + k].ToString("x2")));
+            Console.WriteLine($"  {Addr(hitAddr)}  {Ansi.Wrap(Ansi.Orange, bytesHex)}");
+            if (++found >= 256) { Info("показаны первые 256 совпадений — сузь диапазон"); break; }
+        }
+        Info($"{Kw("найдено")}: {Num(found)} совпадений в {Hex(len)} байтах");
+    }
+
+    /// <summary>Парсит паттерн поиска в (байты + маску). mask[i]=false означает wildcard.</summary>
+    private static bool TryParsePattern(string pat, out byte[] bytes, out bool[] mask)
+    {
+        bytes = Array.Empty<byte>(); mask = Array.Empty<bool>();
+        pat = pat.Trim();
+
+        // Строковый паттерн: "ascii" или L"unicode"
+        bool wide = false;
+        if (pat.StartsWith("L\"", StringComparison.OrdinalIgnoreCase)) { wide = true; pat = pat[1..]; }
+        if (pat.StartsWith('"') && pat.EndsWith('"') && pat.Length >= 2)
+        {
+            string s = pat[1..^1];
+            bytes = wide ? System.Text.Encoding.Unicode.GetBytes(s)
+                         : System.Text.Encoding.ASCII.GetBytes(s);
+            mask = Enumerable.Repeat(true, bytes.Length).ToArray();
+            return bytes.Length > 0;
+        }
+
+        // Hex-паттерн с ?? wildcards (токены через пробел).
+        var tokens = pat.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+        var bl = new List<byte>(); var ml = new List<bool>();
+        foreach (var t in tokens)
+        {
+            if (t == "??" || t == "?")
+            { bl.Add(0); ml.Add(false); continue; }
+            if (byte.TryParse(t, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte b))
+            { bl.Add(b); ml.Add(true); continue; }
+            return false;   // мусорный токен
+        }
+        bytes = bl.ToArray(); mask = ml.ToArray();
+        return bytes.Length > 0;
+    }
+
+    // ── Выделение / защита памяти ────────────────────────────────────────
+
+    private static void CmdAlloc(string arg)
+    {
+        if (!Require(Client.IsConnected, "не подключено")) return;
+        uint pid; lock (Sess.Lock) pid = Sess.TargetPid;
+        if (!Require(pid != 0, "target не задан")) return;
+        var (ssize, sprot) = Split(arg);
+        if (!TryParseValue(ssize, out ulong size) || size == 0)
+        { Print("usage: .alloc <size> [prot=rwx]"); return; }
+        uint prot = sprot.Length > 0 ? ParseProtection(sprot) : 0x40 /* PAGE_EXECUTE_READWRITE */;
+        if (prot == 0) { Print("не разобрать защиту (rwx|rw|rx|r|ro|na или hex)"); return; }
+
+        var baseAddr = Client.AllocMemory(pid, size, prot);
+        if (baseAddr == null || baseAddr.Value == 0) { Err("AllocMemory FAIL"); return; }
+        Ok($"{Kw("allocated")} {Hex(size)} bytes @ {Addr(baseAddr.Value)} (prot={Hex(prot)})");
+    }
+
+    private static void CmdFree(string arg)
+    {
+        if (!Require(Client.IsConnected, "не подключено")) return;
+        uint pid; lock (Sess.Lock) pid = Sess.TargetPid;
+        if (!Require(pid != 0, "target не задан")) return;
+        if (!TryParseValue(arg, out ulong addr)) { Print("usage: .free <addr>"); return; }
+        if (Client.FreeMemory(pid, addr)) Ok($"{Kw("freed")} @ {Addr(addr)}");
+        else Err("FreeMemory FAIL (невалидный base?)");
+    }
+
+    private static void CmdProtect(string arg)
+    {
+        if (!Require(Client.IsConnected, "не подключено")) return;
+        uint pid; lock (Sess.Lock) pid = Sess.TargetPid;
+        if (!Require(pid != 0, "target не задан")) return;
+        var (saddr, rest1) = Split(arg);
+        var (ssize, sprot) = Split(rest1);
+        if (saddr.Length == 0 || ssize.Length == 0 || sprot.Length == 0)
+        { Print("usage: .protect <addr> <size> <prot>   (prot: rwx|rw|rx|r|ro|na или hex)"); return; }
+        if (!TryParseValue(saddr, out ulong addr)) { Print($"не разобрать адрес '{saddr}'"); return; }
+        if (!TryParseValue(ssize, out ulong size) || size == 0) { Print($"не разобрать размер '{ssize}'"); return; }
+        uint prot = ParseProtection(sprot);
+        if (prot == 0) { Print("не разобрать защиту"); return; }
+
+        var old = Client.ProtectMemory(pid, addr, (uint)size, prot);
+        if (old == null) { Err("ProtectMemory FAIL"); return; }
+        Ok($"{Kw("protect")} {Addr(addr)} +{Hex(size)} -> {Hex(prot)} (было {Hex(old.Value)})");
+    }
+
+    /// <summary>Мнемоника защиты страниц → значение PAGE_*. 0 = ошибка разбора.</summary>
+    private static uint ParseProtection(string s)
+    {
+        switch (s.Trim().ToLowerInvariant())
+        {
+            case "na": case "noaccess":    return 0x01;  // PAGE_NOACCESS
+            case "r":  case "ro":          return 0x02;  // PAGE_READONLY
+            case "rw":                     return 0x04;  // PAGE_READWRITE
+            case "rx":                     return 0x20;  // PAGE_EXECUTE_READ
+            case "rwx": case "wrx":        return 0x40;  // PAGE_EXECUTE_READWRITE
+            case "x":  case "xo":          return 0x10;  // PAGE_EXECUTE
+        }
+        return TryParseValue(s, out ulong v) ? (uint)v : 0;
+    }
+
     private static void CmdDisasm(string arg)
     {
         if (!Require(Client.IsConnected, "не подключено")) return;
@@ -942,6 +1361,7 @@ internal static class Program
             foreach (var b in Sess.Breakpoints)
             {
                 string tag = b.IsTemp ? Ansi.Wrap(Ansi.Dim, " [temp]") : "";
+                string kind = b.Kind != "sw" ? " " + Ansi.Wrap(Ansi.Blue, "<" + b.Kind + ">") : "";
                 string cond = b.Condition != null
                     ? "  " + Ansi.Wrap(Ansi.Magenta, "if ") + Ansi.Wrap(Ansi.Green, b.Condition)
                     : "";
@@ -949,7 +1369,7 @@ internal static class Program
                 string symTail = sym != null ? "  " + Ansi.Wrap(Ansi.Yellow, sym) : "";
                 Console.WriteLine($"  {Ansi.Wrap(Ansi.Red, "[" + b.Handle + "]")}  "
                                 + Ansi.Wrap(Ansi.Gray, FormatAddr(b.Addr, Sess.Is32Bit))
-                                + tag + symTail + cond);
+                                + kind + tag + symTail + cond);
             }
         }
     }
@@ -978,9 +1398,76 @@ internal static class Program
         }
     }
 
+    /// <summary>
+    /// Аппаратная точка останова / watchpoint через DR0-3.
+    /// Синтаксис в стиле WinDbg: `ba <e|r|w><len> <addr>`
+    ///   e  — исполнение (execute), длина обычно 1
+    ///   w  — срабатывание на запись
+    ///   r  — срабатывание на чтение/запись
+    /// len ∈ {1,2,4,8}. Драйвер ставит DR0-3 с нужным условием/длиной.
+    /// </summary>
+    private static void CmdBpHw(string arg)
+    {
+        if (!Require(Client.IsConnected, "не подключено")) return;
+        uint pid; lock (Sess.Lock) pid = Sess.TargetPid;
+        if (!Require(pid != 0, "target не задан")) return;
+
+        var (spec, saddr) = Split(arg);
+        if (spec.Length < 2 || saddr.Length == 0)
+        { Print("usage: ba <e|r|w><len> <addr>   (например: ba w4 401000)"); return; }
+
+        char mode = char.ToLowerInvariant(spec[0]);
+        if (!int.TryParse(spec[1..], out int len) || (len != 1 && len != 2 && len != 4 && len != 8))
+        { Print("длина должна быть 1, 2, 4 или 8: ba <e|r|w><len> <addr>"); return; }
+
+        uint type; string kind;
+        switch (mode)
+        {
+            case 'e': type = KfBpType.Hardware;    kind = "hw-e";  break;
+            case 'w': type = KfBpType.HwWrite;     kind = "hw-w";  break;
+            case 'r': type = KfBpType.HwReadWrite; kind = "hw-rw"; break;
+            default:  Print("режим должен быть e (execute), w (write) или r (read/write)"); return;
+        }
+
+        if (!Evaluator.TryEval(saddr, out ulong addr))
+        { Print($"ba: не смог разобрать адрес '{saddr}'"); return; }
+
+        var handle = Client.SetBreakpoint(pid, 0, addr, type, (uint)len);
+        if (handle == null) { Err($"ba {spec} @ {Addr(addr)} FAIL (свободных DR нет?)"); return; }
+        lock (Sess.Lock) Sess.Breakpoints.Add(new BpRec(handle.Value, addr, kind: kind));
+        string? sym = Syms.Resolve(addr);
+        string symPart = sym != null ? "  " + Ansi.Wrap(Ansi.Yellow, sym) : "";
+        Ok($"{Kw("ba")} {Ansi.Wrap(Ansi.Red, "[" + handle.Value + "]")} "
+            + Ansi.Wrap(Ansi.Blue, "<" + kind + " len=" + len + ">") + $" {Addr(addr)}{symPart}");
+    }
+
+    /// <summary>Memory breakpoint (PAGE_GUARD): `bm <addr> [size=1]`.</summary>
+    private static void CmdBpMem(string arg)
+    {
+        if (!Require(Client.IsConnected, "не подключено")) return;
+        uint pid; lock (Sess.Lock) pid = Sess.TargetPid;
+        if (!Require(pid != 0, "target не задан")) return;
+
+        var (saddr, ssize) = Split(arg);
+        if (saddr.Length == 0) { Print("usage: bm <addr> [size]"); return; }
+        if (!Evaluator.TryEval(saddr, out ulong addr))
+        { Print($"bm: не смог разобрать адрес '{saddr}'"); return; }
+
+        uint size = 1;
+        if (ssize.Length > 0 && Evaluator.TryEval(ssize, out ulong sz) && sz > 0) size = (uint)sz;
+
+        var handle = Client.SetBreakpoint(pid, 0, addr, KfBpType.Memory, size);
+        if (handle == null) { Err($"bm @ {Addr(addr)} FAIL"); return; }
+        lock (Sess.Lock) Sess.Breakpoints.Add(new BpRec(handle.Value, addr, kind: "mem"));
+        string? sym = Syms.Resolve(addr);
+        string symPart = sym != null ? "  " + Ansi.Wrap(Ansi.Yellow, sym) : "";
+        Ok($"{Kw("bm")} {Ansi.Wrap(Ansi.Red, "[" + handle.Value + "]")} "
+            + Ansi.Wrap(Ansi.Blue, "<mem size=" + size + ">") + $" {Addr(addr)}{symPart}");
+    }
+
     // ── Execution ────────────────────────────────────────────────────────
 
-    private static void CmdGo()
+    private static void CmdGo(string arg = "")
     {
         if (!Require(Client.IsConnected, "не подключено")) return;
         uint pid, tid; bool susp, is32;
@@ -990,6 +1477,26 @@ internal static class Program
             susp = Sess.IsPausedViaSuspend; is32 = Sess.Is32Bit;
         }
         if (!Require(pid != 0, "target не задан")) return;
+
+        // Run-to-cursor: `g <addr>` ставит временную SW BP на адрес и продолжает.
+        // Снимется автоматически в OnDebugEvent (как temp у Step Over/Out).
+        if (arg.Length > 0)
+        {
+            if (is32)
+            {
+                Print("g <addr> на WoW64 не поддержан (KdTrap не ловит 32-битные исключения). "
+                    + "Поставь `bp <addr>`, затем `g`.");
+                return;
+            }
+            if (!Evaluator.TryEval(arg, out ulong target))
+            { Print($"g: не смог разобрать адрес '{arg}'"); return; }
+            var h = Client.SetBreakpoint(pid, 0, target, KfBpType.Software);
+            if (h == null) { Err($"g: SetBreakpoint @ {Addr(target)} FAIL"); return; }
+            lock (Sess.Lock) Sess.Breakpoints.Add(new BpRec(h.Value, target, temp: true));
+            string? rsym = Syms.Resolve(target);
+            string rtail = rsym != null ? "  " + Ansi.Wrap(Ansi.Yellow, rsym) : "";
+            Info($"{Kw("run to")} {Addr(target)}{rtail} (temp BP [{h.Value}])");
+        }
 
         if (is32)
         {

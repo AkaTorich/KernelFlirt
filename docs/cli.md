@@ -60,6 +60,7 @@ symbols (`module!Name`), pointer dereference (`[mem]`), and arithmetic
 | `reset` | Clear all breakpoints in the driver without detaching. |
 | `procs` / `ps` | List all running processes. |
 | `mods` | List modules of the current target. |
+| `kmods` | List kernel modules (ntoskrnl + drivers) via `IOCTL_KF_ENUM_KERNEL_MODULES`. |
 | `threads` / `tt` | List threads of the current target. |
 | `tid <tid>` | Select the active thread (registers/step apply to it). |
 
@@ -77,8 +78,17 @@ symbols (`module!Name`), pointer dereference (`[mem]`), and arithmetic
 |---------|-------------|
 | `d <addr> [count=64]` | Hex dump (16 bytes per line + ASCII). |
 | `dq <addr> [count=8]` | QWORD dump with symbol resolution for each value. |
+| `dd <addr> [count=16]` | DWORD dump (4 per row). |
+| `dw <addr> [count=32]` | WORD dump (8 per row). |
+| `dp <addr> [count=8]` | Pointer-sized dump (4 bytes on WoW64, 8 on x64) with symbol resolution for each value. |
+| `da <addr> [count=64]` | ASCII string dump (stops at NUL or `count` chars). |
+| `du <addr> [count=64]` | UTF-16 string dump (stops at NUL or `count` chars). |
 | `u <addr> [count=16]` | Disassembly (Iced / NASM syntax). Each `call`/`jmp`/`jcc` with a resolvable target gets a `; module!func` annotation in green. The current RIP row is prefixed with a red `►`. |
 | `e <addr> <hex bytes>` | Write memory. Bytes can be space-separated or solid (`e 401570 90 90 c3` or `e 401570 9090c3`). |
+| `s <addr> <len> <pattern>` | Search memory. Pattern is hex bytes with `??` wildcards (`s 401000 1000 48 8b ?? c3`), quoted ASCII (`"MZ"`), or `L"unicode"`. Capped at 4 MB per call and 256 reported hits. |
+| `.alloc <size> [prot=rwx]` | Allocate memory in the target (`IOCTL_KF_ALLOC_MEMORY`); prints the new base. Protection: mnemonics `rwx`/`rw`/`rx`/`r`/`ro`/`na`/`x` or a raw hex `PAGE_*` value. |
+| `.free <addr>` | Free a region (`IOCTL_KF_FREE_MEMORY`). |
+| `.protect <addr> <size> <prot>` | Change page protection (`IOCTL_KF_PROTECT_MEMORY`); prints the old protection. |
 
 ### Breakpoints
 
@@ -86,7 +96,9 @@ symbols (`module!Name`), pointer dereference (`[mem]`), and arithmetic
 |---------|-------------|
 | `bp <addr>` | Software breakpoint (INT3 via MDL — works on RX `.text` pages). |
 | `bp <addr> if <expr>` | Conditional BP. After each hit the driver pauses, CLI evaluates `<expr>`; if the result is 0, the thread is silently released via `ContinueDebugEvent(Run)` without UI notification. |
-| `bl` | List active breakpoints. Temp BPs (from Step Over/Out) are marked `[temp]`. |
+| `ba <e\|r\|w><len> <addr>` | Hardware breakpoint / watchpoint via DR0-3. Mode `e` = execute, `w` = write, `r` = read/write; `len ∈ {1,2,4,8}` (e.g. `ba w4 401000`). Routes through `IOCTL_KF_SET_BREAKPOINT` with `Type`/`Length`. |
+| `bm <addr> [size]` | Memory breakpoint (PAGE_GUARD), `KF_BP_MEMORY`. |
+| `bl` | List active breakpoints. Temp BPs (Step Over/Out, run-to-cursor) are marked `[temp]`; hardware/memory BPs are tagged `<hw-e>`/`<hw-w>`/`<hw-rw>`/`<mem>`. |
 | `bc <addr \| handle \| all>` | Remove a BP by address or handle, or all at once. |
 
 ### Execution
@@ -94,12 +106,23 @@ symbols (`module!Name`), pointer dereference (`[mem]`), and arithmetic
 | Command | Description |
 |---------|-------------|
 | `g` / `run` / `go` | Continue execution. For suspend-state (entry-point), this maps to `ResumeThread`; otherwise to `ContinueDebugEvent(Run)`. On WoW64 the active BPs are converted to `EB FE` spin-traps and EIP is polled across all threads. |
+| `g <addr>` | Run to cursor — sets a temporary SW BP at `<addr>`, continues, and auto-removes it on hit (like Step Over/Out temps). Not supported on WoW64 (the KdTrap hook doesn't catch 32-bit exceptions) — use `bp <addr>` + `g` instead. |
 | `t` / `sti` | Step Into (one instruction). On native x64 in suspend-state, sets TF via `IOCTL_KF_SINGLE_STEP` + `ResumeThread`. On WoW64, decodes the current instruction with Iced and uses an EB-FE spin-trap on `EIP + size`. |
 | `p` / `sto` | Step Over. Decodes the current instruction; targets = `[ip + size, branch_target]` for `jcc`, `[branch_target]` for unconditional `jmp`, `[ip + size]` otherwise. Native x64: places temporary SW BPs (`[temp]`). WoW64: spin-trap on the same set. |
 | `o` / `out` | Step Out. Reads the return address from the top of the stack and places a temporary BP (or spin-trap on WoW64). |
 | `ss` | Force the TF bit in `KTRAP_FRAME` of the current thread, without continuing. Useful before manual `g`. |
 | `wait` | Wait for a single debug event from the driver. Normally not needed — a background listener processes events automatically. |
 | `interrupt` | `SuspendThread` on the current TID — to force a stop on a running target. |
+| `suspend [tid]` | `SuspendThread` on the given TID (defaults to the current one). |
+| `resume [tid]` | `ResumeThread` on the given TID (defaults to the current one). |
+
+### Inspection
+
+| Command | Description |
+|---------|-------------|
+| `k [frames]` | Call stack via frame-pointer (RBP/EBP) unwinding with symbol resolution. Accurate for functions with a classic prologue; approximate under FPO/leaf frames. Default 64 frames. |
+| `!peb` / `peb` | Parse the target PEB: `BeingDebugged` (red when set), `ImageBaseAddress`, `Ldr`, `ProcessParameters`, `NtGlobalFlag`. Uses the 32-bit layout for WoW64 targets, 64-bit otherwise. |
+| `stats` | Inline-hook diagnostics (`IOCTL_KF_GET_HOOK_STATS`): call / BP-hit / step counters, `KiDebugRoutine` addr/orig/now, `KdpStub` and `KdTrap` addresses, and fast-trace counters. |
 
 ### Anti-Debug (driver primitives)
 
@@ -146,9 +169,9 @@ Coloring is on by default. The palette roughly mirrors VS Code Dark+ / x64dbg:
 
 | Color | Used for |
 |-------|----------|
-| Cyan | Register names, PIDs, TIDs |
+| Cyan | Register names, PIDs, TIDs, field labels in `!peb` / `stats` |
 | Orange | Hex literals, immediates, register values |
-| Blue | Regular x86/x64 mnemonics |
+| Blue | Regular x86/x64 mnemonics, BP-kind tags (`<hw-w>`, `<mem>`) |
 | Magenta | Control-flow mnemonics (`jmp`, `call`, `ret`, `jcc`), action keywords (`step into`, `running`) |
 | Yellow | Symbols, paths, architecture tag |
 | Green | ASCII strings in dumps, `if` expression body, success markers |
@@ -246,3 +269,6 @@ kf(8424:10136/x64/brk)> detach
   Ctrl+C will terminate the process. Avoid `g` on WoW64 if there are no BPs to land on.
 * **No SymFromName for unloaded modules.** `bp ntdll!Foo` works only after `attach`/`open`
   has finished loading the module list. Set the BP after the target is stopped at entry.
+* **`k` is a frame-pointer walk.** It follows the RBP/EBP chain, so it's accurate only for
+  functions built with a classic prologue (`push rbp; mov rbp, rsp`). FPO-optimized or leaf
+  frames may be skipped or misreported — for an exact stop, set a `bp` inside the function.

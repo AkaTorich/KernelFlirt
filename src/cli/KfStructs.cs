@@ -95,14 +95,58 @@ internal struct KF_WRITE_MEMORY_IN
     // далее идут данные input->Size байт
 }
 
+// IOCTL_KF_ALLOC_MEMORY input (16 байт): pid(4) + size(8) + protection(4).
+//   Драйвер: ZwAllocateVirtualMemory в контексте target. Output = ULONG64 base.
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+internal struct KF_ALLOC_MEMORY_IN
+{
+    public uint   ProcessId;
+    public ulong  Size;
+    public uint   Protection;   // PAGE_EXECUTE_READWRITE и т.п.
+}
+
+// IOCTL_KF_FREE_MEMORY input (12 байт): pid(4) + base(8). Output отсутствует.
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+internal struct KF_FREE_MEMORY_IN
+{
+    public uint   ProcessId;
+    public ulong  Address;
+}
+
+// IOCTL_KF_PROTECT_MEMORY input/output.
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+internal struct KF_PROTECT_MEMORY_IN
+{
+    public uint   ProcessId;
+    public ulong  Address;
+    public uint   Size;
+    public uint   NewProtection;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+internal struct KF_PROTECT_MEMORY_OUT
+{
+    public uint   OldProtection;
+}
+
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 internal struct KF_SET_BP_IN
 {
     public uint   ProcessId;
     public uint   ThreadId;
     public ulong  Address;
-    public uint   Type;       // KF_BP_SOFTWARE = 0, HARDWARE=1, HW_WRITE=2, HW_RW=3, MEMORY=4
-    public uint   Reserved;
+    public uint   Type;       // KfBpType.* (SOFTWARE=0, HARDWARE=1, HW_WRITE=2, HW_RW=3, MEMORY=4)
+    public uint   Length;     // 1/2/4/8 для аппаратных BP; размер страницы для memory BP
+}
+
+// Типы точек останова — соответствуют KF_BP_* из kf_shared.h.
+internal static class KfBpType
+{
+    public const uint Software   = 0;   // INT3 (программная)
+    public const uint Hardware   = 1;   // DR0-3, исполнение
+    public const uint HwWrite    = 2;   // DR0-3, watchpoint на запись (condition=01)
+    public const uint HwReadWrite = 3;  // DR0-3, watchpoint на чтение/запись (condition=11)
+    public const uint Memory     = 4;   // PAGE_GUARD (memory breakpoint)
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -192,6 +236,24 @@ internal unsafe struct KF_MODULE_ENTRY
     public const int NameMaxChars = 256;
 }
 
+// Native layout (kf_shared.h, Pack=1):
+//   ULONG64 BaseAddress;     offset 0  (8)
+//   ULONG   Size;            offset 8  (4)
+//   USHORT  LoadOrderIndex;  offset 12 (2)
+//   CHAR    Name[256];       offset 14 (256) — ANSI, пути модулей ядра в ANSI
+// Total = 14 + 256 = 270 байт.
+[StructLayout(LayoutKind.Sequential, Pack = 1, Size = 270)]
+internal unsafe struct KF_KERNEL_MODULE_ENTRY
+{
+    public ulong  BaseAddress;
+    public uint   Size;
+    public ushort LoadOrderIndex;
+    // Name[256] (ANSI) — читаем отдельно через offset.
+
+    public const int NameOffset   = 14;
+    public const int NameMaxChars = 256;
+}
+
 // Native layout (kf_shared.h):
 //   ULONG   ProcessId;      offset 0  (4)
 //   ULONG   SessionId;      offset 4  (4)
@@ -256,6 +318,42 @@ internal unsafe struct KF_CREATE_PROCESS_OUT
     public byte    EntryPatchBytes;
     public byte    EntryIs32Bit;
     public fixed byte Reserved[4];
+}
+
+// IOCTL_KF_GET_HOOK_STATS output (kf_shared.h, Pack=1, 136 байт).
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+internal struct KF_HOOK_STATS_OUT
+{
+    public uint   HookCallCount;        // всего вызовов KfDebugHandler
+    public uint   BpHitCount;           // BP найдены в таблице и доложены
+    public uint   BpNotFoundCount;      // BP не в таблице (пропущены)
+    public uint   StepCount;            // single-step событий доложено
+    public byte   KdDebuggerEnabled;    // текущее значение
+    public byte   KdDebuggerNotPresent; // текущее значение
+    public byte   Reserved0;
+    public byte   Reserved1;
+    public uint   TargetCallCount;      // вызовы с isTarget=TRUE
+    public ulong  LastTargetAddr;       // последний адрес исключения от target
+    public uint   LastTargetCode;       // последний код исключения от target
+    public uint   LastNonTargetPid;     // последний PID не-target
+    public ulong  KiDebugRoutineAddr;   // адрес KiDebugRoutine в ntoskrnl (0 = не найден)
+    public ulong  KiDebugRoutineOrig;   // оригинальное значение до перенаправления
+    public ulong  KiDebugRoutineNow;    // текущее значение
+    public ulong  HookedFuncAddr;       // адрес inline-hooked функции (KdpStub)
+    public ulong  KdTrapAddr;           // адрес KdTrap
+    public uint   TraceStepCount;       // текущий счётчик trace-шагов
+    public uint   TraceActive;          // 1 если идёт быстрый trace
+    public uint   ThreadBlocked;        // 1 если хендлер ждёт continue
+    public uint   ContinueMode;         // текущий g_ContinueMode
+    public uint   DiagIrql;             // IRQL на входе KfReportAndBlock
+    public uint   DiagWaitResult;       // последний NTSTATUS от KeWaitForSingleObject
+    public uint   DiagWaitCount;        // число итераций таймаут-цикла
+    public uint   DiagReportCount;      // число вызовов KfReportAndBlock
+    public uint   TraceAvCount;         // AV во время быстрого trace
+    public uint   TraceInt3Count;       // INT3 (не из таблицы) во время trace
+    public uint   TraceUnkCount;        // неизвестные исключения во время trace
+    public uint   TraceLastExcCode;     // последний код исключения при trace
+    public ulong  TraceLastExcAddr;     // последний адрес исключения при trace
 }
 
 internal static class StructUtil
