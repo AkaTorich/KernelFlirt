@@ -1,0 +1,2883 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Windows Kernel Debugger — Documentation">
+      
+      
+      
+        <link rel="canonical" href="https://akatorich.github.io/KernelFlirt/changelog/">
+      
+      
+        <link rel="prev" href="../scripting-reference-ru/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Changelog - KernelFlirt</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#changelog" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="KernelFlirt" class="md-header__button md-logo" aria-label="KernelFlirt" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            KernelFlirt
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Changelog
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/AkaTorich/KernelFlirt" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    AkaTorich/KernelFlirt
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../getting-started/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../features/" class="md-tabs__link">
+          
+  
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../SDK-en/" class="md-tabs__link">
+          
+  
+  
+  SDK (EN)
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../SDK-ru/" class="md-tabs__link">
+          
+  
+  
+  SDK (RU)
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../scripting-reference-en/" class="md-tabs__link">
+          
+  
+  
+  Scripting (EN)
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../scripting-reference-ru/" class="md-tabs__link">
+          
+  
+  
+  Scripting (RU)
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="./" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="KernelFlirt" class="md-nav__button md-logo" aria-label="KernelFlirt" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    KernelFlirt
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/AkaTorich/KernelFlirt" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    AkaTorich/KernelFlirt
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../building/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Building
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../shortcuts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keyboard Shortcuts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cmd_commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Command Console
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KfConsole (CLI)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../themes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Themes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../navbar/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Navigation Bar
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SDK (EN)
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    SDK (EN)
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../SDK-en/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugin Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SDK (RU)
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    SDK (RU)
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../SDK-ru/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Разработка плагинов
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scripting (EN)
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Scripting (EN)
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scripting-reference-en/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C# Scripting Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scripting (RU)
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Scripting (RU)
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scripting-reference-ru/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Справочник скриптинга
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#v180-2026-04-07" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.8.0 — 2026-04-07
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.8.0 — 2026-04-07">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-plugin-xrefs-cross-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Plugin: Xrefs (Cross-References)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-plugin-session-manager" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Plugin: Session Manager
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scripting-plugin-syntax-highlighting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scripting Plugin: Syntax Highlighting
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#graph-view-plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Graph View Plugin
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sdk-extensions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SDK Extensions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#themes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Themes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#build" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v171-2026-04-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.7.1 — 2026-04-05
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.7.1 — 2026-04-05">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-plugin-network-monitor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Plugin: Network Monitor
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#build_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v170-2026-04-04" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.7.0 — 2026-04-04
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.7.0 — 2026-04-04">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-plugin-c-scripting-console" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Plugin: C# Scripting Console
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-plugin-graph-view-cfg" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Plugin: Graph View (CFG)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-plugin-flirt-signatures" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Plugin: FLIRT Signatures
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#build_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#symbol-resolution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Symbol Resolution
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v160-2026-03-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.6.0 — 2026-03-30
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.6.0 — 2026-03-30">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#service-debugging-debug-service" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Service Debugging (Debug Service)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mcp-plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MCP Plugin
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v151-2026-03-28" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.5.1 — 2026-03-28
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.5.1 — 2026-03-28">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#register-editing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Register Editing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#driver-stability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Driver Stability
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v150-2026-03-27" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.5.0 — 2026-03-27
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.5.0 — 2026-03-27">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#inline-assembler" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inline Assembler
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#driver-stability_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Driver Stability
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#relay" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Relay
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#steprun-reliability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step/Run Reliability
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#disassembler" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Disassembler
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v140-2026-03-27" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.4.0 — 2026-03-27
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.4.0 — 2026-03-27">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-plugin-pe-rebuilder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Plugin: PE Rebuilder
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-plugin-signature-detector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Plugin: Signature Detector
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#plugin-system-fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plugin System Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#disassembler_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Disassembler
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ui" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        UI
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#relay_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Relay
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#build_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v130-2026-03-24" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.3.0 — 2026-03-24
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.3.0 — 2026-03-24">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-plugin-mcp-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Plugin: MCP Server
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ai-assistant-plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AI Assistant Plugin
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#themes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Themes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v120-2026-03-21" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.2.0 — 2026-03-21
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.2.0 — 2026-03-21">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ai-assistant-plugin_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AI Assistant Plugin
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#remote-file-browser" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Remote File Browser
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#disassembler_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Disassembler
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v110-2026-03-19" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.1.0 — 2026-03-19
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.1.0 — 2026-03-19">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#theme-system-plugin-customization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Theme System: Plugin Customization
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#build_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#v180-2026-04-07" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.8.0 — 2026-04-07
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.8.0 — 2026-04-07">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-plugin-xrefs-cross-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Plugin: Xrefs (Cross-References)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-plugin-session-manager" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Plugin: Session Manager
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scripting-plugin-syntax-highlighting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scripting Plugin: Syntax Highlighting
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#graph-view-plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Graph View Plugin
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sdk-extensions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SDK Extensions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#themes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Themes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#build" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v171-2026-04-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.7.1 — 2026-04-05
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.7.1 — 2026-04-05">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-plugin-network-monitor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Plugin: Network Monitor
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#build_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v170-2026-04-04" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.7.0 — 2026-04-04
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.7.0 — 2026-04-04">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-plugin-c-scripting-console" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Plugin: C# Scripting Console
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-plugin-graph-view-cfg" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Plugin: Graph View (CFG)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-plugin-flirt-signatures" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Plugin: FLIRT Signatures
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#build_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#symbol-resolution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Symbol Resolution
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v160-2026-03-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.6.0 — 2026-03-30
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.6.0 — 2026-03-30">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#service-debugging-debug-service" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Service Debugging (Debug Service)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mcp-plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MCP Plugin
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v151-2026-03-28" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.5.1 — 2026-03-28
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.5.1 — 2026-03-28">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#register-editing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Register Editing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#driver-stability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Driver Stability
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v150-2026-03-27" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.5.0 — 2026-03-27
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.5.0 — 2026-03-27">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#inline-assembler" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inline Assembler
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#driver-stability_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Driver Stability
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#relay" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Relay
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#steprun-reliability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step/Run Reliability
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#disassembler" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Disassembler
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v140-2026-03-27" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.4.0 — 2026-03-27
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.4.0 — 2026-03-27">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-plugin-pe-rebuilder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Plugin: PE Rebuilder
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-plugin-signature-detector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Plugin: Signature Detector
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#plugin-system-fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plugin System Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#disassembler_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Disassembler
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ui" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        UI
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#relay_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Relay
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#build_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v130-2026-03-24" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.3.0 — 2026-03-24
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.3.0 — 2026-03-24">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-plugin-mcp-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Plugin: MCP Server
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ai-assistant-plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AI Assistant Plugin
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#themes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Themes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v120-2026-03-21" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.2.0 — 2026-03-21
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.2.0 — 2026-03-21">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ai-assistant-plugin_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AI Assistant Plugin
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#remote-file-browser" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Remote File Browser
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#disassembler_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Disassembler
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v110-2026-03-19" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.1.0 — 2026-03-19
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.1.0 — 2026-03-19">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#theme-system-plugin-customization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Theme System: Plugin Customization
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#build_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
+<h2 id="v180-2026-04-07">v1.8.0 — 2026-04-07<a class="headerlink" href="#v180-2026-04-07" title="Permanent link">&para;</a></h2>
+<h3 id="new-plugin-xrefs-cross-references">New Plugin: Xrefs (Cross-References)<a class="headerlink" href="#new-plugin-xrefs-cross-references" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Xrefs TO</strong> — find all references to a given address across modules: <code>CALL</code>, <code>JMP</code> (direct and IAT indirect via <code>[rip+xxx]</code>), <code>LEA reg, [rip+xxx]</code>, <code>MOV</code> with RIP-relative addressing, raw pointer references in data (vtables, function pointer tables).</li>
+<li><strong>Xrefs FROM</strong> — find all outgoing references from a function (what it calls/references).</li>
+<li><strong>Scope selector</strong> — scan current module only or all loaded modules.</li>
+<li><strong>Symbol resolution</strong> — each xref shows source module, resolved symbol name, and full instruction text.</li>
+<li><strong>Navigation</strong> — double-click any xref to jump to source in disassembly. Context menu: Go to Source, Go to Target, Copy Address, Copy All Results.</li>
+<li><strong>Cancellation</strong> — Stop button to cancel long scans.</li>
+<li><strong>Menu integration</strong> — "Find Xrefs at RIP" in Plugins menu.</li>
+</ul>
+<h3 id="new-plugin-session-manager">New Plugin: Session Manager<a class="headerlink" href="#new-plugin-session-manager" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Save/Load full session state</strong> to <code>.kfsession</code> files (JSON format).</li>
+<li><strong>Breakpoints</strong> — saved and restored via UI toggle (updates breakpoint list, disasm markers, and driver).</li>
+<li><strong>Annotations/Comments</strong> — all address annotations saved and restored.</li>
+<li><strong>User-defined functions</strong> — function names registered via <code>RegisterFunction</code> saved with address and size.</li>
+<li><strong>Graph block colors</strong> — custom block colors from Graph View plugin saved as <code>#RRGGBB</code>.</li>
+<li><strong>ASLR auto-rebase</strong> — module table saved alongside data; on load, all addresses automatically rebased if modules shifted.</li>
+<li><strong>Auto-naming</strong> — save dialog defaults to <code>TargetName.kfsession</code>.</li>
+</ul>
+<h3 id="scripting-plugin-syntax-highlighting">Scripting Plugin: Syntax Highlighting<a class="headerlink" href="#scripting-plugin-syntax-highlighting" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>AvalonEdit code editor</strong> — replaced plain TextBox with AvalonEdit <code>TextEditor</code> with line numbers, undo/redo, and search.</li>
+<li><strong>Dark theme C# highlighting</strong> — VS Code Dark+ color scheme: blue keywords (<code>#569CD6</code>), pink control flow (<code>#C586C0</code>), teal types (<code>#4EC9B0</code>), orange strings (<code>#CE9178</code>), green comments (<code>#6A9955</code>), light-green numbers (<code>#B5CEA8</code>), yellow method calls (<code>#DCDCAA</code>).</li>
+<li><strong>Built-in C# definition recoloring</strong> — uses AvalonEdit's built-in C# grammar with colors remapped for dark background (no XML parsing, crash-safe).</li>
+</ul>
+<h3 id="graph-view-plugin">Graph View Plugin<a class="headerlink" href="#graph-view-plugin" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Fixed zoom</strong> — zoom now correctly keeps the point under the mouse cursor stable. Previous formula was wrong for the <code>translate → scale</code> transform order, causing the graph to "fly away" on zoom in/out.</li>
+<li><strong>Fixed pan speed</strong> — mouse delta divided by current scale, so panning is 1:1 with cursor movement at any zoom level.</li>
+<li><strong>Block colors exposed</strong> — <code>_blockColors</code> dictionary published via <code>SetPluginData("GraphBlockColors")</code> for cross-plugin access (used by Session Manager).</li>
+</ul>
+<h3 id="sdk-extensions">SDK Extensions<a class="headerlink" href="#sdk-extensions" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>IBreakpointApi.ToggleBreakpoint(address, type)</code> — toggle breakpoint via UI (updates list, disasm markers, and driver). Used by Session Manager for correct BP restoration.</li>
+<li><code>ISymbolApi.GetRegisteredFunctions()</code> — returns all user-defined function names. New <code>PluginFunctionEntry</code> model (Address, Name, Size).</li>
+<li><code>IUiApi.SetPluginData(key, value)</code> / <code>GetPluginData(key)</code> — cross-plugin data store for runtime communication (e.g. graph colors).</li>
+</ul>
+<h3 id="themes">Themes<a class="headerlink" href="#themes" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>6 missing plugin tab colors</strong> added to all 9 themes: Network Monitor, FLIRT Signatures, Scripting, Graph View, Xrefs, Exports.</li>
+</ul>
+<h3 id="build">Build<a class="headerlink" href="#build" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>build.ps1</code> now builds XrefsPlugin and SessionPlugin.</li>
+<li>Removed unused field <code>SymbolService._functionTableDirty</code> (CS0414 warning fix).</li>
+</ul>
+<h2 id="v171-2026-04-05">v1.7.1 — 2026-04-05<a class="headerlink" href="#v171-2026-04-05" title="Permanent link">&para;</a></h2>
+<h3 id="new-plugin-network-monitor">New Plugin: Network Monitor<a class="headerlink" href="#new-plugin-network-monitor" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Real-time network traffic capture</strong> — hooks 28 network API functions across Winsock (send/recv/sendto/recvfrom/WSASend/WSARecv/WSASendTo/WSARecvFrom), control (connect/accept/bind/listen/closesocket), WinINet (InternetOpen/Connect, HttpOpenRequest/SendRequest, InternetReadFile), and WinHTTP (WinHttpOpen/Connect/OpenRequest/SendRequest/ReadData).</li>
+<li><strong>Live traffic grid</strong> — DataGrid with columns: index, timestamp, TID, direction (SEND/RECV/CTRL/HTTP), function name, data size, details, return value. Auto-scrolls to latest event.</li>
+<li><strong>Data preview</strong> — for send operations, captures first 64 bytes of the buffer. Shows as ASCII if printable, hex dump otherwise.</li>
+<li><strong>Socket address parsing</strong> — <code>connect</code>/<code>bind</code> calls show parsed <code>sockaddr_in</code> (IP:port).</li>
+<li><strong>Return value capture</strong> — one-shot breakpoint at return address captures RAX (bytes sent/received, new socket handle, etc.).</li>
+<li><strong>Direction filter</strong> — filter by SEND/RECV/CTRL/HTTP or show all.</li>
+<li><strong>Text filter</strong> — filter by function name, details, or data preview.</li>
+<li><strong>Export CSV</strong> — save full trace to CSV file.</li>
+<li><strong>Detail panel</strong> — click any row to see full event details in the bottom panel.</li>
+<li><strong>x86/x64 support</strong> — handles both fastcall (x64) and stdcall (x86) calling conventions.</li>
+<li><strong>Auto-stop on disconnect</strong> — hooks automatically removed when debugger disconnects.</li>
+</ul>
+<h3 id="build_1">Build<a class="headerlink" href="#build_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>build.ps1</code> now builds and copies NetworkMonitorPlugin.</li>
+</ul>
+<h2 id="v170-2026-04-04">v1.7.0 — 2026-04-04<a class="headerlink" href="#v170-2026-04-04" title="Permanent link">&para;</a></h2>
+<h3 id="new-plugin-c-scripting-console">New Plugin: C# Scripting Console<a class="headerlink" href="#new-plugin-c-scripting-console" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Roslyn-based C# REPL</strong> — write and execute C# scripts with full access to <code>IDebuggerApi</code> directly in the debugger. No compilation, no separate project — type code, press F5, see results.</li>
+<li><strong>REPL state</strong> — variables persist between executions. Define a variable in one run, use it in the next.</li>
+<li><strong>Built-in shortcuts</strong> — <code>ReadMem()</code>, <code>WriteMem()</code>, <code>ReadString()</code>, <code>ReadWString()</code>, <code>ReadPtr()</code>, <code>ReadU32()</code>, <code>ReadU64()</code>, <code>Reg("RAX")</code>, <code>RIP</code>, <code>RSP</code>, <code>Sym(addr)</code>, <code>Addr("name")</code>, <code>print()</code> — all available as top-level globals without boilerplate.</li>
+<li><strong>Run selection</strong> — select a fragment of code and press F5 to execute only the selected portion.</li>
+<li><strong>Event handlers from scripts</strong> — register <code>OnDebugEventFilter</code> callbacks to build custom breakpoint loggers, API tracers, and auto-unpackers without writing a full plugin.</li>
+<li><strong>Load/Save .csx files</strong> — save scripts to disk and reload them later.</li>
+<li><strong>Console.WriteLine capture</strong> — <code>Console.WriteLine</code> output is redirected to the output panel alongside <code>print()</code>.</li>
+<li><strong>Cancellation</strong> — Stop button cancels long-running scripts.</li>
+</ul>
+<h3 id="new-plugin-graph-view-cfg">New Plugin: Graph View (CFG)<a class="headerlink" href="#new-plugin-graph-view-cfg" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Control flow graph visualization</strong> — IDA Pro-style graph view of functions. Basic blocks as nodes, edges for branches. MSAGL Sugiyama layered layout for automatic top-down arrangement.</li>
+<li><strong>Capstone disassembly</strong> — own disassembler instance, independent of the main UI. Parses branch targets, classifies instructions (call/jmp/jcc/ret), detects function boundaries.</li>
+<li><strong>Symbol resolution</strong> — call targets show as <code>MODULE!FunctionName</code> (e.g. <code>KERNEL32.dll!CreateFileA</code>). Follows IAT thunks (<code>FF 25</code>, <code>48 FF 25</code>, <code>E9 rel32</code>) to resolve real API names. Uses PDB function table as fallback when <code>SymFromAddr</code> fails.</li>
+<li><strong>Syntax highlighting</strong> — mnemonics colored by type: blue for regular, purple for branches/ret, yellow for calls. Resolved call operands highlighted. Address column in gray.</li>
+<li><strong>Current RIP highlighting</strong> — block containing current instruction pointer shown with green border.</li>
+<li><strong>Function navigation</strong> — double-click on underlined call targets or right-click → "Graph: MODULE!func" to navigate into called functions. Full navigation stack with <strong>Back (Shift+Esc)</strong> to return.</li>
+<li><strong>Block context menu</strong> — Set Color (7 colors + reset), Collapse/Expand block, Copy Address/Assembly, Add Comment (synced with Bookmarks plugin), Toggle Breakpoint, Graph called functions, Collapse All/Expand All, Reset All Colors, Go Back.</li>
+<li><strong>Zoom &amp; pan</strong> — mouse wheel zooms relative to cursor position, left-drag pans, Fit/1:1 buttons. <code>BitmapCache</code> for GPU-accelerated smooth pan/zoom.</li>
+<li><strong>Thunk/stub filtering</strong> — IAT stubs and library code blocks automatically excluded from graph via reachability analysis from entry point.</li>
+<li><strong>User annotations</strong> — comments from Bookmarks plugin shown as green <code>; comment</code> text in graph blocks.</li>
+</ul>
+<h3 id="new-plugin-flirt-signatures">New Plugin: FLIRT Signatures<a class="headerlink" href="#new-plugin-flirt-signatures" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>IDA-compatible FLIRT pattern matching</strong> — recognizes statically linked library functions by matching byte patterns at function entry points. Loads <code>.pat</code> files from <code>plugins/FLIRTpat/</code> directory.</li>
+<li><strong>Function discovery</strong> — enumerates functions via <code>.pdata</code> (RUNTIME_FUNCTION) on x64 or prologue scanning (<code>55 8B EC</code>) on x86.</li>
+<li><strong>Bulk memory reads</strong> — reads entire executable sections at once, then indexes locally. Avoids thousands of per-function kernel round-trips.</li>
+<li><strong>Prefix-indexed matching</strong> — O(1) signature lookup via 2-byte prefix hash instead of linear scan.</li>
+<li><strong>Built-in fallback database</strong> — ~50 common MSVC x64 CRT patterns (security_init_cookie, initterm, malloc, free, strlen, printf, etc.) when no <code>.pat</code> files are present.</li>
+<li><strong>Apply/Clear annotations</strong> — one-click <code>[FLIRT] function_name</code> annotations in the disassembly view, with undo via Clear.</li>
+<li><strong>.pat generator tool</strong> (<code>tools/GeneratePatFiles.csproj</code>) — generates <code>.pat</code> files from MSVC <code>.lib</code> archives (libcmt, libvcruntime, libcpmt, libconcrt, libucrt) for both x64 and x86. Auto-discovers Visual Studio and Windows SDK paths.</li>
+</ul>
+<h3 id="build_2">Build<a class="headerlink" href="#build_2" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>build.ps1</code> now builds and copies ScriptingPlugin (+ Roslyn), FlirtPlugin, and GraphViewPlugin (+ MSAGL).</li>
+<li><code>build.ps1</code> creates <code>bin\UI\plugins\FLIRTpat\</code> directory for <code>.pat</code> signature files.</li>
+<li><code>.pat</code> files are now included in the plugin data file copy step.</li>
+</ul>
+<h3 id="symbol-resolution">Symbol Resolution<a class="headerlink" href="#symbol-resolution" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Function table fallback</strong> — when <code>SymFromAddr</code> fails (common with certain PDBs), <code>ResolveAddress</code> now falls back to a function lookup table built from <code>SymEnumSymbols</code>. Binary search by address returns <code>funcName</code> or <code>funcName+0xOffset</code>.</li>
+<li><strong>Cache fix</strong> — <code>module+offset</code> fallback results are no longer cached, so they get re-resolved after PDB loads.</li>
+<li><strong>Cache invalidation on module load</strong> — stale symbol cache entries within a module's address range are cleared when <code>SymLoadModuleExW</code> loads new symbols.</li>
+</ul>
+<h2 id="v160-2026-03-30">v1.6.0 — 2026-03-30<a class="headerlink" href="#v160-2026-03-30" title="Permanent link">&para;</a></h2>
+<h3 id="service-debugging-debug-service">Service Debugging (Debug Service)<a class="headerlink" href="#service-debugging-debug-service" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Fixed: services now start through SCM</strong> — previously <code>HandleStartService</code> used <code>CreateProcess</code> directly, bypassing the Service Control Manager. <code>StartServiceCtrlDispatcher</code> would fail and ServiceMain was never called. Now the relay copies the binary with a <code>_kfdebug</code> suffix, patches the entry point to <code>EB FE</code> (infinite loop), temporarily swaps <code>ImagePath</code> via <code>ChangeServiceConfig</code>, and starts through <code>StartServiceA</code>. The SCM pipe connection is preserved so <code>StartServiceCtrlDispatcher</code> succeeds and ServiceMain is reached.</li>
+<li><strong>Two-phase start (prepare + start)</strong> — <code>START_SERVICE</code> pseudo-IOCTL only prepares (copy, patch, swap ImagePath). The UI then installs the debug hook targeting the service PID, and uses <code>START_DRIVER</code> to call <code>StartServiceA</code> in a background thread — same proven pattern as driver loading.</li>
+<li><strong>PID discovery via toolhelp</strong> — SCM doesn't populate <code>dwProcessId</code> until <code>StartServiceCtrlDispatcher</code> is called (which can't happen while spinning at EB FE). <code>HandleQueryServicePid</code> now falls back to <code>CreateToolhelp32Snapshot</code> + <code>Process32First/Next</code> to find the <code>_kfdebug</code> process by image name.</li>
+<li><strong>Entry point INT3 injection from UI</strong> — after the process spins at EB FE and the debug hook is installed, the UI sets a software breakpoint (<code>SetBreakpoint</code>) at the entry point. The driver's <code>CR0.WP</code> trick handles read-only <code>.text</code> pages. <code>WaitDebugEvent</code> catches the INT3.</li>
+<li><strong>Original bytes restore via ProtectMemory</strong> — after catching the entry point INT3, the UI changes page protection to RWX, writes the real original bytes (returned by relay in <code>KF_START_SERVICE_OUT.OriginalBytes[2]</code>), and restores protection. Previously <code>WriteMemory</code> silently failed on RX pages.</li>
+<li><strong>CONTINUE_STEP_PAST + event loop</strong> — continuing from the entry point INT3 uses <code>CONTINUE_STEP_PAST</code> (mode 1) with a loop to skip spurious single-step events, matching the driver loading flow.</li>
+<li><strong>Leftover cleanup</strong> — if a previous run left the <code>ImagePath</code> pointing to a <code>_kfdebug</code> copy, <code>HandleStartService</code> detects and restores the original path before proceeding. A deferred background thread restores <code>ImagePath</code> and deletes the copy after the process exits.</li>
+<li><strong>svchost rejection</strong> — svchost-hosted services are detected and rejected with a clear error message.</li>
+<li><strong>RefreshImports/Sections/Exceptions</strong> — now called when stopped at ServiceMain or StartServiceCtrlDispatcher (previously missing, so imports tab was empty).</li>
+</ul>
+<h3 id="mcp-plugin">MCP Plugin<a class="headerlink" href="#mcp-plugin" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Removed decompilation timeout</strong> — <code>ExecDecompile</code> no longer times out after 30 seconds. The polling loop now waits indefinitely until RetDec finishes, so AI assistants always receive the complete decompiled output.</li>
+</ul>
+<h2 id="v151-2026-03-28">v1.5.1 — 2026-03-28<a class="headerlink" href="#v151-2026-03-28" title="Permanent link">&para;</a></h2>
+<h3 id="register-editing">Register Editing<a class="headerlink" href="#register-editing" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Modify register value</strong> — double-click any register (or right-click → Modify Value) to enter a new hex value. Works for all general-purpose registers (RAX–R15 / EAX–ESP), RIP/EIP, RFLAGS/EFLAGS, and debug registers (DR0–DR7).</li>
+<li><strong>Toggle CPU flags</strong> — double-click or right-click → Toggle Flag on individual flags (CF, PF, AF, ZF, SF, TF, IF, DF, OF) to flip them in RFLAGS/EFLAGS.</li>
+<li><strong>Zero / Increment / Decrement</strong> — context menu shortcuts to zero out a register or adjust it by ±1.</li>
+<li><strong>Read-modify-write via WRITE_REGISTERS IOCTL</strong> — new <code>WriteRegisterByName</code> in DriverComm reads the full register set, patches the target field, and writes back atomically. Editing is only available in break state.</li>
+</ul>
+<h3 id="driver-stability">Driver Stability<a class="headerlink" href="#driver-stability" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Fixed BSOD when VM left overnight with debugged process open</strong> — system would blue-screen if the target VM was left running overnight with a process attached in the debugger.</li>
+</ul>
+<h2 id="v150-2026-03-27">v1.5.0 — 2026-03-27<a class="headerlink" href="#v150-2026-03-27" title="Permanent link">&para;</a></h2>
+<h3 id="inline-assembler">Inline Assembler<a class="headerlink" href="#inline-assembler" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Assemble dialog</strong> (Space or context menu → Assemble) — type assembly text (<code>mov eax, 1</code>, <code>xor eax, eax</code>, <code>jmp 0x401000</code>) or hex bytes (<code>B8 01 00 00 00</code>), see live preview of encoded bytes with automatic NOP padding when the new instruction is shorter than the original.</li>
+<li><strong>NOP Instruction</strong> (context menu) — replaces the selected instruction with NOPs (fills entire instruction size).</li>
+<li><strong>Fill with NOPs</strong> (context menu) — fills N bytes at the selected address with <code>0x90</code>.</li>
+<li><strong>x86/x64 assembler</strong> built on Iced.Intel — supports 80+ instruction types: <code>mov</code>, <code>add</code>, <code>sub</code>, <code>xor</code>, <code>and</code>, <code>or</code>, <code>cmp</code>, <code>test</code>, <code>lea</code>, <code>push</code>, <code>pop</code>, <code>inc</code>, <code>dec</code>, <code>jmp</code>, <code>call</code>, all conditional jumps (<code>je</code>/<code>jne</code>/<code>jg</code>/<code>jl</code>/...), <code>shl</code>/<code>shr</code>, <code>movzx</code>/<code>movsx</code>, <code>cmovxx</code>, <code>bsf</code>/<code>bsr</code>, memory operands (<code>[rax+8]</code>, <code>dword [ebp-4]</code>), and more.</li>
+<li><strong>Patch tracking</strong> — all patches recorded in Patches list with original bytes for undo. Patches included in PE Rebuilder dumps.</li>
+</ul>
+<h3 id="driver-stability_1">Driver Stability<a class="headerlink" href="#driver-stability_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Fixed BSOD on detach/disconnect</strong> — IRP double-complete race condition caused <code>DRIVER_IRQL_NOT_LESS_OR_EQUAL</code> or system hang. <code>IoSetCancelRoutine</code> return value now checked under spinlock in <code>KfDebugHookDeactivate</code>, <code>KfDebugHookCleanup</code>, and <code>KfReportAndBlock</code>. If cancel routine already owns the IRP, we skip completion. Standard DDK safe-cancel pattern.</li>
+<li><strong>Fixed stepping not working after re-open</strong> — <code>KfDebugHookDeactivate</code> and <code>KfSetTargetPid</code> now reset full session state (<code>g_EventPending</code>, <code>g_TraceActive</code>, <code>g_ContinueMode</code>, <code>g_ContinueReady</code>, <code>g_ContinueEvent</code>). Previously stale state from previous session caused step events to be lost.</li>
+<li><strong>KdDebuggerEnabled re-assertion</strong> — <code>KfSetTargetPid</code> and <code>KfInstallDebugHook</code> (early return path) now call <code>KfReassertDebugFlags()</code> after all <code>DbgPrint</code> calls, not before. <code>DbgPrint</code> resets <code>KdDebuggerEnabled=FALSE</code> via KD transport when no kernel debugger is attached.</li>
+<li><strong>Process exit notification</strong> — <code>PsSetCreateProcessNotifyRoutine</code> callback auto-deactivates debug hook when target process exits, cancelling pending WAIT IRP.</li>
+</ul>
+<h3 id="relay">Relay<a class="headerlink" href="#relay" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Synchronous DBG channel</strong> — replaced thread pool dispatch (<code>QueueUserWorkItem</code>) with direct synchronous <code>DeviceIoControl</code> loop for the DBG channel. Eliminates stale workers holding pending IOCTLs and corrupting the TCP response stream.</li>
+<li><strong>Process exit reporting</strong> — <code>[dbg] Process XXXX exited with code: N (0xN)</code> printed when debugged process terminates.</li>
+</ul>
+<h3 id="steprun-reliability">Step/Run Reliability<a class="headerlink" href="#steprun-reliability" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Direct WAIT+Continue for stepping</strong> — <code>StepIn</code> and <code>PluginSingleStep</code> no longer use <code>StartDebugListener</code>. Instead, <code>WaitDebugEvent</code> (DBG channel) and <code>ContinueDebugEvent</code> (CMD channel) are sent in parallel, with 5-second timeout and diagnostic stats on failure.</li>
+<li><strong>DebugListener exits on first null</strong> — prevents ghost WAIT IRPs that desynchronize the DBG TCP stream between sessions. Previously the listener looped and sent additional WAITs after process exit, creating stale pending IRPs in the driver.</li>
+<li><strong>DBG channel interrupt</strong> — <code>StopDebugListener</code> sets a short <code>ReadTimeout</code> on the DBG stream to force-unblock any pending TCP read, then restores infinite timeout.</li>
+</ul>
+<h3 id="disassembler">Disassembler<a class="headerlink" href="#disassembler" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Right-click selects instruction</strong> — <code>MouseRightButtonDown</code> now sets <code>SelectedDisasmAddress</code> so context menu actions work without prior left-click.</li>
+</ul>
+<h2 id="v140-2026-03-27">v1.4.0 — 2026-03-27<a class="headerlink" href="#v140-2026-03-27" title="Permanent link">&para;</a></h2>
+<h3 id="new-plugin-pe-rebuilder">New Plugin: PE Rebuilder<a class="headerlink" href="#new-plugin-pe-rebuilder" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>PE Rebuilder / Import Reconstructor plugin</strong> — Scylla-style PE dumper with IAT reconstruction. Dumps process PE from memory, fixes headers, rebuilds import directory.</li>
+<li><strong>Auto Rebuild</strong> — one-click workflow: detects OEP from RIP, finds ImageBase, auto-scans IAT, resolves all imports, dumps PE with fixed imports and save dialog. No manual input required.</li>
+<li><strong>IAT auto-detection</strong> — disassembles from OEP, finds <code>call [mem]</code>/<code>jmp [mem]</code> patterns, walks backward/forward to determine IAT boundaries. Falls back to PE import directory (entry 12) if heuristic fails.</li>
+<li><strong>ExportResolver</strong> — parses export tables of all loaded modules, follows JMP trampolines (up to 5 hops: <code>E9 rel32</code>, <code>FF 25</code>, <code>48 FF 25</code>, <code>mov rax,imm64; jmp rax</code>), builds forward resolution map (e.g. <code>ntdll.RtlAllocateHeap</code> → <code>kernel32.HeapAlloc</code>) from 12 key DLLs.</li>
+<li><strong>PE scan backwards</strong> — if RIP is not in any known module (e.g. unpacked code), scans memory backwards page-by-page looking for MZ+PE signature.</li>
+<li><strong>Import tree view</strong> — displays reconstructed imports grouped by DLL with function names and IAT addresses.</li>
+<li><strong>Header fixes</strong> — corrects OEP RVA, disables ASLR, fixes section raw data pointers, adds <code>.import</code> section with full IMAGE_IMPORT_DESCRIPTOR array + Hint/Name table.</li>
+<li><strong>All UI colors via theme system</strong> — <code>SetResourceReference</code> for every control, no hardcoded colors.</li>
+</ul>
+<h3 id="new-plugin-signature-detector">New Plugin: Signature Detector<a class="headerlink" href="#new-plugin-signature-detector" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>PEiD-compatible signature detector</strong> — scans process memory against 4445 packer/compiler signatures from the SANS/PEiD community database (<code>userdb.txt</code>).</li>
+<li><strong>Scan Main Module / Scan All Modules</strong> — entry-point-only and full-scan modes.</li>
+<li><strong>NOTICE.txt</strong> — attribution for community-contributed signature database.</li>
+</ul>
+<h3 id="plugin-system-fixes">Plugin System Fixes<a class="headerlink" href="#plugin-system-fixes" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Plugin enable/disable now works correctly</strong> — fixed checkbox binding (<code>UpdateSourceTrigger=PropertyChanged</code> + <code>Click</code> event instead of <code>Checked</code>/<code>Unchecked</code>), direct <code>cb.IsChecked</code> read from sender.</li>
+<li><strong>Tabs and menu items hide/show on disable</strong> — tracks plugin name → tabs/menus mapping via <code>OnPluginInitializing</code> callback. Resolves mismatch between <code>plugin.Name</code> and <code>AddToolPanel</code> title (e.g. "Anti-Anti-Debug" vs "Anti-Debug").</li>
+<li><strong>Plugin state persisted in <code>kf_settings.txt</code></strong> — <code>DisabledPlugins=name1,name2</code> line, restored on startup via <code>ApplyPersistedState</code>. No separate <code>plugins_state.json</code>.</li>
+<li><strong>Plugin Settings window</strong> enlarged to 620×450.</li>
+</ul>
+<h3 id="disassembler_1">Disassembler<a class="headerlink" href="#disassembler_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Dynamic scroll loading</strong> — disassembly view loads instructions on demand when scrolling up/down instead of reading a fixed 4096-byte block. Keeps ~1000 instructions in view, trims opposite end to avoid memory bloat.</li>
+</ul>
+<h3 id="ui">UI<a class="headerlink" href="#ui" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Toolbar icons</strong> — Open (⊕), Debug (📂), Connect (🔌) buttons replaced text labels with emoji glyphs.</li>
+<li><strong>Unified Attach/Detach button</strong> — single button toggles between "Attach" and "Detach" based on <code>IsDebugHookActive</code> state via <code>DataTrigger</code>.</li>
+</ul>
+<h3 id="relay_1">Relay<a class="headerlink" href="#relay_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Crash fix on disconnect</strong> — added <code>CancelIoEx</code> + <code>CancelSynchronousIo</code> on DBG channel handle before closing, preventing crash when thread pool workers are inside blocking <code>DeviceIoControl</code> (e.g. <code>WAIT_DEBUG_EVENT</code>). Increased wait timeout 3s→5s with <code>TerminateThread</code> fallback.</li>
+</ul>
+<h3 id="build_3">Build<a class="headerlink" href="#build_3" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>build.ps1</code> PATH fix</strong> — auto-adds <code>%ProgramFiles%\dotnet</code> and <code>%SystemRoot%\System32</code> to <code>$env:PATH</code> at script start.</li>
+<li><strong>PE Rebuilder</strong> added to plugin build list.</li>
+<li><strong>Signature Detector</strong> added to plugin build list.</li>
+</ul>
+<h2 id="v130-2026-03-24">v1.3.0 — 2026-03-24<a class="headerlink" href="#v130-2026-03-24" title="Permanent link">&para;</a></h2>
+<h3 id="new-plugin-mcp-server">New Plugin: MCP Server<a class="headerlink" href="#new-plugin-mcp-server" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>MCP (Model Context Protocol) Server plugin</strong> — exposes the full debugger API as an MCP SSE server. Any MCP-compatible AI client (Claude Code, Cursor, Windsurf, etc.) can connect and control the debugger remotely.</li>
+<li><strong>62 debugger tools</strong> available over MCP — the most comprehensive debugger AI integration available:</li>
+<li><strong>State</strong>: <code>get_debugger_state</code>, <code>read_registers</code></li>
+<li><strong>Breakpoints</strong> (5 types): <code>set_breakpoint</code>, <code>set_hardware_breakpoint</code>, <code>set_hw_write_watchpoint</code>, <code>set_hw_access_watchpoint</code>, <code>set_memory_breakpoint</code>, <code>remove_breakpoint</code>, <code>list_breakpoints</code></li>
+<li><strong>Memory</strong>: <code>read_memory</code>, <code>read_pointer</code>, <code>read_string</code>, <code>read_unicode_string</code>, <code>read_unicode_struct</code>, <code>write_memory</code>, <code>search_memory</code>, <code>compare_memory</code>, <code>allocate_memory</code>, <code>free_memory</code>, <code>protect_memory</code></li>
+<li><strong>Registers</strong>: <code>write_rip</code>, <code>write_rip_and_rsp</code></li>
+<li><strong>Disassembly</strong>: <code>disassemble</code>, <code>decompile</code>, <code>navigate_disasm</code>, <code>disasm_go_back</code></li>
+<li><strong>Symbols</strong>: <code>resolve_symbol</code>, <code>list_strings</code>, <code>xrefs_to</code></li>
+<li><strong>PE analysis</strong>: <code>dump_pe_header</code>, <code>dump_imports</code>, <code>dump_exports</code>, <code>dump_peb</code>, <code>dump_teb</code>, <code>dump_stack</code></li>
+<li><strong>Modules</strong>: <code>list_modules</code>, <code>list_kernel_modules</code>, <code>refresh_modules</code>, <code>add_unpacked_module</code>, <code>add_module_sections</code></li>
+<li><strong>Process/Threads</strong>: <code>list_processes</code>, <code>list_threads</code>, <code>suspend_thread</code>, <code>resume_thread</code>, <code>get_peb_address</code></li>
+<li><strong>Execution</strong>: <code>continue_execution</code>, <code>single_step</code>, <code>step_over</code>, <code>step_out</code>, <code>run_to_address</code>, <code>skip_instruction</code>, <code>pause_execution</code>, <code>wait_for_break</code></li>
+<li><strong>Patching</strong>: <code>nop_instruction</code>, <code>patch_jump</code></li>
+<li><strong>Anti-debug bypass</strong>: <code>clear_debug_port</code>, <code>clear_thread_hide</code>, <code>install_ntqsi_hook</code>, <code>remove_ntqsi_hook</code>, <code>probe_ntqsi_hook</code>, <code>spoof_shared_user_data</code></li>
+<li><strong>Settings panel</strong> in "MCP Server" tab — status indicator (green/gray), port configuration with persistence, start/stop buttons, copyable <code>.mcp.json</code> snippet, real-time activity log with timestamps.</li>
+<li><strong>Server instructions</strong> embedded in MCP — tells AI clients to prefer <code>decompile</code> over <code>disassemble</code> and outlines the recommended analysis workflow.</li>
+<li><strong>WPF Dispatcher marshaling</strong> — all UI-thread and execution-control API calls are dispatched via <code>Dispatcher.Invoke</code>, ensuring correct behavior when called from MCP's HttpListener threads.</li>
+<li><strong>RIP-tracking <code>wait_for_break</code></strong> — records RIP before resume and detects state changes by RIP delta, not phase transitions. Works correctly even when breakpoints hit instantly (&lt;1ms).</li>
+</ul>
+<h3 id="ai-assistant-plugin">AI Assistant Plugin<a class="headerlink" href="#ai-assistant-plugin" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>14 new tools</strong> added (now 62 total, matching MCP): <code>write_rip_and_rsp</code>, <code>add_module_sections</code>, <code>dump_stack</code>, <code>dump_peb</code>, <code>dump_teb</code>, <code>dump_pe_header</code>, <code>dump_imports</code>, <code>dump_exports</code>, <code>xrefs_to</code>, <code>nop_instruction</code>, <code>patch_jump</code>, <code>list_strings</code>, <code>compare_memory</code>, <code>read_unicode_struct</code>.</li>
+<li><strong><code>wait_for_break</code> fix</strong> — same RIP-tracking approach as MCP, fixing hangs when breakpoints trigger faster than the poll interval.</li>
+<li><strong>Updated default system prompt</strong> — analysis workflow guidance: decompile-first, read_string for references, read_pointer for vtables, resolve_symbol before decompiling sub-functions.</li>
+</ul>
+<h3 id="themes_1">Themes<a class="headerlink" href="#themes_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>MCP Server tab colors</strong> added to all 9 themes (green/teal tones — network/server style).</li>
+<li><strong>MCP Settings panel</strong> fully themed via <code>SetResourceReference</code> — <code>PluginBgBrush</code>, <code>PluginFgBrush</code>, <code>PluginFgDimBrush</code>, <code>PluginAccentBrush</code>, <code>PluginControlBgBrush</code>, <code>PluginButtonBgBrush</code>, <code>PluginBorderBrush</code>. Automatically adapts to theme changes.</li>
+</ul>
+<h2 id="v120-2026-03-21">v1.2.0 — 2026-03-21<a class="headerlink" href="#v120-2026-03-21" title="Permanent link">&para;</a></h2>
+<h3 id="ai-assistant-plugin_1">AI Assistant Plugin<a class="headerlink" href="#ai-assistant-plugin_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>New plugin: AI Assistant</strong> — interactive chat-based reverse engineering assistant integrated into KernelFlirt. Works like AI plugins in IDA Pro — analyzes code, explains functions, sets breakpoints, reads memory, steps through code.</li>
+<li><strong>Universal AI provider support</strong> — works with any OpenAI-compatible API: DeepSeek, Qwen, ChatGPT, Ollama, LM Studio, Anthropic (via proxy), and others. Configurable endpoint, model, API key, temperature, max tokens, and system prompt.</li>
+<li><strong>Decompiler integration</strong> — <code>decompile</code> tool sends C pseudocode to AI for analysis (like Hex-Rays in IDA Pro), much more efficient than raw disassembly.</li>
+<li><strong>Debugger tool calling</strong> — AI can execute real debugger actions: set/remove breakpoints, read/write memory, read registers, step in/over/out, continue execution, disassemble, resolve symbols, navigate disassembly, list modules/threads.</li>
+<li><strong>Settings dialog</strong> — provider presets (DeepSeek, OpenAI, Anthropic, Ollama, LM Studio, Qwen, Custom), API key input, model selection, token/temperature sliders, editable system prompt with reset.</li>
+<li><strong>Chat history management</strong> — automatic context trimming to stay within token limits.</li>
+<li><strong>AI Assistant tab colors</strong> added to all 9 themes (purple/violet tones).</li>
+</ul>
+<h3 id="remote-file-browser">Remote File Browser<a class="headerlink" href="#remote-file-browser" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Full-featured file browser</strong> when connecting to relay VM via Open &amp; Debug.</li>
+<li><strong>5 new relay IOCTLs</strong> — <code>READ_FILE</code>, <code>WRITE_FILE</code>, <code>DELETE_PATH</code>, <code>CREATE_DIR</code>, <code>RENAME_PATH</code>.</li>
+<li><strong>File operations</strong> — download, upload, delete, rename, create folder, copy path. Chunked transfer with progress.</li>
+<li><strong>Navigation</strong> — back/forward history, up button, editable address bar, drive selector, refresh.</li>
+<li><strong>Multi-select</strong>, drag-and-drop upload, keyboard shortcuts (F2, Del, F5, Backspace, Alt+arrows).</li>
+<li><strong>Double-click</strong>: folders navigate, .exe/.sys open in debugger, others download.</li>
+</ul>
+<h3 id="disassembler_2">Disassembler<a class="headerlink" href="#disassembler_2" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Go Back</strong> in context menu — returns to previous location after following imports, symbols, or Go To commands.</li>
+</ul>
+<h2 id="v110-2026-03-19">v1.1.0 — 2026-03-19<a class="headerlink" href="#v110-2026-03-19" title="Permanent link">&para;</a></h2>
+<h3 id="theme-system-plugin-customization">Theme System: Plugin Customization<a class="headerlink" href="#theme-system-plugin-customization" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>12 new plugin color keys</strong> — <code>PluginBg</code>, <code>PluginFg</code>, <code>PluginFgDim</code>, <code>PluginBorder</code>, <code>PluginAccent</code>, <code>PluginControlBg</code>, <code>PluginButtonBg</code>, <code>PluginButtonHover</code>, <code>PluginSelection</code>, <code>PluginGridAltRow</code>, <code>PluginGroupHeader</code>, <code>PluginGroupBg</code>. All plugin controls inherit these colors automatically via implicit WPF styles — plugin authors no longer need to hardcode any colors.</li>
+<li><strong>Plugin wrapper</strong> — SDK wraps each plugin's content in a <code>ContentControl</code> with scoped <code>ResourceDictionary</code>, remapping standard WPF brush keys to <code>PluginXxx</code> equivalents. Plugins automatically pick up theme colors without any code changes.</li>
+<li><strong>Implicit styles for all WPF controls</strong> in <code>Dark.xaml</code> — <code>CheckBox</code>, <code>GroupBox</code>, <code>Label</code>, <code>ListView</code>, <code>ListViewItem</code>, <code>ListBoxItem</code>, <code>ScrollViewer</code>, <code>DataGridRow</code>, <code>DataGridCell</code>, <code>ToolTip</code>, <code>TextBox</code>, <code>ComboBox</code>. Plugins using standard WPF controls get themed for free.</li>
+<li><strong>Per-plugin tab header colors</strong> — each plugin tab can have individual <code>Fg</code>/<code>Bg</code> overrides (<code>Tab.Anti-Debug.Fg</code>, <code>Tab.API Monitor.Bg</code>, etc.). Falls back to global tab style if not set.</li>
+<li><strong>"Plugins" tab in Settings</strong> — color pickers for all 12 plugin control colors + per-plugin tab header Fg/Bg overrides with theme selector and reset button.</li>
+<li><strong>All 9 theme presets updated</strong> with unique plugin color palettes: default-dark, dracula, ida-pro, long_night, monokai, ollydbg, ollydbg-light, sakura, x64dbg.</li>
+<li><strong>All 4 plugins cleaned</strong> — removed hardcoded <code>Foreground</code>, <code>Background</code>, <code>BorderBrush</code> from ThemidaPlugin, StringDecryptorPlugin, AntiDebugPlugin, ApiMonitorPlugin. Simplified <code>MakeStyledComboBox</code> in StringDecryptorPlugin (120+ lines of custom ControlTemplate replaced with 10 lines).</li>
+</ul>
+<h3 id="bug-fixes">Bug Fixes<a class="headerlink" href="#bug-fixes" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Plugin tab colors not applied on startup</strong> — <code>ApplyTabColors</code> was called before <code>LoadPlugins()</code>, so plugin tabs didn't exist yet. Added re-apply after plugin loading.</li>
+</ul>
+<h3 id="build_4">Build<a class="headerlink" href="#build_4" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>build.ps1</code> now copies <code>kf_settings.txt</code> to <code>bin\UI\</code>.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "content.code.copy", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
