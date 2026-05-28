@@ -200,6 +200,11 @@ public class McpDebuggerTools
              Obj(Prop("tid", "integer", "Thread ID to resume")),
              required: ["tid"]),
 
+        Tool("switch_thread",
+             "Switch debugger focus to the given TID — updates registers, disassembly, stack and call-stack views to reflect that thread. Does not change its suspend count.",
+             Obj(Prop("tid", "integer", "Thread ID to make active")),
+             required: ["tid"]),
+
         Tool("get_peb_address",
              "Get the PEB (Process Environment Block) address of the target process",
              Obj()),
@@ -461,6 +466,7 @@ public class McpDebuggerTools
                 "list_threads"              => ExecListThreads(),
                 "suspend_thread"            => ExecSuspendThread(root),
                 "resume_thread"             => ExecResumeThread(root),
+                "switch_thread"             => ExecSwitchThread(root),
                 "get_peb_address"           => ExecGetPebAddress(),
 
                 // Execution control
@@ -912,6 +918,16 @@ public class McpDebuggerTools
         return _api.Process.ResumeThread(tid)
             ? $"Thread {tid} resumed"
             : $"Failed to resume thread {tid}";
+    }
+
+    private string ExecSwitchThread(JsonElement a)
+    {
+        var tid = (uint)a.GetProperty("tid").GetInt64();
+        var threads = _api.Process.EnumThreads(_api.TargetPid);
+        if (threads is null || threads.All(t => t.ThreadId != tid))
+            return $"TID {tid} not found in PID {_api.TargetPid}";
+        _api.Process.SwitchToThread(tid);
+        return $"Switched debugger focus to TID {tid} (registers, disassembly, stack updated)";
     }
 
     private string ExecGetPebAddress()

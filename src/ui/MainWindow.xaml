@@ -777,8 +777,10 @@
                     <DataGrid.ContextMenu>
                         <ContextMenu>
                             <MenuItem Header="Switch to Thread" Click="OnThreadSwitch" />
-                            <MenuItem Header="Suspend" Click="OnThreadSuspend" />
-                            <MenuItem Header="Resume" Click="OnThreadResume" />
+                            <MenuItem Header="Freeze (Suspend++)" Click="OnThreadSuspend"
+                                      ToolTip="Increment SuspendCount of this thread. To run the whole process press F9 — frozen threads stay suspended." />
+                            <MenuItem Header="Unfreeze (Resume--)" Click="OnThreadResume"
+                                      ToolTip="Decrement SuspendCount. Doesn't run the process — use F9 (Run) for that." />
                             <MenuItem Header="Follow Start Address" Click="OnThreadFollowStart" />
                         </ContextMenu>
                     </DataGrid.ContextMenu>
@@ -792,6 +794,7 @@
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
                         <DataGridTextColumn Header="State" Width="120" Binding="{Binding StateText}" />
+                        <DataGridTextColumn Header="OS State" Width="110" Binding="{Binding OsStateText}" />
                         <DataGridTextColumn Header="Priority" Width="80" Binding="{Binding Priority}" />
                     </DataGrid.Columns>
                 </DataGrid>

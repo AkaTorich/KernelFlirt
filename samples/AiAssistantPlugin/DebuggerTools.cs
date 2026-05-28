@@ -188,6 +188,11 @@ public class DebuggerTools
                 tid = new { type = "integer", description = "Thread ID to resume" }
             }, required = new[] { "tid" } }),
 
+        MakeTool("switch_thread", "Switch debugger focus to the given TID — updates registers, disassembly, stack and call-stack views for that thread. Does not change its suspend count.",
+            new { type = "object", properties = new {
+                tid = new { type = "integer", description = "Thread ID to make active" }
+            }, required = new[] { "tid" } }),
+
         MakeTool("get_peb_address",
             "Get the PEB (Process Environment Block) address of the target process",
             new { type = "object", properties = new { } }),
@@ -454,6 +459,7 @@ public class DebuggerTools
                 "list_threads"             => ExecListThreads(),
                 "suspend_thread"           => ExecSuspendThread(root),
                 "resume_thread"            => ExecResumeThread(root),
+                "switch_thread"            => ExecSwitchThread(root),
                 "get_peb_address"          => ExecGetPebAddress(),
 
                 // Execution control
@@ -983,6 +989,16 @@ public class DebuggerTools
         return _api.Process.ResumeThread(tid)
             ? $"Thread {tid} resumed"
             : $"Failed to resume thread {tid}";
+    }
+
+    private string ExecSwitchThread(JsonElement args)
+    {
+        var tid = (uint)args.GetProperty("tid").GetInt64();
+        var threads = _api.Process.EnumThreads(_api.TargetPid);
+        if (threads == null || threads.All(t => t.ThreadId != tid))
+            return $"TID {tid} not found in PID {_api.TargetPid}";
+        _api.Process.SwitchToThread(tid);
+        return $"Switched debugger focus to TID {tid} (registers, disassembly, stack updated)";
     }
 
     private string ExecGetPebAddress()

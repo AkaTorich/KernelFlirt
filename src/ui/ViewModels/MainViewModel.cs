@@ -134,6 +134,20 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public RangeObservableCollection<Register> Registers { get; } = [];
     public RangeObservableCollection<ModuleInfo> Modules { get; } = [];
     public RangeObservableCollection<ThreadInfo> Threads { get; } = [];
+
+    // TID-ы потоков, замороженных пользователем через UI (Suspend Thread).
+    // Используется для индикации RUNNING/SUSPENDED в колонке State на вкладке Threads.
+    // Очищается при детаче.
+    private readonly HashSet<uint> _frozenThreadIds = new();
+    public IReadOnlySet<uint> FrozenThreadIds => _frozenThreadIds;
+
+    // TrapFrame keeper: фоновый таймер, который раз в 2 сек дергает ReadRegisters
+    // на каждый замороженный TID — это "трогает" KTHREAD::TrapFrame через PTE
+    // и не даёт kernel-MM вытеснить kernel-stack потока на диск. Без этого
+    // через минуту-другую IOCTL_KF_READ_REGISTERS / IOCTL_KF_SINGLE_STEP начинают
+    // фейлиться (page-out race), и Step/Switch перестают работать. Та же логика
+    // что в KfClient.cs.
+    private System.Threading.Timer? _trapFrameKeeper;
     public RangeObservableCollection<KernelModuleInfo> KernelModules { get; } = [];
     public ObservableCollection<Breakpoint> Breakpoints { get; } = [];
     public ObservableCollection<string> LogMessages { get; } = [];
@@ -186,6 +200,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _symbols = new SymbolService(_driver);
         _symbols.LogMessage += msg => Application.Current.Dispatcher.Invoke(() => Log(msg));
         _pluginManager = new PluginManager(msg => Application.Current.Dispatcher.Invoke(() => Log(msg)));
+
+        // После любого ReplaceAll / Clear на Threads восстанавливаем флаг IsFrozen
+        // из локального учёта _frozenThreadIds — иначе после refresh-а вкладки
+        // SUSPENDED-индикатор сбрасывался бы (EnumThreads возвращает новые объекты).
+        Threads.CollectionChanged += (_, _) => ApplyFrozenFlags();
+
         LoadSettings();
         // Rebuild x64dbg-style live hints only when the visible instruction set
         // changes (navigation, initial break, scroll-load). Re-rendering on every
@@ -223,7 +243,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
             addr => _addressAnnotations.TryGetValue(addr, out var n) ? n : null,
             () => (IReadOnlyDictionary<ulong, string>)AddressAnnotations,
             () => RefreshDisasmAnnotations(),
-            (addr, type) => SetBreakpointAtAddressWithType(addr, type));
+            (addr, type) => SetBreakpointAtAddressWithType(addr, type),
+            // SwitchToThread → плагины могут программно переключать активный поток
+            tid => SwitchThreadCommand.Execute(tid));
 
         // Wire Continue/SingleStep callbacks so plugins can resume execution
         _pluginManager.ContinueAction = () =>
@@ -2507,6 +2529,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         Instructions.Clear();
         Registers.Clear();
         Modules.Clear();
+        StopTrapFrameKeeper();
+        lock (_frozenThreadIds) _frozenThreadIds.Clear();
         Threads.Clear();
         StackEntries.Clear();
         CallStack.Clear();
@@ -2648,18 +2672,32 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         Log("Step: sending WAIT + Continue(STEP_INTO)...");
         var waitTask = Task.Run(() => _driver.WaitDebugEvent());
+
+        // Перед Continue нужно убедиться что у потока SuspendCount=0, иначе
+        // планировщик не запустит поток после освобождения из KfReportAndBlock.
+        // Если у пользователя поток в _frozenThreadIds — после Step восстановим.
+        bool wasFrozen;
+        lock (_frozenThreadIds) wasFrozen = _frozenThreadIds.Contains(SelectedThreadId);
+        int resumes = await Task.Run(() => DrainSuspendCount(SelectedThreadId));
+        if (resumes > 0)
+            Log($"Step: drained SuspendCount with {resumes} ResumeThread call(s)");
+
         var contOk = _driver.ContinueDebugEvent(DriverComm.CONTINUE_STEP_INTO);
         Log($"Step: Continue sent, ok={contOk}");
         _hitSwBp = null;
 
-        // Wait with timeout — if no event in 5s, something is wrong
-        var completed = await Task.WhenAny(waitTask, Task.Delay(5000));
+        // Wait with timeout — if no event in 15s, something is wrong
+        var completed = await Task.WhenAny(waitTask, Task.Delay(15000));
         if (completed == waitTask)
         {
             var stepEvt = await waitTask;
             if (stepEvt != null)
             {
                 Log($"Step: event received at {stepEvt.Address:X16}");
+                // Если поток был помечен пользователем как frozen — восстановим
+                // SuspendCount = 1 (Freeze), чтобы пользователь видел его SUSPENDED.
+                if (wasFrozen)
+                    await Task.Run(() => _driver.SuspendThread(SelectedThreadId));
                 OnDebugEvent(stepEvt);
             }
             else
@@ -2668,13 +2706,32 @@ public partial class MainViewModel : ObservableObject, IDisposable
         else
         {
             var statsAfter = _driver.GetHookStats();
-            Log($"Step: TIMEOUT 5s! hookCalls={statsAfter?.hookCalls} targetCalls={statsAfter?.targetCalls} " +
+            Log($"Step: TIMEOUT 15s! hookCalls={statsAfter?.hookCalls} targetCalls={statsAfter?.targetCalls} " +
                 $"blocked={statsAfter?.threadBlocked} mode={statsAfter?.continueMode} " +
                 $"lastCode=0x{statsAfter?.lastTargetCode:X} lastAddr=0x{statsAfter?.lastTargetAddr:X}");
+            // Даже при таймауте восстановим Freeze, чтобы UI не разъехался с реальностью.
+            if (wasFrozen)
+                await Task.Run(() => _driver.SuspendThread(SelectedThreadId));
             IsBreakState = true;
             IsRunning = false;
             StatusText = "Step timed out";
         }
+    }
+
+    /// <summary>Делает ResumeThread в цикле пока возврат не покажет что SuspendCount уже 0.
+    /// Возвращает число успешных Resume-вызовов (для лога). После выхода поток гарантированно
+    /// может быть запланирован планировщиком.</summary>
+    private int DrainSuspendCount(uint tid)
+    {
+        // Защита от бесконечного цикла на случай ошибки IOCTL — максимум 10 итераций
+        // (реальный SuspendCount никогда не должен быть выше единиц).
+        int n = 0;
+        for (int i = 0; i < 10; i++)
+        {
+            if (!_driver.ResumeThread(tid)) break;
+            n++;
+        }
+        return n;
     }
 
     /* ================================================================== */
@@ -3572,7 +3629,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     private void NavigateToRip()
     {
-        var rip = Registers.FirstOrDefault(r => r.Name == IpRegName);
+        // Ищем сначала по предпочтительному имени (RIP для x64 / EIP для x86),
+        // потом fallback на любой из них — это спасает в случаях когда WoW64-поток
+        // был приостановлен на 64-битной syscall-границе (контекст x64, регистр RIP),
+        // хотя процесс помечен Is32Bit=true.
+        var rip = Registers.FirstOrDefault(r => r.Name == IpRegName)
+                  ?? Registers.FirstOrDefault(r => r.Name is "RIP" or "EIP");
         if (rip != null && rip.Value != 0)
             DisasmAddress = rip.Value;
     }
@@ -4846,26 +4908,152 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private async Task SuspendThread(uint tid)
     {
         var ok = await Task.Run(() => _driver.SuspendThread(tid));
-        if (ok) Log($"Suspended TID {tid}");
+        if (ok)
+        {
+            lock (_frozenThreadIds) _frozenThreadIds.Add(tid);
+            EnsureTrapFrameKeeper();   // фоновый touch чтобы TrapFrame не page-out'нулся
+            var ti = Threads.FirstOrDefault(t => t.ThreadId == tid);
+            if (ti != null) ti.IsFrozen = true;
+            Log($"Suspended TID {tid}");
+
+            // Если суспендим текущий активный поток И он не был уже в break-state
+            // (т.е. реально бежал, не висел в KfReportAndBlock) — переводим отладчик
+            // в suspend-path: Step In/Over/Out теперь пойдут через SingleStep IOCTL
+            // + ResumeThread, а не через ContinueDebugEvent (который ничего не делает
+            // для потока, остановленного KeSuspendThread).
+            if (tid == SelectedThreadId && !IsBreakState)
+            {
+                _isPausedViaSuspend = true;
+                IsBreakState = true;
+                // Синхронно перечитываем регистры (а не async-void RefreshRegisters)
+                // — иначе NavigateToRip отработает до того, как Registers заполнятся.
+                await ReloadActiveThreadAsync();
+            }
+        }
     }
 
     [RelayCommand]
     private async Task ResumeThread(uint tid)
     {
         var ok = await Task.Run(() => _driver.ResumeThread(tid));
-        if (ok) Log($"Resumed TID {tid}");
+        if (ok)
+        {
+            lock (_frozenThreadIds) _frozenThreadIds.Remove(tid);
+            // Если замороженных больше нет — гасим keeper, незачем дергать IOCTL впустую.
+            bool empty;
+            lock (_frozenThreadIds) empty = _frozenThreadIds.Count == 0;
+            if (empty) StopTrapFrameKeeper();
+
+            var ti = Threads.FirstOrDefault(t => t.ThreadId == tid);
+            if (ti != null) ti.IsFrozen = false;
+            Log($"Resumed TID {tid}");
+
+            // Резумим текущий активный поток в suspend-state — выходим из suspend-path.
+            if (tid == SelectedThreadId && _isPausedViaSuspend)
+            {
+                _isPausedViaSuspend = false;
+                IsBreakState = false;
+            }
+        }
+    }
+
+    /// <summary>Применяет учёт замороженных потоков ко всем элементам Threads —
+    /// обычно после ReplaceAll/Clear (вызывается из CollectionChanged).</summary>
+    private void ApplyFrozenFlags()
+    {
+        foreach (var t in Threads)
+            t.IsFrozen = _frozenThreadIds.Contains(t.ThreadId);
+    }
+
+    /// <summary>Запускает TrapFrame keeper если ещё не запущен.</summary>
+    private void EnsureTrapFrameKeeper()
+    {
+        if (_trapFrameKeeper != null) return;
+        _trapFrameKeeper = new System.Threading.Timer(_ => TouchFrozenTrapFrames(),
+            null, dueTime: 2000, period: 2000);
+    }
+
+    /// <summary>Раз в 2 сек дергает ReadRegisters на каждом замороженном TID
+    /// чтобы kernel-MM не вытеснил их kernel-stack на диск.</summary>
+    private void TouchFrozenTrapFrames()
+    {
+        if (!IsConnected || TargetPid == 0) return;
+        uint[] tids;
+        lock (_frozenThreadIds) tids = _frozenThreadIds.ToArray();
+        var pid = TargetPid;
+        foreach (var tid in tids)
+        {
+            try { _ = _driver.ReadRegisters(pid, tid, Is32Bit); }
+            catch { /* транзиентное — на следующий тик попробуем снова */ }
+        }
+    }
+
+    /// <summary>Останавливает keeper и освобождает таймер.</summary>
+    private void StopTrapFrameKeeper()
+    {
+        _trapFrameKeeper?.Dispose();
+        _trapFrameKeeper = null;
     }
 
     [RelayCommand]
-    private void SwitchThread(uint tid)
+    private async Task SwitchThread(uint tid)
     {
         SelectedThreadId = tid;
-        RefreshRegisters();
+
+        // Если переключаемся на замороженный поток — переводим отладчик в suspend-path,
+        // иначе Step In/Over/Out пойдут через ContinueDebugEvent, который не разбудит
+        // приостановленный KeSuspendThread'ом поток. Если выбрали обычный (исполняющийся)
+        // поток — выходим из suspend-path (break-state сбрасываем, чтобы кнопки
+        // отражали реальное состояние).
+        bool frozen = _frozenThreadIds.Contains(tid);
+        _isPausedViaSuspend = frozen;
+        IsBreakState = frozen;
+
+        // Синхронно читаем регистры нового потока — иначе NavigateToRip / RefreshDisassembly
+        // отработают до завершения async-void RefreshRegisters и Registers будут пустыми.
+        await ReloadActiveThreadAsync();
+
+        Log($"Switched to TID {tid}{(frozen ? " (SUSPENDED — suspend-path active)" : "")}");
+    }
+
+    /// <summary>Синхронно перечитывает регистры активного потока и обновляет
+    /// зависящие от них views (дизасм, стек, callstack). Используется когда нужно
+    /// гарантировать порядок: regs → NavigateToRip → дизасм.</summary>
+    private async Task ReloadActiveThreadAsync()
+    {
+        if (!IsConnected || TargetPid == 0 || SelectedThreadId == 0) return;
+
+        var pid = TargetPid;
+        var tid = SelectedThreadId;
+
+        // Retry policy: для SUSPENDED-потока KTHREAD->TrapFrame может быть
+        // вытеснен на диск (kernel-MM page-out), и первый IOCTL_KF_READ_REGISTERS
+        // вернёт пусто. Сам факт обращения "трогает" PTE, и через 50 мс страница
+        // обычно поднимается обратно. 5 попыток × 50 мс — то же, что в KfConsole.
+        List<Register> regs = [];
+        for (int attempt = 0; attempt < 5; attempt++)
+        {
+            regs = await Task.Run(() => _driver.ReadRegisters(pid, tid, Is32Bit));
+            if (regs.Count > 0) break;
+            await Task.Delay(50);
+        }
+        if (regs.Count == 0)
+        {
+            Log($"ReadRegisters failed for TID {tid} after 5 retries (kernel stack paged out?)");
+            return;
+        }
+
+        var oldRegs = Registers.ToDictionary(r => r.Name, r => r.Value);
+        foreach (var reg in regs)
+            if (oldRegs.TryGetValue(reg.Name, out var prev)) reg.PreviousValue = prev;
+        await AnnotateRegistersAsync(regs);
+        Registers.ReplaceAll(regs);
+
+        // Только теперь Registers свежие — NavigateToRip найдёт правильный IP.
         NavigateToRip();
         RefreshDisassembly();
         RefreshStack();
         RefreshCallStack();
-        Log($"Switched to TID {tid}");
     }
 
     /* ================================================================== */
@@ -5203,7 +5391,16 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
 
         var data = await Task.Run(() => _driver.ReadMemory(pid, addr, 2048));
-        if (data == null) return;
+        if (data == null)
+        {
+            // Диагностика: пользователь часто не понимает почему дизасм пустой.
+            // Самый частый случай — RIP находится в kernel-mode (KfReadMemory
+            // отвергает не-canonical user-range адреса для безопасности).
+            bool kernelAddr = addr >= 0xFFFF_8000_0000_0000UL;
+            Log($"Disassembly: ReadMemory failed at {FormatAddr(addr)}"
+                + (kernelAddr ? " (kernel-mode address — driver rejects these by design)" : ""));
+            return;
+        }
 
         PatchBpBytesForDisasm(data, addr);
         var instrs = _disasm.Disassemble(data, addr, 128);

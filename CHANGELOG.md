@@ -1,5 +1,148 @@
 # Changelog
 
+## v2.4.0 — 2026-05-28
+
+### New Plugin: Converter
+
+- **`ConverterPlugin`** — a Number Base Converter plugin under `samples/ConverterPlugin/`. Implements
+  `IKernelFlirtPlugin` (`Name = "Converter"`, single-file ~330 LOC plugin). Registers a tab via
+  `api.UI.AddToolPanel("Converter", panel)` plus a menu item `Send RIP to Converter`. Output goes
+  to `bin\UI\plugins\ConverterPlugin.dll`; added to `$pluginProjects` in `build.ps1`.
+- **Fields** (synchronised via a single `ulong _value` and a `_syncing` flag to avoid feedback):
+  - `DEC` — integer (signed/unsigned depending on the toggle), or `double`/`float` when **Mode = Float**.
+    Auto-detect for fractional input in Int mode: literals containing `.` / `e` / `NaN` / `Infinity`
+    are parsed as IEEE-754 and their bits stored as the value.
+  - `HEX` — width-padded hex, accepts `0x…`/`…h` prefix.
+  - `OCT` — manual base-8 formatting/parsing (avoids `Convert.ToString` overflow on `ulong`).
+  - `BIN` — full-width binary with 4-bit groups; accepts `0b…`, spaces and underscores as separators.
+  - `ASCII` — read-only; each byte rendered as printable char or `.`.
+  - `Bytes (LE)` — read-only; raw bytes in little-endian order (as they sit in memory).
+  - `IEEE-754` — read-only; `BitConverter.UInt32BitsToSingle` (G9) for 32-bit, `UInt64BitsToDouble` (G17)
+    for 64-bit. `(n/a)` for 8/16-bit widths.
+- **Width selector** — radio buttons `8 / 16 / 32 / 64`. Switching truncates `_value` to the new width.
+- **Mode selector** — `Int` / `Float`. In Float mode DEC mirrors the IEEE-754 view; on switching to
+  Float at 8/16-bit width the plugin auto-promotes to 32-bit (IEEE-754 isn't defined for shorter widths).
+  The `Signed` checkbox is disabled in Float mode.
+- **Buttons**: `From RIP` (reads target registers, auto-detects WoW64 and switches to 32-bit),
+  `From Address…` (reads N bytes from the target's virtual memory), `Byte Swap`
+  (`BinaryPrimitives.ReverseEndianness` per width — canonical math, no input memory), `NOT`
+  (bitwise complement within width), `Clear`.
+- **No hardcoded colors anywhere in the plugin.** All controls render through the active KernelFlirt
+  theme via `ApplyPluginResources` (`BgBrush` / `FgBrush` / `BorderBrush` / `AccentBrush` / `BgLightBrush`).
+  The only visual override is `FontFamily = "Consolas"` for numeric fields — a local fallback if the
+  theme hasn't set a global monospace font.
+- **Icon**: new `src/ui/Resources/Icons/Plugins/converter.svg` in the same gradient/gloss style as the
+  other plugin icons (LCD-display look with `0xFF` / `255` and conversion arrows). Registered as a
+  `<Resource>` in `KernelFlirt.UI.csproj` and bound to the plugin name `Converter` in `_pluginIconMap`
+  (`MainWindow.xaml.cs`).
+- **Per-theme tab colors.** All 10 theme files (`themes/*.txt` + the deployed copies in
+  `bin/UI/themes/`) gained `Color.Tab.Converter.Fg` / `.Bg`, picked to harmonise with each palette
+  without colliding with existing plugin tabs:
+  - default-dark: `#26C6DA` on `#1A2A30` · dracula: `#4DD0E1` on `#1F2E33`
+  - hacker: `#FFD700` on `#1A1A0A` (amber on green neon)
+  - ida-pro: `#5BB8B0` on `#202B2B` · long_night: `#80CBC4` on `#1F2E2C`
+  - monokai: `#56B6C2` on `#1F2C2E` · ollydbg: `#26A69A` on `#1A2A28`
+  - ollydbg-light: `#00838F` on `#E0F7FA` (the only light theme)
+  - sakura: `#4DB6AC` on `#1A2828` · x64dbg: `#FFC107` on `#2E2818`
+
+### Threads Tab — Freeze Indication
+
+- **New `State` semantics**: the column now reflects the **debugger's** view, showing `RUNNING` or
+  `SUSPENDED`. Toggling via the context-menu `Suspend` / `Resume` updates the indicator immediately
+  (via `INotifyPropertyChanged` on `ThreadInfo.IsFrozen`).
+- **New `OS State` column** preserves the previous mapping of `KTHREAD::State` →
+  `Initialized` / `Ready` / `Running` / `Standby` / `Terminated` / `Waiting` / `Transition` /
+  `DeferredReady`. The pair `SUSPENDED` + `Waiting` makes the typical
+  attach → freeze → step workflow obvious (the thread is parked by the debugger while sitting in a
+  WaitForSingleObject call inside ntdll, etc.).
+- **Persistent across refreshes.** `MainViewModel` maintains a private `_frozenThreadIds` `HashSet<uint>`;
+  `ApplyFrozenFlags()` is wired to `Threads.CollectionChanged`, so any `ReplaceAll` from
+  `EnumThreads` (after attach, refresh, step, etc.) re-applies the frozen flags without losing the
+  indicator. Cleared together with `Threads.Clear()` on detach/disconnect.
+- **`ThreadInfo` upgrades**: implements `INotifyPropertyChanged`; new `IsFrozen` property; `StateText`
+  now derives from `IsFrozen`; previous OS-level mapping preserved as `OsStateText` (used by the new
+  column).
+
+### Theme Fix: RadioButton
+
+- **Added an implicit `Style` for `RadioButton`** in `src/ui/Themes/Dark.xaml` — previously WPF rendered
+  the system-default control with a black dot/border that ignored theme colors, which was very visible
+  inside plugin tabs (e.g. the Converter's size/mode selectors). The new template uses two `Ellipse`s
+  with `DynamicResource` brushes (`BgBrush` / `BorderBrush` / `AccentBrush` / `BgLightBrush`), so the
+  control follows the active theme everywhere it appears — both in the main UI and inside any
+  plugin's WPF tree (since `ApplyPluginResources` remaps those brushes to `PluginXxxBrush`).
+
+### Threads Tab — `OS State` Column
+
+- New column **`OS State`** in the Threads grid, populated from `KTHREAD::State` (`Initialized` /
+  `Ready` / `Running` / `Standby` / `Terminated` / `Waiting` / `Transition` / `DeferredReady`).
+  The existing `State` column was retained but now shows the debugger's view (`RUNNING` /
+  `SUSPENDED`). The pair `SUSPENDED + Waiting` makes the typical attach → freeze → step workflow
+  obvious — the thread is parked by the debugger while sitting inside an ntdll `WaitForSingleObject`.
+- Context menu items renamed `Suspend` / `Resume` → **`Freeze (Suspend++)`** / **`Unfreeze (Resume--)`**
+  with tooltips clarifying that this is a per-thread `SuspendCount` change, not a global Run/Pause.
+  Stopped users confusing `Resume` on the Threads tab with `F9 (Run)`.
+
+### Thread-Switch / Step Reliability
+
+A series of fixes to make the **attach → freeze a worker thread → switch to it → step / set BP → debug**
+workflow stable. Several races and missing pieces had been silently breaking the flow:
+
+- **`DriverComm.ReadRegisters` and `SingleStep` now retry 5×50 ms** before returning failure. For
+  a thread that has been `KeSuspendThread`'d for a while, `KTHREAD::TrapFrame` is regularly paged
+  out and the driver's `MmIsAddressValid` check returns `FALSE` on the first IOCTL. Touching the PTE
+  is enough for the next try (~50 ms later) to succeed. Mirrors the policy in `KfClient.cs` (CLI).
+- **TrapFrame keeper** — a 2-second `System.Threading.Timer` in `MainViewModel` that issues a silent
+  `ReadRegisters` on every TID in `_frozenThreadIds`. This keeps the kernel-stack of long-suspended
+  threads resident, so `Switch to Thread → Step` keeps working after the user lingers on the same
+  frozen thread for minutes. Auto-starts on the first `Freeze`, stops when no frozen TIDs remain
+  or on detach. Pattern mirrored from the CLI.
+- **`SwitchThread` / `SuspendThread` now load registers synchronously** before navigating the
+  disassembly. Previously `RefreshRegisters` was `async void`, so `NavigateToRip()` ran while
+  `Registers` was still empty → `DisasmAddress` didn't change → the disasm view didn't move when
+  the user switched to a frozen thread. New helper `ReloadActiveThreadAsync` awaits
+  `Task.Run(_driver.ReadRegisters)` and only then calls `NavigateToRip` / `RefreshDisassembly`
+  / `RefreshStack` / `RefreshCallStack`.
+- **`SwitchThread` activates suspend-path** when switching to a frozen thread: sets
+  `_isPausedViaSuspend = true` and `IsBreakState = true`, so subsequent Step Into/Over/Out go
+  through `IOCTL_KF_SINGLE_STEP + ResumeThread + WAIT_DEBUG_EVENT` instead of pointless
+  `ContinueDebugEvent` (which doesn't wake a `KeSuspendThread`'d thread). Symmetric logic in
+  `SuspendThread`: if the freeze targets the currently selected thread and the debugger isn't
+  already in break-state, the same flags are set.
+- **`NavigateToRip` falls back between `RIP` and `EIP`** when looking up the instruction pointer
+  in the `Registers` collection — fixes the case where a WoW64 process has a 64-bit register
+  snapshot (e.g. thread parked on a 64-bit syscall boundary) but `Is32Bit == true` made
+  `IpRegName` resolve to `EIP`.
+- **Diagnostic log in `RefreshDisassembly`** when `ReadMemory` returns `null`. Now writes
+  `Disassembly: ReadMemory failed at <addr>` (with a hint when the address is kernel-mode and
+  the driver rejects it by design) to the Log tab, so the user sees *why* the disasm pane didn't
+  update instead of just seeing it frozen.
+- **`StepInto.Normal-path`: drain `SuspendCount` before `ContinueDebugEvent`.** New helper
+  `DrainSuspendCount(tid)` calls `ResumeThread` up to 10 times (extra Resume calls on a thread
+  with `SuspendCount == 0` are no-op in `KeResumeThread`). Without this, a thread sitting in
+  `KfReportAndBlock` after a BP hit could not actually be stepped if its `SuspendCount` was > 0
+  from earlier user-side `Freeze` or `Pause` — the kernel released it from the event wait but
+  the scheduler kept it parked, no `STATUS_SINGLE_STEP` ever fired, and the UI reported
+  `Step timed out` after 5 s. Now Step always nets the thread to `SuspendCount = 0` before
+  releasing it, and **re-applies `SuspendThread` after the step event** if the thread was in
+  `_frozenThreadIds` — so the user's Freeze state is preserved.
+- **Step timeout raised 5 s → 15 s** in the same code path. With drain in place real steps
+  complete in milliseconds, but the longer timeout helps when stepping under symbol resolution
+  / first PDB download / heavy plugin event handlers.
+
+### SDK / Plugins — Thread Switching API
+
+- **New `IProcessApi.SwitchToThread(uint tid)`** in the SDK. Equivalent of the
+  `Threads → Switch to Thread` context menu item: updates debugger focus, register / disassembly /
+  stack / call-stack views to the given TID. Doesn't change its `SuspendCount` — purely a UI
+  focus shift. Implemented in `ProcessApiAdapter` via an optional `Action<uint>` callback wired
+  from `MainViewModel.AdapterFactory` to `SwitchThreadCommand.Execute`.
+- **New tool `switch_thread`** in both `McpServerPlugin` and `AiAssistantPlugin`, exposing the
+  above to LLM clients (Claude Code, Cursor, the in-app AI Assistant). Takes a single integer
+  `tid`, validates that it exists in the current target's thread list, then calls
+  `_api.Process.SwitchToThread`. Completes the `attach → list_threads → suspend_thread →
+  switch_thread → step` flow over MCP/AI.
+
 ## v2.3.0 — 2026-05-24
 
 ### KfConsole — New Commands

@@ -731,7 +731,20 @@ public class DriverComm : IDisposable
     public List<Register> ReadRegisters(uint pid, uint tid, bool is32Bit = false)
     {
         var input = new KF_THREAD_TARGET { ProcessId = pid, ThreadId = tid };
-        var (ok, data) = SendIoctl(IOCTL_KF_READ_REGISTERS, StructToBytes(input), Marshal.SizeOf<KF_REGISTERS>());
+        // Retry policy: для SUSPENDED-потоков KTHREAD->TrapFrame регулярно вытесняется
+        // на диск (kernel-stack page-out), и MmIsAddressValid в драйвере возвращает FALSE.
+        // Первый вызов "трогает" PTE, и через ~50 мс kernel MM поднимает страницу обратно.
+        // 5 попыток × 50 мс покрывают практически все случаи (зеркалит KfClient в CLI).
+        byte[]? data = null;
+        bool ok = false;
+        int outSize = Marshal.SizeOf<KF_REGISTERS>();
+        var inBytes = StructToBytes(input);
+        for (int attempt = 0; attempt < 5; attempt++)
+        {
+            (ok, data) = SendIoctl(IOCTL_KF_READ_REGISTERS, inBytes, outSize);
+            if (ok && data != null) break;
+            System.Threading.Thread.Sleep(50);
+        }
         if (!ok || data == null) return [];
 
         var r = BytesToStruct<KF_REGISTERS>(data);
@@ -901,8 +914,16 @@ public class DriverComm : IDisposable
     public bool SingleStep(uint pid, uint tid)
     {
         var input = new KF_THREAD_TARGET { ProcessId = pid, ThreadId = tid };
-        var (ok, _) = SendIoctl(IOCTL_KF_SINGLE_STEP, StructToBytes(input), 0);
-        return ok;
+        var inBytes = StructToBytes(input);
+        // Та же page-out защита, что и в ReadRegisters: 5 попыток с 50 мс паузой.
+        // Без этого Step Into на только что замороженном потоке часто фейлится с первого раза.
+        for (int attempt = 0; attempt < 5; attempt++)
+        {
+            var (ok, _) = SendIoctl(IOCTL_KF_SINGLE_STEP, inBytes, 0);
+            if (ok) return true;
+            System.Threading.Thread.Sleep(50);
+        }
+        return false;
     }
 
     /// <summary>

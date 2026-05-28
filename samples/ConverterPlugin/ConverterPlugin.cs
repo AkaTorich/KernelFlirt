@@ -50,12 +50,15 @@ internal sealed class ConverterPanel : ScrollViewer
     private readonly TextBox _txtBin   = new();
     private readonly TextBox _txtAscii = new() { IsReadOnly = true };
     private readonly TextBox _txtBytes = new() { IsReadOnly = true };
+    private readonly TextBox _txtFloat = new() { IsReadOnly = true };
 
     private readonly RadioButton _rb8;
     private readonly RadioButton _rb16;
     private readonly RadioButton _rb32;
     private readonly RadioButton _rb64;
-    private readonly CheckBox    _chkSigned = new() { Content = "Signed (DEC)" };
+    private readonly RadioButton _rbModeInt;
+    private readonly RadioButton _rbModeFloat;
+    private readonly CheckBox    _chkSigned = new() { Content = "Signed" };
 
     private readonly TextBlock _status = new();
 
@@ -82,14 +85,23 @@ internal sealed class ConverterPanel : ScrollViewer
         _rb32 = new RadioButton { GroupName = sizeGroup, Content = "32", Margin = new Thickness(0, 0, 8, 0) };
         _rb64 = new RadioButton { GroupName = sizeGroup, Content = "64", Margin = new Thickness(0, 0, 16, 0), IsChecked = true };
 
+        const string modeGroup = "ConverterModeGroup";
+        _rbModeInt   = new RadioButton { GroupName = modeGroup, Content = "Int",   IsChecked = true, Margin = new Thickness(0, 0, 8, 0) };
+        _rbModeFloat = new RadioButton { GroupName = modeGroup, Content = "Float", Margin = new Thickness(0, 0, 16, 0) };
+
         var sizeRow = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
         sizeRow.Children.Add(new TextBlock { Text = "Size (bits):", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) });
         sizeRow.Children.Add(_rb8); sizeRow.Children.Add(_rb16); sizeRow.Children.Add(_rb32); sizeRow.Children.Add(_rb64);
+        sizeRow.Children.Add(new TextBlock { Text = "Mode:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) });
+        sizeRow.Children.Add(_rbModeInt);
+        sizeRow.Children.Add(_rbModeFloat);
         sizeRow.Children.Add(_chkSigned);
         root.Children.Add(sizeRow);
 
         foreach (var rb in new[] { _rb8, _rb16, _rb32, _rb64 })
             rb.Checked += OnSizeChanged;
+        _rbModeInt.Checked   += (_, _) => { UpdateModeDependentUi(); RefreshAllFields(); };
+        _rbModeFloat.Checked += (_, _) => { UpdateModeDependentUi(); RefreshAllFields(); };
         _chkSigned.Checked   += (_, _) => RefreshAllFields();
         _chkSigned.Unchecked += (_, _) => RefreshAllFields();
 
@@ -104,12 +116,13 @@ internal sealed class ConverterPanel : ScrollViewer
         AddRow(grid, 3, "BIN:",   _txtBin);
         AddRow(grid, 4, "ASCII:", _txtAscii);
         AddRow(grid, 5, "Bytes (LE):", _txtBytes);
+        AddRow(grid, 6, "IEEE-754:",   _txtFloat);
         root.Children.Add(grid);
 
         // Моноширинный шрифт — это удобство для чтения чисел, не цвет.
         // Тема может переопределить FontFamily глобально, тогда наш Consolas
         // используется только как локальный fallback.
-        foreach (var tb in new[] { _txtDec, _txtHex, _txtOct, _txtBin, _txtAscii, _txtBytes })
+        foreach (var tb in new[] { _txtDec, _txtHex, _txtOct, _txtBin, _txtAscii, _txtBytes, _txtFloat })
             tb.FontFamily = new System.Windows.Media.FontFamily("Consolas");
 
         // Подписки на ввод — каждый редактируемый TextBox обновляет _value
@@ -226,20 +239,60 @@ internal sealed class ConverterPanel : ScrollViewer
 
             _txtAscii.Text = FormatAscii(masked);
             _txtBytes.Text = FormatBytesLE(masked);
+            _txtFloat.Text = FormatFloat(masked);
         }
         finally { _syncing = false; }
+    }
+
+    private string FormatFloat(ulong v)
+    {
+        // IEEE-754 имеет смысл только для 32-битных (float) и 64-битных (double) значений.
+        if (_bits == 32)
+        {
+            float f = BitConverter.UInt32BitsToSingle((uint)(v & 0xFFFFFFFF));
+            return float.IsNaN(f) ? "NaN" : f.ToString("G9", CultureInfo.InvariantCulture);
+        }
+        if (_bits == 64)
+        {
+            double d = BitConverter.UInt64BitsToDouble(v);
+            return double.IsNaN(d) ? "NaN" : d.ToString("G17", CultureInfo.InvariantCulture);
+        }
+        return "(n/a — switch to 32 or 64 bits)";
     }
 
     // ── Форматирование вывода ────────────────────────────────────────
 
     private string FormatDec(ulong v)
     {
+        // В режиме Float DEC переиспользует ту же логику что и поле IEEE-754:
+        // одно значение в двух местах (DEC + IEEE-754) — это удобно, потому что
+        // в float-режиме целочисленное представление пользователю не интересно.
+        if (ModeFloat)
+        {
+            if (_bits == 32 || _bits == 64) return FormatFloat(v);
+            return "(n/a — switch to 32 or 64 bits)";
+        }
         if (!_signedDecChecked()) return v.ToString(CultureInfo.InvariantCulture);
         long sv = ToSigned(v, _bits);
         return sv.ToString(CultureInfo.InvariantCulture);
     }
 
     private bool _signedDecChecked() => _chkSigned.IsChecked == true;
+    private bool ModeFloat => _rbModeFloat.IsChecked == true;
+
+    /// <summary>Обновляет доступность контролов, привязанных к режиму:
+    /// Signed теряет смысл в Float, а размер 8/16 не поддерживает IEEE-754.</summary>
+    private void UpdateModeDependentUi()
+    {
+        bool floatMode = ModeFloat;
+        _chkSigned.IsEnabled = !floatMode;
+        // 8/16 бит в float-режиме не определены — подменяем на 32, чтобы значение
+        // не зависало в "(n/a)".
+        if (floatMode && _bits < 32)
+        {
+            _rb32.IsChecked = true;  // вызовет OnSizeChanged → _bits=32 + RefreshAllFields
+        }
+    }
 
     private string FormatHex(ulong v) => "0x" + v.ToString("X" + (_bits / 4), CultureInfo.InvariantCulture);
 
@@ -305,6 +358,27 @@ internal sealed class ConverterPanel : ScrollViewer
     {
         s = s.Trim();
         if (s.Length == 0) return 0;
+
+        // Режим Float — DEC всегда трактуется как IEEE-754 (целые тоже парсятся
+        // как `1.0`, `42.0` и т.п.). В режиме Int — fallback по триггеру: ввод
+        // вроде "1.1" или "1e3" автоматически распознаётся как дробное.
+        bool looksFractional = ModeFloat
+                            || s.IndexOfAny(new[] { '.', 'e', 'E' }) >= 0
+                            || s.Equals("NaN", StringComparison.OrdinalIgnoreCase)
+                            || s.Equals("Infinity", StringComparison.OrdinalIgnoreCase)
+                            || s.Equals("-Infinity", StringComparison.OrdinalIgnoreCase);
+        if (looksFractional)
+        {
+            if (!double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out double d))
+                return null;
+            return _bits switch
+            {
+                32 => BitConverter.SingleToUInt32Bits((float)d),
+                64 => BitConverter.DoubleToUInt64Bits(d),
+                _  => null   // 8 / 16 бит — IEEE-754 не определён
+            };
+        }
+
         if (_signedDecChecked())
         {
             if (long.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out long lv))
@@ -414,17 +488,17 @@ internal sealed class ConverterPanel : ScrollViewer
 
     private void ByteSwap()
     {
-        ulong masked = _value & Mask(_bits);
+        ulong before = _value & Mask(_bits);
         ulong swapped = _bits switch
         {
-            8  => masked,
-            16 => BinaryPrimitives.ReverseEndianness((ushort)masked),
-            32 => BinaryPrimitives.ReverseEndianness((uint)masked),
-            64 => BinaryPrimitives.ReverseEndianness(masked),
-            _  => masked
+            8  => before,
+            16 => BinaryPrimitives.ReverseEndianness((ushort)before),
+            32 => BinaryPrimitives.ReverseEndianness((uint)before),
+            64 => BinaryPrimitives.ReverseEndianness(before),
+            _  => before
         };
         SetValue(swapped);
-        _status.Text = $"Byte swapped: 0x{masked:X} -> 0x{swapped & Mask(_bits):X}";
+        _status.Text = $"Byte swapped: 0x{before:X} -> 0x{swapped & Mask(_bits):X}";
     }
 
     // ── Утилиты ──────────────────────────────────────────────────────

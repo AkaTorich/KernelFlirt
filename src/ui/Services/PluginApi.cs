@@ -65,7 +65,8 @@ public class DebuggerApiAdapter : IDebuggerApi
         Func<ulong, string?> getAnnotation,
         Func<IReadOnlyDictionary<ulong, string>> getAllAnnotations,
         Action refreshDisasm,
-        Action<ulong, BreakpointType>? toggleBreakpoint = null)
+        Action<ulong, BreakpointType>? toggleBreakpoint = null,
+        Action<uint>? switchToThread = null)
     {
         _pluginManager = pluginManager;
         _getIsConnected = getIsConnected;
@@ -77,7 +78,7 @@ public class DebuggerApiAdapter : IDebuggerApi
         Memory = new MemoryApiAdapter(driver);
         Breakpoints = new BreakpointApiAdapter(driver, getBreakpoints, toggleBreakpoint);
         Symbols = new SymbolApiAdapter(symbols, getTargetPid, getModules, getKernelModules);
-        Process = new ProcessApiAdapter(driver);
+        Process = new ProcessApiAdapter(driver, switchToThread);
         Log = new LogApiAdapter(log);
         UI = new UiApiAdapter(navigateDisasm, addMenuItem, addToolPanel, addUnpackedModule, refreshModulesAndSections, addModuleSections, decompileFunction, getDecompiledCode, disasmGoBack, setAnnotation, getAnnotation, getAllAnnotations, refreshDisasm);
 
@@ -259,7 +260,12 @@ public class SymbolApiAdapter : ISymbolApi
 public class ProcessApiAdapter : IProcessApi
 {
     private readonly DriverComm _driver;
-    public ProcessApiAdapter(DriverComm driver) => _driver = driver;
+    private readonly Action<uint>? _switchToThread;
+    public ProcessApiAdapter(DriverComm driver, Action<uint>? switchToThread = null)
+    {
+        _driver = driver;
+        _switchToThread = switchToThread;
+    }
 
     public IReadOnlyList<PluginProcessInfo> EnumProcesses() =>
         _driver.EnumProcesses().Select(p => new PluginProcessInfo
@@ -280,6 +286,15 @@ public class ProcessApiAdapter : IProcessApi
 
     public bool SuspendThread(uint tid) => _driver.SuspendThread(tid);
     public bool ResumeThread(uint tid) => _driver.ResumeThread(tid);
+
+    public void SwitchToThread(uint tid)
+    {
+        if (_switchToThread == null) return;
+        // Переключение активного потока меняет UI (регистры, дизасм, стек), поэтому
+        // обязательно идём через UI-поток.
+        Application.Current.Dispatcher.Invoke(() => _switchToThread(tid));
+    }
+
     public (ulong PebAddress, ulong Peb32Address) GetPebAddress(uint pid) => _driver.GetPebAddress(pid);
     public bool ClearDebugPort(uint pid) => _driver.ClearDebugPort(pid);
     public bool ClearThreadHide(uint pid) => _driver.ClearThreadHide(pid);
