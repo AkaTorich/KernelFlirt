@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <defs>
+    <radialGradient id="g" cx="35%" cy="28%" r="65%"><stop offset="0%" stop-color="#70FF88"/><stop offset="100%" stop-color="#008830"/></radialGradient>
+  </defs>
+  <circle fill="url(#g)" cx="12" cy="12" r="11"/>
+  <polyline stroke="#FFD700" stroke-width="3" stroke-linecap="round"
+            stroke-linejoin="round" fill="none" points="5,12 9.5,17 19,7"/>
+</svg>

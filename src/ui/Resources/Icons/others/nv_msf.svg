@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <defs>
+    <radialGradient id="nucleus" cx="0.5" cy="0.4" r="0.6">
+      <stop offset="0%" stop-color="#FFB0D0"/>
+      <stop offset="100%" stop-color="#7F0030"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FF52A2"/>
+      <stop offset="100%" stop-color="#7F0030"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <!-- Three orbital rings -->
+  <ellipse cx="12" cy="12" rx="10" ry="3.8" fill="none" stroke="url(#ring)" stroke-width="1.4"/>
+  <ellipse cx="12" cy="12" rx="10" ry="3.8" fill="none" stroke="url(#ring)" stroke-width="1.4" transform="rotate(60 12 12)"/>
+  <ellipse cx="12" cy="12" rx="10" ry="3.8" fill="none" stroke="url(#ring)" stroke-width="1.4" transform="rotate(-60 12 12)"/>
+  <!-- Nucleus -->
+  <circle cx="12" cy="12" r="3" fill="url(#nucleus)" stroke="#3A0018" stroke-width="0.5"/>
+  <!-- Electrons -->
+  <circle cx="22" cy="12" r="1.1" fill="#FF52A2" stroke="#3A0018" stroke-width="0.3"/>
+  <circle cx="7" cy="20.6" r="1.1" fill="#FF52A2" stroke="#3A0018" stroke-width="0.3"/>
+  <circle cx="7" cy="3.4" r="1.1" fill="#FF52A2" stroke="#3A0018" stroke-width="0.3"/>
+  <!-- Nucleus gloss -->
+  <ellipse cx="11" cy="10.8" rx="1.2" ry="0.7" fill="url(#gloss)"/>
+</svg>

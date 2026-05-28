@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#C57BFF"/>
+      <stop offset="100%" stop-color="#5A1290"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <!-- Terminal box -->
+  <rect x="2" y="4" width="20" height="14" rx="1.5" fill="url(#body)" stroke="#2E0050" stroke-width="0.5"/>
+  <!-- Top bar -->
+  <rect x="2" y="4" width="20" height="3" rx="1.5" fill="#3A0060"/>
+  <!-- Window dots -->
+  <circle cx="4.2" cy="5.5" r="0.55" fill="#FF5050"/>
+  <circle cx="6" cy="5.5" r="0.55" fill="#FFD24A"/>
+  <circle cx="7.8" cy="5.5" r="0.55" fill="#5BFFA5"/>
+  <!-- Prompt -->
+  <text x="4" y="13" font-family="monospace" font-size="4" fill="#FFFFFF" font-weight="bold">&gt;_</text>
+  <!-- Reverse arrow (backwards curving) -->
+  <path d="M18 11 Q19.5 14 16 15.2 L17.5 16 L14.5 15.6 L15.2 12.8 L16.5 13.7 Q18.2 13 17 11 Z" fill="#FFFFFF" stroke="#2E0050" stroke-width="0.3"/>
+  <!-- Gloss -->
+  <rect x="2" y="4" width="20" height="6" rx="1.5" fill="url(#gloss)"/>
+</svg>

@@ -2145,6 +2145,7 @@ public partial class MainWindow : Window
         ["VulnHunter"] = "vulnhunter.svg",
         ["AI Assistant"] = "ai.svg",
         ["Signature Detector"] = "sigdetect.svg",
+        ["Converter"] = "converter.svg",
     };
 
     private static object BuildPluginTabHeader(string? pluginName, string title)

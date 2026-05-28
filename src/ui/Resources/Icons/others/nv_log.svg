@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#EEEEEE"/>
+      <stop offset="100%" stop-color="#888888"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <!-- Document body -->
+  <path d="M5 2 H15 L19 6 V22 H5 Z" fill="url(#body)" stroke="#4A4A4A" stroke-width="0.5"/>
+  <!-- Folded corner -->
+  <path d="M15 2 V6 H19 Z" fill="#BBBBBB"/>
+  <!-- Gloss overlay -->
+  <path d="M5 2 H15 L19 6 V12 H5 Z" fill="url(#gloss)"/>
+  <!-- Horizontal text lines -->
+  <rect x="7" y="9" width="9" height="1.2" fill="#3A3A3A"/>
+  <rect x="7" y="12" width="10" height="1.2" fill="#3A3A3A"/>
+  <rect x="7" y="15" width="8" height="1.2" fill="#3A3A3A"/>
+  <rect x="7" y="18" width="10" height="1.2" fill="#3A3A3A"/>
+</svg>

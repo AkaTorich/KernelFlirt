@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- крышка -->
+  <line x1="4" y1="7" x2="20" y2="7" stroke="#94a3b8" stroke-width="2" stroke-linecap="round"/>
+  <!-- ручка крышки -->
+  <path fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round"
+        d="M9 7 V5 a1 1 0 0 1 1-1 h4 a1 1 0 0 1 1 1 V7"/>
+  <!-- корпус -->
+  <path fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+        d="M5 7 L6 20 a1 1 0 0 0 1 1 h10 a1 1 0 0 0 1-1 L19 7"/>
+  <!-- вертикальные линии внутри -->
+  <line x1="10" y1="11" x2="10" y2="17" stroke="#94a3b8" stroke-width="1.8" stroke-linecap="round"/>
+  <line x1="14" y1="11" x2="14" y2="17" stroke="#94a3b8" stroke-width="1.8" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5CC8FF"/>
+      <stop offset="100%" stop-color="#0F4D80"/>
+    </linearGradient>
+    <radialGradient id="lens" cx="0.4" cy="0.35" r="0.7">
+      <stop offset="0%" stop-color="#E4F4FF" stop-opacity="0.95"/>
+      <stop offset="60%" stop-color="#BCE0FF" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#5CC8FF" stop-opacity="0.2"/>
+    </radialGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <!-- Handle -->
+  <rect x="14.5" y="14" width="3.2" height="9" rx="1.2" transform="rotate(-45 16.1 18.5)" fill="url(#body)" stroke="#062F55" stroke-width="0.5"/>
+  <!-- Lens ring -->
+  <circle cx="10" cy="10" r="7.5" fill="url(#lens)" stroke="url(#body)" stroke-width="2.4"/>
+  <!-- Lens gloss -->
+  <ellipse cx="7.5" cy="7" rx="3" ry="1.8" fill="url(#gloss)"/>
+</svg>

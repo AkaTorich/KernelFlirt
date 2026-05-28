@@ -1,0 +1,717 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Icon Preview</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #1e1e2e;
+  color: #cdd6f4;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  padding: 24px;
+}
+h1 {
+  font-size: 22px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: #cba6f7;
+}
+.search-box {
+  width: 100%;
+  max-width: 400px;
+  padding: 10px 14px;
+  margin-bottom: 28px;
+  background: #313244;
+  border: 1px solid #45475a;
+  border-radius: 8px;
+  color: #cdd6f4;
+  font-size: 14px;
+  outline: none;
+}
+.search-box:focus { border-color: #cba6f7; }
+.search-box::placeholder { color: #6c7086; }
+.section {
+  margin-bottom: 32px;
+}
+.section-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #89b4fa;
+  margin-bottom: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #313244;
+}
+.section-title .count {
+  font-weight: 400;
+  color: #6c7086;
+  font-size: 13px;
+  margin-left: 8px;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 8px;
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 6px 8px;
+  background: #313244;
+  border-radius: 8px;
+  cursor: default;
+  transition: background 0.15s;
+}
+.card:hover { background: #45475a; }
+.card img {
+  width: 36px;
+  height: 36px;
+  margin-bottom: 8px;
+}
+.card span {
+  font-size: 11px;
+  color: #a6adc8;
+  text-align: center;
+  word-break: break-all;
+  line-height: 1.3;
+}
+.hidden { display: none; }
+.no-results {
+  display: none;
+  color: #6c7086;
+  font-style: italic;
+  padding: 12px 0;
+}
+</style>
+</head>
+<body>
+
+<h1>Icon Preview</h1>
+<input class="search-box" type="text" placeholder="Filter icons..." id="search">
+
+<div id="sections">
+
+<div class="section" data-section="root">
+  <div class="section-title">Root <span class="count"></span></div>
+  <div class="grid">
+    <div class="card" data-name="add"><img src="others/add.svg"><span>add</span></div>
+    <div class="card" data-name="attach-process"><img src="others/attach-process.svg"><span>attach-process</span></div>
+    <div class="card" data-name="beacon"><img src="others/beacon.svg"><span>beacon</span></div>
+    <div class="card" data-name="breakpoint"><img src="others/breakpoint.svg"><span>breakpoint</span></div>
+    <div class="card" data-name="breakpoint-hw"><img src="others/breakpoint-hw.svg"><span>breakpoint-hw</span></div>
+    <div class="card" data-name="breakpoint-mem"><img src="others/breakpoint-mem.svg"><span>breakpoint-mem</span></div>
+    <div class="card" data-name="breakpoint-rw"><img src="others/breakpoint-rw.svg"><span>breakpoint-rw</span></div>
+    <div class="card" data-name="breakpoint-write"><img src="others/breakpoint-write.svg"><span>breakpoint-write</span></div>
+    <div class="card" data-name="chat"><img src="others/chat.svg"><span>chat</span></div>
+    <div class="card" data-name="close"><img src="others/close.svg"><span>close</span></div>
+    <div class="card" data-name="connect"><img src="others/connect.svg"><span>connect</span></div>
+    <div class="card" data-name="connect-green"><img src="others/connect-green.svg"><span>connect-green</span></div>
+    <div class="card" data-name="connection"><img src="others/connection.svg"><span>connection</span></div>
+    <div class="card" data-name="continue"><img src="others/continue.svg"><span>continue</span></div>
+    <div class="card" data-name="copy"><img src="others/copy.svg"><span>copy</span></div>
+    <div class="card" data-name="credentials"><img src="others/credentials.svg"><span>credentials</span></div>
+    <div class="card" data-name="download"><img src="others/download.svg"><span>download</span></div>
+    <div class="card" data-name="edit"><img src="others/edit.svg"><span>edit</span></div>
+    <div class="card" data-name="error"><img src="others/error.svg"><span>error</span></div>
+    <div class="card" data-name="file"><img src="others/file.svg"><span>file</span></div>
+    <div class="card" data-name="folder"><img src="others/folder.svg"><span>folder</span></div>
+    <div class="card" data-name="goto"><img src="others/goto.svg"><span>goto</span></div>
+    <div class="card" data-name="graph"><img src="others/graph.svg"><span>graph</span></div>
+    <div class="card" data-name="info"><img src="others/info.svg"><span>info</span></div>
+    <div class="card" data-name="kill"><img src="others/kill.svg"><span>kill</span></div>
+    <div class="card" data-name="listener"><img src="others/listener.svg"><span>listener</span></div>
+    <div class="card" data-name="lock"><img src="others/lock.svg"><span>lock</span></div>
+    <div class="card" data-name="log"><img src="others/log.svg"><span>log</span></div>
+    <div class="card" data-name="logo"><img src="others/logo.svg"><span>logo</span></div>
+    <div class="card" data-name="menu"><img src="others/menu.svg"><span>menu</span></div>
+    <div class="card" data-name="nav_back"><img src="others/nav_back.svg"><span>nav_back</span></div>
+    <div class="card" data-name="nav_fwd"><img src="others/nav_fwd.svg"><span>nav_fwd</span></div>
+    <div class="card" data-name="nav_up"><img src="others/nav_up.svg"><span>nav_up</span></div>
+    <div class="card" data-name="nv_add"><img src="others/nv_add.svg"><span>nv_add</span></div>
+    <div class="card" data-name="nv_advisories"><img src="others/nv_advisories.svg"><span>nv_advisories</span></div>
+    <div class="card" data-name="nv_autopwn"><img src="others/nv_autopwn.svg"><span>nv_autopwn</span></div>
+    <div class="card" data-name="nv_clear"><img src="others/nv_clear.svg"><span>nv_clear</span></div>
+    <div class="card" data-name="nv_compile"><img src="others/nv_compile.svg"><span>nv_compile</span></div>
+    <div class="card" data-name="nv_cve"><img src="others/nv_cve.svg"><span>nv_cve</span></div>
+    <div class="card" data-name="nv_edit"><img src="others/nv_edit.svg"><span>nv_edit</span></div>
+    <div class="card" data-name="nv_find"><img src="others/nv_find.svg"><span>nv_find</span></div>
+    <div class="card" data-name="nv_hex"><img src="others/nv_hex.svg"><span>nv_hex</span></div>
+    <div class="card" data-name="nv_log"><img src="others/nv_log.svg"><span>nv_log</span></div>
+    <div class="card" data-name="nv_msf"><img src="others/nv_msf.svg"><span>nv_msf</span></div>
+    <div class="card" data-name="nv_new"><img src="others/nv_new.svg"><span>nv_new</span></div>
+    <div class="card" data-name="nv_notepad"><img src="others/nv_notepad.svg"><span>nv_notepad</span></div>
+    <div class="card" data-name="nv_open"><img src="others/nv_open.svg"><span>nv_open</span></div>
+    <div class="card" data-name="nv_redo"><img src="others/nv_redo.svg"><span>nv_redo</span></div>
+    <div class="card" data-name="nv_revshell"><img src="others/nv_revshell.svg"><span>nv_revshell</span></div>
+    <div class="card" data-name="nv_run"><img src="others/nv_run.svg"><span>nv_run</span></div>
+    <div class="card" data-name="nv_save"><img src="others/nv_save.svg"><span>nv_save</span></div>
+    <div class="card" data-name="nv_scan"><img src="others/nv_scan.svg"><span>nv_scan</span></div>
+    <div class="card" data-name="nv_settings"><img src="others/nv_settings.svg"><span>nv_settings</span></div>
+    <div class="card" data-name="nv_stop"><img src="others/nv_stop.svg"><span>nv_stop</span></div>
+    <div class="card" data-name="nv_undo"><img src="others/nv_undo.svg"><span>nv_undo</span></div>
+    <div class="card" data-name="open-file"><img src="others/open-file.svg"><span>open-file</span></div>
+    <div class="card" data-name="pause"><img src="others/pause.svg"><span>pause</span></div>
+    <div class="card" data-name="play"><img src="others/play.svg"><span>play</span></div>
+    <div class="card" data-name="plugin"><img src="others/plugin.svg"><span>plugin</span></div>
+    <div class="card" data-name="privesc_admin"><img src="others/privesc_admin.svg"><span>privesc_admin</span></div>
+    <div class="card" data-name="privesc_system"><img src="others/privesc_system.svg"><span>privesc_system</span></div>
+    <div class="card" data-name="process"><img src="others/process.svg"><span>process</span></div>
+    <div class="card" data-name="refresh"><img src="others/refresh.svg"><span>refresh</span></div>
+    <div class="card" data-name="remove"><img src="others/remove.svg"><span>remove</span></div>
+    <div class="card" data-name="restart"><img src="others/restart.svg"><span>restart</span></div>
+    <div class="card" data-name="run"><img src="others/run.svg"><span>run</span></div>
+    <div class="card" data-name="run-to-cursor"><img src="others/run-to-cursor.svg"><span>run-to-cursor</span></div>
+    <div class="card" data-name="search"><img src="others/search.svg"><span>search</span></div>
+    <div class="card" data-name="session"><img src="others/session.svg"><span>session</span></div>
+    <div class="card" data-name="settings"><img src="others/settings.svg"><span>settings</span></div>
+    <div class="card" data-name="socks"><img src="others/socks.svg"><span>socks</span></div>
+    <div class="card" data-name="step-into"><img src="others/step-into.svg"><span>step-into</span></div>
+    <div class="card" data-name="step-out"><img src="others/step-out.svg"><span>step-out</span></div>
+    <div class="card" data-name="step-over"><img src="others/step-over.svg"><span>step-over</span></div>
+    <div class="card" data-name="stop"><img src="others/stop.svg"><span>stop</span></div>
+    <div class="card" data-name="success"><img src="others/success.svg"><span>success</span></div>
+    <div class="card" data-name="target"><img src="others/target.svg"><span>target</span></div>
+    <div class="card" data-name="terminal"><img src="others/terminal.svg"><span>terminal</span></div>
+    <div class="card" data-name="theme"><img src="others/theme.svg"><span>theme</span></div>
+    <div class="card" data-name="token"><img src="others/token.svg"><span>token</span></div>
+    <div class="card" data-name="trash"><img src="others/trash.svg"><span>trash</span></div>
+    <div class="card" data-name="upload"><img src="others/upload.svg"><span>upload</span></div>
+    <div class="card" data-name="user"><img src="others/user.svg"><span>user</span></div>
+    <div class="card" data-name="warning"><img src="others/warning.svg"><span>warning</span></div>
+  </div>
+  <div class="no-results">No matches</div>
+</div>
+
+<div class="section" data-section="menu">
+  <div class="section-title">Menu <span class="count"></span></div>
+  <div class="grid">
+    <div class="card" data-name="about"><img src="Menu/about.svg"><span>about</span></div>
+    <div class="card" data-name="bp-cond"><img src="Menu/bp-cond.svg"><span>bp-cond</span></div>
+    <div class="card" data-name="bp-log"><img src="Menu/bp-log.svg"><span>bp-log</span></div>
+    <div class="card" data-name="bp-remove-all"><img src="Menu/bp-remove-all.svg"><span>bp-remove-all</span></div>
+    <div class="card" data-name="detach"><img src="Menu/detach.svg"><span>detach</span></div>
+    <div class="card" data-name="disconnect"><img src="Menu/disconnect.svg"><span>disconnect</span></div>
+    <div class="card" data-name="exit"><img src="Menu/exit.svg"><span>exit</span></div>
+    <div class="card" data-name="fullscreen"><img src="Menu/fullscreen.svg"><span>fullscreen</span></div>
+    <div class="card" data-name="goto-rip"><img src="Menu/goto-rip.svg"><span>goto-rip</span></div>
+    <div class="card" data-name="refresh"><img src="Menu/refresh.svg"><span>refresh</span></div>
+    <div class="card" data-name="refresh-seh"><img src="Menu/refresh-seh.svg"><span>refresh-seh</span></div>
+    <div class="card" data-name="restore-patches"><img src="Menu/restore-patches.svg"><span>restore-patches</span></div>
+    <div class="card" data-name="search-intermod"><img src="Menu/search-intermod.svg"><span>search-intermod</span></div>
+    <div class="card" data-name="search-string"><img src="Menu/search-string.svg"><span>search-string</span></div>
+    <div class="card" data-name="service"><img src="Menu/service.svg"><span>service</span></div>
+    <div class="card" data-name="settings"><img src="Menu/settings.svg"><span>settings</span></div>
+    <div class="card" data-name="skip"><img src="Menu/skip.svg"><span>skip</span></div>
+    <div class="card" data-name="symbol-clear"><img src="Menu/symbol-clear.svg"><span>symbol-clear</span></div>
+    <div class="card" data-name="symbol-load"><img src="Menu/symbol-load.svg"><span>symbol-load</span></div>
+    <div class="card" data-name="symbol-path"><img src="Menu/symbol-path.svg"><span>symbol-path</span></div>
+  </div>
+  <div class="no-results">No matches</div>
+</div>
+
+<div class="section" data-section="plugins">
+  <div class="section-title">Plugins <span class="count"></span></div>
+  <div class="grid">
+    <div class="card" data-name="ai"><img src="Plugins/ai.svg"><span>ai</span></div>
+    <div class="card" data-name="antidebug"><img src="Plugins/antidebug.svg"><span>antidebug</span></div>
+    <div class="card" data-name="apimonitor"><img src="Plugins/apimonitor.svg"><span>apimonitor</span></div>
+    <div class="card" data-name="bookmarks"><img src="Plugins/bookmarks.svg"><span>bookmarks</span></div>
+    <div class="card" data-name="flirt"><img src="Plugins/flirt.svg"><span>flirt</span></div>
+    <div class="card" data-name="graphview"><img src="Plugins/graphview.svg"><span>graphview</span></div>
+    <div class="card" data-name="mcp"><img src="Plugins/mcp.svg"><span>mcp</span></div>
+    <div class="card" data-name="memscanner"><img src="Plugins/memscanner.svg"><span>memscanner</span></div>
+    <div class="card" data-name="network"><img src="Plugins/network.svg"><span>network</span></div>
+    <div class="card" data-name="perebuilder"><img src="Plugins/perebuilder.svg"><span>perebuilder</span></div>
+    <div class="card" data-name="scripting"><img src="Plugins/scripting.svg"><span>scripting</span></div>
+    <div class="card" data-name="session"><img src="Plugins/session.svg"><span>session</span></div>
+    <div class="card" data-name="sigdetect"><img src="Plugins/sigdetect.svg"><span>sigdetect</span></div>
+    <div class="card" data-name="stringdec"><img src="Plugins/stringdec.svg"><span>stringdec</span></div>
+    <div class="card" data-name="themida"><img src="Plugins/themida.svg"><span>themida</span></div>
+    <div class="card" data-name="vulnhunter"><img src="Plugins/vulnhunter.svg"><span>vulnhunter</span></div>
+    <div class="card" data-name="xrefs"><img src="Plugins/xrefs.svg"><span>xrefs</span></div>
+  </div>
+  <div class="no-results">No matches</div>
+</div>
+
+<div class="section" data-section="new">
+  <div class="section-title">New <span class="count"></span></div>
+  <div class="grid">
+    <div class="card" data-name="alarm"><img src="New/alarm.svg"><span>alarm</span></div>
+    <div class="card" data-name="anchor"><img src="New/anchor.svg"><span>anchor</span></div>
+    <div class="card" data-name="antenna"><img src="New/antenna.svg"><span>antenna</span></div>
+    <div class="card" data-name="archive"><img src="New/archive.svg"><span>archive</span></div>
+    <div class="card" data-name="arrow-down"><img src="New/arrow-down.svg"><span>arrow-down</span></div>
+    <div class="card" data-name="arrow-left"><img src="New/arrow-left.svg"><span>arrow-left</span></div>
+    <div class="card" data-name="arrow-right"><img src="New/arrow-right.svg"><span>arrow-right</span></div>
+    <div class="card" data-name="arrow-up"><img src="New/arrow-up.svg"><span>arrow-up</span></div>
+    <div class="card" data-name="backup"><img src="New/backup.svg"><span>backup</span></div>
+    <div class="card" data-name="battery"><img src="New/battery.svg"><span>battery</span></div>
+    <div class="card" data-name="bell"><img src="New/bell.svg"><span>bell</span></div>
+    <div class="card" data-name="bluetooth"><img src="New/bluetooth.svg"><span>bluetooth</span></div>
+    <div class="card" data-name="bolt"><img src="New/bolt.svg"><span>bolt</span></div>
+    <div class="card" data-name="book"><img src="New/book.svg"><span>book</span></div>
+    <div class="card" data-name="bookmark"><img src="New/bookmark.svg"><span>bookmark</span></div>
+    <div class="card" data-name="brain"><img src="New/brain.svg"><span>brain</span></div>
+    <div class="card" data-name="broadcast"><img src="New/broadcast.svg"><span>broadcast</span></div>
+    <div class="card" data-name="brush"><img src="New/brush.svg"><span>brush</span></div>
+    <div class="card" data-name="bug"><img src="New/bug.svg"><span>bug</span></div>
+    <div class="card" data-name="bulb"><img src="New/bulb.svg"><span>bulb</span></div>
+    <div class="card" data-name="cache"><img src="New/cache.svg"><span>cache</span></div>
+    <div class="card" data-name="calculator"><img src="New/calculator.svg"><span>calculator</span></div>
+    <div class="card" data-name="calendar"><img src="New/calendar.svg"><span>calendar</span></div>
+    <div class="card" data-name="camera"><img src="New/camera.svg"><span>camera</span></div>
+    <div class="card" data-name="certificate"><img src="New/certificate.svg"><span>certificate</span></div>
+    <div class="card" data-name="chart-bar"><img src="New/chart-bar.svg"><span>chart-bar</span></div>
+    <div class="card" data-name="chart-pie"><img src="New/chart-pie.svg"><span>chart-pie</span></div>
+    <div class="card" data-name="chat-bubble"><img src="New/chat-bubble.svg"><span>chat-bubble</span></div>
+    <div class="card" data-name="checkbox"><img src="New/checkbox.svg"><span>checkbox</span></div>
+    <div class="card" data-name="chip"><img src="New/chip.svg"><span>chip</span></div>
+    <div class="card" data-name="clipboard"><img src="New/clipboard.svg"><span>clipboard</span></div>
+    <div class="card" data-name="cloud"><img src="New/cloud.svg"><span>cloud</span></div>
+    <div class="card" data-name="cloud-download"><img src="New/cloud-download.svg"><span>cloud-download</span></div>
+    <div class="card" data-name="cloud-upload"><img src="New/cloud-upload.svg"><span>cloud-upload</span></div>
+    <div class="card" data-name="compass"><img src="New/compass.svg"><span>compass</span></div>
+    <div class="card" data-name="cpu"><img src="New/cpu.svg"><span>cpu</span></div>
+    <div class="card" data-name="crown"><img src="New/crown.svg"><span>crown</span></div>
+    <div class="card" data-name="cube"><img src="New/cube.svg"><span>cube</span></div>
+    <div class="card" data-name="cursor"><img src="New/cursor.svg"><span>cursor</span></div>
+    <div class="card" data-name="database"><img src="New/database.svg"><span>database</span></div>
+    <div class="card" data-name="desktop"><img src="New/desktop.svg"><span>desktop</span></div>
+    <div class="card" data-name="diamond"><img src="New/diamond.svg"><span>diamond</span></div>
+    <div class="card" data-name="document"><img src="New/document.svg"><span>document</span></div>
+    <div class="card" data-name="dropper"><img src="New/dropper.svg"><span>dropper</span></div>
+    <div class="card" data-name="droplet"><img src="New/droplet.svg"><span>droplet</span></div>
+    <div class="card" data-name="earth"><img src="New/earth.svg"><span>earth</span></div>
+    <div class="card" data-name="email"><img src="New/email.svg"><span>email</span></div>
+    <div class="card" data-name="eraser"><img src="New/eraser.svg"><span>eraser</span></div>
+    <div class="card" data-name="eye"><img src="New/eye.svg"><span>eye</span></div>
+    <div class="card" data-name="eye-off"><img src="New/eye-off.svg"><span>eye-off</span></div>
+    <div class="card" data-name="film"><img src="New/film.svg"><span>film</span></div>
+    <div class="card" data-name="filter"><img src="New/filter.svg"><span>filter</span></div>
+    <div class="card" data-name="fingerprint"><img src="New/fingerprint.svg"><span>fingerprint</span></div>
+    <div class="card" data-name="fire"><img src="New/fire.svg"><span>fire</span></div>
+    <div class="card" data-name="flag"><img src="New/flag.svg"><span>flag</span></div>
+    <div class="card" data-name="floppy"><img src="New/floppy.svg"><span>floppy</span></div>
+    <div class="card" data-name="gauge"><img src="New/gauge.svg"><span>gauge</span></div>
+    <div class="card" data-name="gift"><img src="New/gift.svg"><span>gift</span></div>
+    <div class="card" data-name="grid"><img src="New/grid.svg"><span>grid</span></div>
+    <div class="card" data-name="hammer"><img src="New/hammer.svg"><span>hammer</span></div>
+    <div class="card" data-name="headphones"><img src="New/headphones.svg"><span>headphones</span></div>
+    <div class="card" data-name="heart"><img src="New/heart.svg"><span>heart</span></div>
+    <div class="card" data-name="home"><img src="New/home.svg"><span>home</span></div>
+    <div class="card" data-name="hourglass"><img src="New/hourglass.svg"><span>hourglass</span></div>
+    <div class="card" data-name="id-card"><img src="New/id-card.svg"><span>id-card</span></div>
+    <div class="card" data-name="image"><img src="New/image.svg"><span>image</span></div>
+    <div class="card" data-name="inbox"><img src="New/inbox.svg"><span>inbox</span></div>
+    <div class="card" data-name="infinity"><img src="New/infinity.svg"><span>infinity</span></div>
+    <div class="card" data-name="key"><img src="New/key.svg"><span>key</span></div>
+    <div class="card" data-name="keyboard"><img src="New/keyboard.svg"><span>keyboard</span></div>
+    <div class="card" data-name="layers"><img src="New/layers.svg"><span>layers</span></div>
+    <div class="card" data-name="layout"><img src="New/layout.svg"><span>layout</span></div>
+    <div class="card" data-name="link"><img src="New/link.svg"><span>link</span></div>
+    <div class="card" data-name="list"><img src="New/list.svg"><span>list</span></div>
+    <div class="card" data-name="magnet"><img src="New/magnet.svg"><span>magnet</span></div>
+    <div class="card" data-name="map"><img src="New/map.svg"><span>map</span></div>
+    <div class="card" data-name="maximize"><img src="New/maximize.svg"><span>maximize</span></div>
+    <div class="card" data-name="microphone"><img src="New/microphone.svg"><span>microphone</span></div>
+    <div class="card" data-name="minimize"><img src="New/minimize.svg"><span>minimize</span></div>
+    <div class="card" data-name="moon"><img src="New/moon.svg"><span>moon</span></div>
+    <div class="card" data-name="mouse"><img src="New/mouse.svg"><span>mouse</span></div>
+    <div class="card" data-name="music"><img src="New/music.svg"><span>music</span></div>
+    <div class="card" data-name="palette"><img src="New/palette.svg"><span>palette</span></div>
+    <div class="card" data-name="paperclip"><img src="New/paperclip.svg"><span>paperclip</span></div>
+    <div class="card" data-name="pen"><img src="New/pen.svg"><span>pen</span></div>
+    <div class="card" data-name="phone"><img src="New/phone.svg"><span>phone</span></div>
+    <div class="card" data-name="pin"><img src="New/pin.svg"><span>pin</span></div>
+    <div class="card" data-name="power"><img src="New/power.svg"><span>power</span></div>
+    <div class="card" data-name="rocket"><img src="New/rocket.svg"><span>rocket</span></div>
+    <div class="card" data-name="ruler"><img src="New/ruler.svg"><span>ruler</span></div>
+    <div class="card" data-name="scissors"><img src="New/scissors.svg"><span>scissors</span></div>
+    <div class="card" data-name="stamp"><img src="New/stamp.svg"><span>stamp</span></div>
+    <div class="card" data-name="star"><img src="New/star.svg"><span>star</span></div>
+    <div class="card" data-name="storage"><img src="New/storage.svg"><span>storage</span></div>
+    <div class="card" data-name="sun"><img src="New/sun.svg"><span>sun</span></div>
+    <div class="card" data-name="sync"><img src="New/sync.svg"><span>sync</span></div>
+    <div class="card" data-name="toggle"><img src="New/toggle.svg"><span>toggle</span></div>
+    <div class="card" data-name="usb"><img src="New/usb.svg"><span>usb</span></div>
+    <div class="card" data-name="wifi"><img src="New/wifi.svg"><span>wifi</span></div>
+    <div class="card" data-name="wrench"><img src="New/wrench.svg"><span>wrench</span></div>
+  </div>
+  <div class="no-results">No matches</div>
+</div>
+
+<div class="section" data-section="tabs">
+  <div class="section-title">Tabs <span class="count"></span></div>
+  <div class="grid">
+    <div class="card" data-name="breakpoints"><img src="Tabs/breakpoints.svg"><span>breakpoints</span></div>
+    <div class="card" data-name="callstack"><img src="Tabs/callstack.svg"><span>callstack</span></div>
+    <div class="card" data-name="decompiler"><img src="Tabs/decompiler.svg"><span>decompiler</span></div>
+    <div class="card" data-name="disassembly"><img src="Tabs/disassembly.svg"><span>disassembly</span></div>
+    <div class="card" data-name="exceptions"><img src="Tabs/exceptions.svg"><span>exceptions</span></div>
+    <div class="card" data-name="exports"><img src="Tabs/exports.svg"><span>exports</span></div>
+    <div class="card" data-name="functions"><img src="Tabs/functions.svg"><span>functions</span></div>
+    <div class="card" data-name="imports"><img src="Tabs/imports.svg"><span>imports</span></div>
+    <div class="card" data-name="kernel-modules"><img src="Tabs/kernel-modules.svg"><span>kernel-modules</span></div>
+    <div class="card" data-name="log"><img src="Tabs/log.svg"><span>log</span></div>
+    <div class="card" data-name="modules"><img src="Tabs/modules.svg"><span>modules</span></div>
+    <div class="card" data-name="patches"><img src="Tabs/patches.svg"><span>patches</span></div>
+    <div class="card" data-name="search"><img src="Tabs/search.svg"><span>search</span></div>
+    <div class="card" data-name="sections"><img src="Tabs/sections.svg"><span>sections</span></div>
+    <div class="card" data-name="strings"><img src="Tabs/strings.svg"><span>strings</span></div>
+    <div class="card" data-name="threads"><img src="Tabs/threads.svg"><span>threads</span></div>
+  </div>
+  <div class="no-results">No matches</div>
+</div>
+
+<div class="section" data-section="computer">
+  <div class="section-title">Computer <span class="count"></span></div>
+  <div class="grid">
+    <div class="card" data-name="access"><img src="Computer/access.svg"><span>access</span></div>
+    <div class="card" data-name="api"><img src="Computer/api.svg"><span>api</span></div>
+    <div class="card" data-name="array"><img src="Computer/array.svg"><span>array</span></div>
+    <div class="card" data-name="audit"><img src="Computer/audit.svg"><span>audit</span></div>
+    <div class="card" data-name="avatar"><img src="Computer/avatar.svg"><span>avatar</span></div>
+    <div class="card" data-name="badge"><img src="Computer/badge.svg"><span>badge</span></div>
+    <div class="card" data-name="bandwidth"><img src="Computer/bandwidth.svg"><span>bandwidth</span></div>
+    <div class="card" data-name="benchmark"><img src="Computer/benchmark.svg"><span>benchmark</span></div>
+    <div class="card" data-name="binary"><img src="Computer/binary.svg"><span>binary</span></div>
+    <div class="card" data-name="cdn"><img src="Computer/cdn.svg"><span>cdn</span></div>
+    <div class="card" data-name="cd-rom"><img src="Computer/cd-rom.svg"><span>cd-rom</span></div>
+    <div class="card" data-name="cert"><img src="Computer/cert.svg"><span>cert</span></div>
+    <div class="card" data-name="clipboard-code"><img src="Computer/clipboard-code.svg"><span>clipboard-code</span></div>
+    <div class="card" data-name="compiler"><img src="Computer/compiler.svg"><span>compiler</span></div>
+    <div class="card" data-name="container"><img src="Computer/container.svg"><span>container</span></div>
+    <div class="card" data-name="crash"><img src="Computer/crash.svg"><span>crash</span></div>
+    <div class="card" data-name="cron"><img src="Computer/cron.svg"><span>cron</span></div>
+    <div class="card" data-name="css-style"><img src="Computer/css-style.svg"><span>css-style</span></div>
+    <div class="card" data-name="daemon"><img src="Computer/daemon.svg"><span>daemon</span></div>
+    <div class="card" data-name="dark-theme"><img src="Computer/dark-theme.svg"><span>dark-theme</span></div>
+    <div class="card" data-name="debugger"><img src="Computer/debugger.svg"><span>debugger</span></div>
+    <div class="card" data-name="decrypt"><img src="Computer/decrypt.svg"><span>decrypt</span></div>
+    <div class="card" data-name="deploy"><img src="Computer/deploy.svg"><span>deploy</span></div>
+    <div class="card" data-name="diff"><img src="Computer/diff.svg"><span>diff</span></div>
+    <div class="card" data-name="display"><img src="Computer/display.svg"><span>display</span></div>
+    <div class="card" data-name="dns"><img src="Computer/dns.svg"><span>dns</span></div>
+    <div class="card" data-name="dropdown"><img src="Computer/dropdown.svg"><span>dropdown</span></div>
+    <div class="card" data-name="encrypt"><img src="Computer/encrypt.svg"><span>encrypt</span></div>
+    <div class="card" data-name="ethernet"><img src="Computer/ethernet.svg"><span>ethernet</span></div>
+    <div class="card" data-name="fiber"><img src="Computer/fiber.svg"><span>fiber</span></div>
+    <div class="card" data-name="firewall"><img src="Computer/firewall.svg"><span>firewall</span></div>
+    <div class="card" data-name="form-field"><img src="Computer/form-field.svg"><span>form-field</span></div>
+    <div class="card" data-name="gateway"><img src="Computer/gateway.svg"><span>gateway</span></div>
+    <div class="card" data-name="git-branch"><img src="Computer/git-branch.svg"><span>git-branch</span></div>
+    <div class="card" data-name="git-commit"><img src="Computer/git-commit.svg"><span>git-commit</span></div>
+    <div class="card" data-name="git-merge"><img src="Computer/git-merge.svg"><span>git-merge</span></div>
+    <div class="card" data-name="gpu"><img src="Computer/gpu.svg"><span>gpu</span></div>
+    <div class="card" data-name="hash"><img src="Computer/hash.svg"><span>hash</span></div>
+    <div class="card" data-name="hdd"><img src="Computer/hdd.svg"><span>hdd</span></div>
+    <div class="card" data-name="hdmi"><img src="Computer/hdmi.svg"><span>hdmi</span></div>
+    <div class="card" data-name="hex-view"><img src="Computer/hex-view.svg"><span>hex-view</span></div>
+    <div class="card" data-name="html-tag"><img src="Computer/html-tag.svg"><span>html-tag</span></div>
+    <div class="card" data-name="ip-address"><img src="Computer/ip-address.svg"><span>ip-address</span></div>
+    <div class="card" data-name="json"><img src="Computer/json.svg"><span>json</span></div>
+    <div class="card" data-name="laptop"><img src="Computer/laptop.svg"><span>laptop</span></div>
+    <div class="card" data-name="linker"><img src="Computer/linker.svg"><span>linker</span></div>
+    <div class="card" data-name="load-balancer"><img src="Computer/load-balancer.svg"><span>load-balancer</span></div>
+    <div class="card" data-name="logger"><img src="Computer/logger.svg"><span>logger</span></div>
+    <div class="card" data-name="memory-usage"><img src="Computer/memory-usage.svg"><span>memory-usage</span></div>
+    <div class="card" data-name="migrate"><img src="Computer/migrate.svg"><span>migrate</span></div>
+    <div class="card" data-name="modal"><img src="Computer/modal.svg"><span>modal</span></div>
+    <div class="card" data-name="motherboard"><img src="Computer/motherboard.svg"><span>motherboard</span></div>
+    <div class="card" data-name="node"><img src="Computer/node.svg"><span>node</span></div>
+    <div class="card" data-name="packet"><img src="Computer/packet.svg"><span>packet</span></div>
+    <div class="card" data-name="pendrive"><img src="Computer/pendrive.svg"><span>pendrive</span></div>
+    <div class="card" data-name="ping"><img src="Computer/ping.svg"><span>ping</span></div>
+    <div class="card" data-name="pipeline"><img src="Computer/pipeline.svg"><span>pipeline</span></div>
+    <div class="card" data-name="popup"><img src="Computer/popup.svg"><span>popup</span></div>
+    <div class="card" data-name="port"><img src="Computer/port.svg"><span>port</span></div>
+    <div class="card" data-name="printer"><img src="Computer/printer.svg"><span>printer</span></div>
+    <div class="card" data-name="progress-bar"><img src="Computer/progress-bar.svg"><span>progress-bar</span></div>
+    <div class="card" data-name="protocol"><img src="Computer/protocol.svg"><span>protocol</span></div>
+    <div class="card" data-name="proxy"><img src="Computer/proxy.svg"><span>proxy</span></div>
+    <div class="card" data-name="queue"><img src="Computer/queue.svg"><span>queue</span></div>
+    <div class="card" data-name="ram"><img src="Computer/ram.svg"><span>ram</span></div>
+    <div class="card" data-name="refactor"><img src="Computer/refactor.svg"><span>refactor</span></div>
+    <div class="card" data-name="regex"><img src="Computer/regex.svg"><span>regex</span></div>
+    <div class="card" data-name="release"><img src="Computer/release.svg"><span>release</span></div>
+    <div class="card" data-name="responsive"><img src="Computer/responsive.svg"><span>responsive</span></div>
+    <div class="card" data-name="restore"><img src="Computer/restore.svg"><span>restore</span></div>
+    <div class="card" data-name="router"><img src="Computer/router.svg"><span>router</span></div>
+    <div class="card" data-name="sandbox"><img src="Computer/sandbox.svg"><span>sandbox</span></div>
+    <div class="card" data-name="scanner"><img src="Computer/scanner.svg"><span>scanner</span></div>
+    <div class="card" data-name="sd-card"><img src="Computer/sd-card.svg"><span>sd-card</span></div>
+    <div class="card" data-name="server"><img src="Computer/server.svg"><span>server</span></div>
+    <div class="card" data-name="shield"><img src="Computer/shield.svg"><span>shield</span></div>
+    <div class="card" data-name="sidebar"><img src="Computer/sidebar.svg"><span>sidebar</span></div>
+    <div class="card" data-name="slider"><img src="Computer/slider.svg"><span>slider</span></div>
+    <div class="card" data-name="smartphone"><img src="Computer/smartphone.svg"><span>smartphone</span></div>
+    <div class="card" data-name="snapshot"><img src="Computer/snapshot.svg"><span>snapshot</span></div>
+    <div class="card" data-name="socket"><img src="Computer/socket.svg"><span>socket</span></div>
+    <div class="card" data-name="speaker"><img src="Computer/speaker.svg"><span>speaker</span></div>
+    <div class="card" data-name="spinner"><img src="Computer/spinner.svg"><span>spinner</span></div>
+    <div class="card" data-name="ssd"><img src="Computer/ssd.svg"><span>ssd</span></div>
+    <div class="card" data-name="ssl"><img src="Computer/ssl.svg"><span>ssl</span></div>
+    <div class="card" data-name="stack"><img src="Computer/stack.svg"><span>stack</span></div>
+    <div class="card" data-name="table-data"><img src="Computer/table-data.svg"><span>table-data</span></div>
+    <div class="card" data-name="tablet"><img src="Computer/tablet.svg"><span>tablet</span></div>
+    <div class="card" data-name="tag"><img src="Computer/tag.svg"><span>tag</span></div>
+    <div class="card" data-name="terminal-cmd"><img src="Computer/terminal-cmd.svg"><span>terminal-cmd</span></div>
+    <div class="card" data-name="toolbar"><img src="Computer/toolbar.svg"><span>toolbar</span></div>
+    <div class="card" data-name="tree-view"><img src="Computer/tree-view.svg"><span>tree-view</span></div>
+    <div class="card" data-name="two-factor"><img src="Computer/two-factor.svg"><span>two-factor</span></div>
+    <div class="card" data-name="variable"><img src="Computer/variable.svg"><span>variable</span></div>
+    <div class="card" data-name="version"><img src="Computer/version.svg"><span>version</span></div>
+    <div class="card" data-name="virtual-machine"><img src="Computer/virtual-machine.svg"><span>virtual-machine</span></div>
+    <div class="card" data-name="virus"><img src="Computer/virus.svg"><span>virus</span></div>
+    <div class="card" data-name="vpn"><img src="Computer/vpn.svg"><span>vpn</span></div>
+    <div class="card" data-name="webcam"><img src="Computer/webcam.svg"><span>webcam</span></div>
+    <div class="card" data-name="webhook"><img src="Computer/webhook.svg"><span>webhook</span></div>
+  </div>
+  <div class="no-results">No matches</div>
+</div>
+
+<div class="section" data-section="redteam">
+  <div class="section-title">RedTeam <span class="count"></span></div>
+  <div class="grid">
+    <div class="card" data-name="amsi-bypass"><img src="RedTeam/amsi-bypass.svg"><span>amsi-bypass</span></div>
+    <div class="card" data-name="apc-inject"><img src="RedTeam/apc-inject.svg"><span>apc-inject</span></div>
+    <div class="card" data-name="arp-spoof"><img src="RedTeam/arp-spoof.svg"><span>arp-spoof</span></div>
+    <div class="card" data-name="atom-bomb"><img src="RedTeam/atom-bomb.svg"><span>atom-bomb</span></div>
+    <div class="card" data-name="av-bypass"><img src="RedTeam/av-bypass.svg"><span>av-bypass</span></div>
+    <div class="card" data-name="backdoor"><img src="RedTeam/backdoor.svg"><span>backdoor</span></div>
+    <div class="card" data-name="botnet"><img src="RedTeam/botnet.svg"><span>botnet</span></div>
+    <div class="card" data-name="brute-force"><img src="RedTeam/brute-force.svg"><span>brute-force</span></div>
+    <div class="card" data-name="burpsuite"><img src="RedTeam/burpsuite.svg"><span>burpsuite</span></div>
+    <div class="card" data-name="c2-panel"><img src="RedTeam/c2-panel.svg"><span>c2-panel</span></div>
+    <div class="card" data-name="callback-exec"><img src="RedTeam/callback-exec.svg"><span>callback-exec</span></div>
+    <div class="card" data-name="com-hijack"><img src="RedTeam/com-hijack.svg"><span>com-hijack</span></div>
+    <div class="card" data-name="cred-dump"><img src="RedTeam/cred-dump.svg"><span>cred-dump</span></div>
+    <div class="card" data-name="cred-spray"><img src="RedTeam/cred-spray.svg"><span>cred-spray</span></div>
+    <div class="card" data-name="crypter"><img src="RedTeam/crypter.svg"><span>crypter</span></div>
+    <div class="card" data-name="decompile"><img src="RedTeam/decompile.svg"><span>decompile</span></div>
+    <div class="card" data-name="dll-inject"><img src="RedTeam/dll-inject.svg"><span>dll-inject</span></div>
+    <div class="card" data-name="dns-exfil"><img src="RedTeam/dns-exfil.svg"><span>dns-exfil</span></div>
+    <div class="card" data-name="dns-poison"><img src="RedTeam/dns-poison.svg"><span>dns-poison</span></div>
+    <div class="card" data-name="domain-admin"><img src="RedTeam/domain-admin.svg"><span>domain-admin</span></div>
+    <div class="card" data-name="dropper"><img src="RedTeam/dropper.svg"><span>dropper</span></div>
+    <div class="card" data-name="encoder"><img src="RedTeam/encoder.svg"><span>encoder</span></div>
+    <div class="card" data-name="enumerate"><img src="RedTeam/enumerate.svg"><span>enumerate</span></div>
+    <div class="card" data-name="etw-patch"><img src="RedTeam/etw-patch.svg"><span>etw-patch</span></div>
+    <div class="card" data-name="evil-twin"><img src="RedTeam/evil-twin.svg"><span>evil-twin</span></div>
+    <div class="card" data-name="exfiltrate"><img src="RedTeam/exfiltrate.svg"><span>exfiltrate</span></div>
+    <div class="card" data-name="exploit"><img src="RedTeam/exploit.svg"><span>exploit</span></div>
+    <div class="card" data-name="fiber-exec"><img src="RedTeam/fiber-exec.svg"><span>fiber-exec</span></div>
+    <div class="card" data-name="fuzzer"><img src="RedTeam/fuzzer.svg"><span>fuzzer</span></div>
+    <div class="card" data-name="golden-ticket"><img src="RedTeam/golden-ticket.svg"><span>golden-ticket</span></div>
+    <div class="card" data-name="hashcat"><img src="RedTeam/hashcat.svg"><span>hashcat</span></div>
+    <div class="card" data-name="hash-crack"><img src="RedTeam/hash-crack.svg"><span>hash-crack</span></div>
+    <div class="card" data-name="heap-spray"><img src="RedTeam/heap-spray.svg"><span>heap-spray</span></div>
+    <div class="card" data-name="hook-api"><img src="RedTeam/hook-api.svg"><span>hook-api</span></div>
+    <div class="card" data-name="hydra-atk"><img src="RedTeam/hydra-atk.svg"><span>hydra-atk</span></div>
+    <div class="card" data-name="implant"><img src="RedTeam/implant.svg"><span>implant</span></div>
+    <div class="card" data-name="inject"><img src="RedTeam/inject.svg"><span>inject</span></div>
+    <div class="card" data-name="kerberoast"><img src="RedTeam/kerberoast.svg"><span>kerberoast</span></div>
+    <div class="card" data-name="keylogger"><img src="RedTeam/keylogger.svg"><span>keylogger</span></div>
+    <div class="card" data-name="lateral"><img src="RedTeam/lateral.svg"><span>lateral</span></div>
+    <div class="card" data-name="lsass-dump"><img src="RedTeam/lsass-dump.svg"><span>lsass-dump</span></div>
+    <div class="card" data-name="macro-atk"><img src="RedTeam/macro-atk.svg"><span>macro-atk</span></div>
+    <div class="card" data-name="meterpreter"><img src="RedTeam/meterpreter.svg"><span>meterpreter</span></div>
+    <div class="card" data-name="mimikatz"><img src="RedTeam/mimikatz.svg"><span>mimikatz</span></div>
+    <div class="card" data-name="mitm"><img src="RedTeam/mitm.svg"><span>mitm</span></div>
+    <div class="card" data-name="network-sniff"><img src="RedTeam/network-sniff.svg"><span>network-sniff</span></div>
+    <div class="card" data-name="nmap-scan"><img src="RedTeam/nmap-scan.svg"><span>nmap-scan</span></div>
+    <div class="card" data-name="ntlm-relay"><img src="RedTeam/ntlm-relay.svg"><span>ntlm-relay</span></div>
+    <div class="card" data-name="obfuscate"><img src="RedTeam/obfuscate.svg"><span>obfuscate</span></div>
+    <div class="card" data-name="overflow"><img src="RedTeam/overflow.svg"><span>overflow</span></div>
+    <div class="card" data-name="packer-tool"><img src="RedTeam/packer-tool.svg"><span>packer-tool</span></div>
+    <div class="card" data-name="pass-hash"><img src="RedTeam/pass-hash.svg"><span>pass-hash</span></div>
+    <div class="card" data-name="password-crack"><img src="RedTeam/password-crack.svg"><span>password-crack</span></div>
+    <div class="card" data-name="payload"><img src="RedTeam/payload.svg"><span>payload</span></div>
+    <div class="card" data-name="persistence"><img src="RedTeam/persistence.svg"><span>persistence</span></div>
+    <div class="card" data-name="phishing"><img src="RedTeam/phishing.svg"><span>phishing</span></div>
+    <div class="card" data-name="pivot"><img src="RedTeam/pivot.svg"><span>pivot</span></div>
+    <div class="card" data-name="portscan"><img src="RedTeam/portscan.svg"><span>portscan</span></div>
+    <div class="card" data-name="ppid-spoof"><img src="RedTeam/ppid-spoof.svg"><span>ppid-spoof</span></div>
+    <div class="card" data-name="privesc"><img src="RedTeam/privesc.svg"><span>privesc</span></div>
+    <div class="card" data-name="process-hollow"><img src="RedTeam/process-hollow.svg"><span>process-hollow</span></div>
+    <div class="card" data-name="process-inject"><img src="RedTeam/process-inject.svg"><span>process-inject</span></div>
+    <div class="card" data-name="ransom"><img src="RedTeam/ransom.svg"><span>ransom</span></div>
+    <div class="card" data-name="rat"><img src="RedTeam/rat.svg"><span>rat</span></div>
+    <div class="card" data-name="rce"><img src="RedTeam/rce.svg"><span>rce</span></div>
+    <div class="card" data-name="recon"><img src="RedTeam/recon.svg"><span>recon</span></div>
+    <div class="card" data-name="reflective-load"><img src="RedTeam/reflective-load.svg"><span>reflective-load</span></div>
+    <div class="card" data-name="reg-persist"><img src="RedTeam/reg-persist.svg"><span>reg-persist</span></div>
+    <div class="card" data-name="responder-atk"><img src="RedTeam/responder-atk.svg"><span>responder-atk</span></div>
+    <div class="card" data-name="rev-shell"><img src="RedTeam/rev-shell.svg"><span>rev-shell</span></div>
+    <div class="card" data-name="rootkit"><img src="RedTeam/rootkit.svg"><span>rootkit</span></div>
+    <div class="card" data-name="rop-chain"><img src="RedTeam/rop-chain.svg"><span>rop-chain</span></div>
+    <div class="card" data-name="sandbox-evade"><img src="RedTeam/sandbox-evade.svg"><span>sandbox-evade</span></div>
+    <div class="card" data-name="schtask"><img src="RedTeam/schtask.svg"><span>schtask</span></div>
+    <div class="card" data-name="session-hijack"><img src="RedTeam/session-hijack.svg"><span>session-hijack</span></div>
+    <div class="card" data-name="shellcode"><img src="RedTeam/shellcode.svg"><span>shellcode</span></div>
+    <div class="card" data-name="social-eng"><img src="RedTeam/social-eng.svg"><span>social-eng</span></div>
+    <div class="card" data-name="spear-phish"><img src="RedTeam/spear-phish.svg"><span>spear-phish</span></div>
+    <div class="card" data-name="spyware"><img src="RedTeam/spyware.svg"><span>spyware</span></div>
+    <div class="card" data-name="sqli"><img src="RedTeam/sqli.svg"><span>sqli</span></div>
+    <div class="card" data-name="ssl-strip"><img src="RedTeam/ssl-strip.svg"><span>ssl-strip</span></div>
+    <div class="card" data-name="stager"><img src="RedTeam/stager.svg"><span>stager</span></div>
+    <div class="card" data-name="startup-persist"><img src="RedTeam/startup-persist.svg"><span>startup-persist</span></div>
+    <div class="card" data-name="supply-chain"><img src="RedTeam/supply-chain.svg"><span>supply-chain</span></div>
+    <div class="card" data-name="syscall-direct"><img src="RedTeam/syscall-direct.svg"><span>syscall-direct</span></div>
+    <div class="card" data-name="thread-hijack"><img src="RedTeam/thread-hijack.svg"><span>thread-hijack</span></div>
+    <div class="card" data-name="token-forge"><img src="RedTeam/token-forge.svg"><span>token-forge</span></div>
+    <div class="card" data-name="token-steal"><img src="RedTeam/token-steal.svg"><span>token-steal</span></div>
+    <div class="card" data-name="trojan"><img src="RedTeam/trojan.svg"><span>trojan</span></div>
+    <div class="card" data-name="tunnel-atk"><img src="RedTeam/tunnel-atk.svg"><span>tunnel-atk</span></div>
+    <div class="card" data-name="unhook"><img src="RedTeam/unhook.svg"><span>unhook</span></div>
+    <div class="card" data-name="usb-drop"><img src="RedTeam/usb-drop.svg"><span>usb-drop</span></div>
+    <div class="card" data-name="vuln-scan"><img src="RedTeam/vuln-scan.svg"><span>vuln-scan</span></div>
+    <div class="card" data-name="watering-hole"><img src="RedTeam/watering-hole.svg"><span>watering-hole</span></div>
+    <div class="card" data-name="weaponize"><img src="RedTeam/weaponize.svg"><span>weaponize</span></div>
+    <div class="card" data-name="web-shell"><img src="RedTeam/web-shell.svg"><span>web-shell</span></div>
+    <div class="card" data-name="wifi-deauth"><img src="RedTeam/wifi-deauth.svg"><span>wifi-deauth</span></div>
+    <div class="card" data-name="wmi-exec"><img src="RedTeam/wmi-exec.svg"><span>wmi-exec</span></div>
+    <div class="card" data-name="xss"><img src="RedTeam/xss.svg"><span>xss</span></div>
+    <div class="card" data-name="zero-day"><img src="RedTeam/zero-day.svg"><span>zero-day</span></div>
+  </div>
+  <div class="no-results">No matches</div>
+</div>
+
+<div class="section" data-section="blueteam">
+  <div class="section-title">BlueTeam <span class="count"></span></div>
+  <div class="grid">
+    <div class="card" data-name="access-control"><img src="BlueTeam/access-control.svg"><span>access-control</span></div>
+    <div class="card" data-name="access-log"><img src="BlueTeam/access-log.svg"><span>access-log</span></div>
+    <div class="card" data-name="alerting"><img src="BlueTeam/alerting.svg"><span>alerting</span></div>
+    <div class="card" data-name="anomaly-detect"><img src="BlueTeam/anomaly-detect.svg"><span>anomaly-detect</span></div>
+    <div class="card" data-name="antivirus"><img src="BlueTeam/antivirus.svg"><span>antivirus</span></div>
+    <div class="card" data-name="asset-inventory"><img src="BlueTeam/asset-inventory.svg"><span>asset-inventory</span></div>
+    <div class="card" data-name="auto-response"><img src="BlueTeam/auto-response.svg"><span>auto-response</span></div>
+    <div class="card" data-name="awareness"><img src="BlueTeam/awareness.svg"><span>awareness</span></div>
+    <div class="card" data-name="backup"><img src="BlueTeam/backup.svg"><span>backup</span></div>
+    <div class="card" data-name="baseline"><img src="BlueTeam/baseline.svg"><span>baseline</span></div>
+    <div class="card" data-name="blacklist"><img src="BlueTeam/blacklist.svg"><span>blacklist</span></div>
+    <div class="card" data-name="cert-mgmt"><img src="BlueTeam/cert-mgmt.svg"><span>cert-mgmt</span></div>
+    <div class="card" data-name="compliance"><img src="BlueTeam/compliance.svg"><span>compliance</span></div>
+    <div class="card" data-name="config-audit"><img src="BlueTeam/config-audit.svg"><span>config-audit</span></div>
+    <div class="card" data-name="containment"><img src="BlueTeam/containment.svg"><span>containment</span></div>
+    <div class="card" data-name="correlation"><img src="BlueTeam/correlation.svg"><span>correlation</span></div>
+    <div class="card" data-name="cve-track"><img src="BlueTeam/cve-track.svg"><span>cve-track</span></div>
+    <div class="card" data-name="dashboard"><img src="BlueTeam/dashboard.svg"><span>dashboard</span></div>
+    <div class="card" data-name="data-classify"><img src="BlueTeam/data-classify.svg"><span>data-classify</span></div>
+    <div class="card" data-name="data-mask"><img src="BlueTeam/data-mask.svg"><span>data-mask</span></div>
+    <div class="card" data-name="deception"><img src="BlueTeam/deception.svg"><span>deception</span></div>
+    <div class="card" data-name="disaster-recovery"><img src="BlueTeam/disaster-recovery.svg"><span>disaster-recovery</span></div>
+    <div class="card" data-name="disk-image"><img src="BlueTeam/disk-image.svg"><span>disk-image</span></div>
+    <div class="card" data-name="dlp"><img src="BlueTeam/dlp.svg"><span>dlp</span></div>
+    <div class="card" data-name="dns-filter"><img src="BlueTeam/dns-filter.svg"><span>dns-filter</span></div>
+    <div class="card" data-name="dynamic-analysis"><img src="BlueTeam/dynamic-analysis.svg"><span>dynamic-analysis</span></div>
+    <div class="card" data-name="edr"><img src="BlueTeam/edr.svg"><span>edr</span></div>
+    <div class="card" data-name="email-filter"><img src="BlueTeam/email-filter.svg"><span>email-filter</span></div>
+    <div class="card" data-name="encryption"><img src="BlueTeam/encryption.svg"><span>encryption</span></div>
+    <div class="card" data-name="endpoint-protect"><img src="BlueTeam/endpoint-protect.svg"><span>endpoint-protect</span></div>
+    <div class="card" data-name="eradication"><img src="BlueTeam/eradication.svg"><span>eradication</span></div>
+    <div class="card" data-name="escalation"><img src="BlueTeam/escalation.svg"><span>escalation</span></div>
+    <div class="card" data-name="evidence"><img src="BlueTeam/evidence.svg"><span>evidence</span></div>
+    <div class="card" data-name="firewall"><img src="BlueTeam/firewall.svg"><span>firewall</span></div>
+    <div class="card" data-name="forensics"><img src="BlueTeam/forensics.svg"><span>forensics</span></div>
+    <div class="card" data-name="hardening"><img src="BlueTeam/hardening.svg"><span>hardening</span></div>
+    <div class="card" data-name="hash-verify"><img src="BlueTeam/hash-verify.svg"><span>hash-verify</span></div>
+    <div class="card" data-name="health-check"><img src="BlueTeam/health-check.svg"><span>health-check</span></div>
+    <div class="card" data-name="honeypot"><img src="BlueTeam/honeypot.svg"><span>honeypot</span></div>
+    <div class="card" data-name="ids"><img src="BlueTeam/ids.svg"><span>ids</span></div>
+    <div class="card" data-name="incident-log"><img src="BlueTeam/incident-log.svg"><span>incident-log</span></div>
+    <div class="card" data-name="incident-playbook"><img src="BlueTeam/incident-playbook.svg"><span>incident-playbook</span></div>
+    <div class="card" data-name="incident-response"><img src="BlueTeam/incident-response.svg"><span>incident-response</span></div>
+    <div class="card" data-name="ioc-indicator"><img src="BlueTeam/ioc-indicator.svg"><span>ioc-indicator</span></div>
+    <div class="card" data-name="ips"><img src="BlueTeam/ips.svg"><span>ips</span></div>
+    <div class="card" data-name="key-mgmt"><img src="BlueTeam/key-mgmt.svg"><span>key-mgmt</span></div>
+    <div class="card" data-name="log-analysis"><img src="BlueTeam/log-analysis.svg"><span>log-analysis</span></div>
+    <div class="card" data-name="log-collect"><img src="BlueTeam/log-collect.svg"><span>log-collect</span></div>
+    <div class="card" data-name="malware-analysis"><img src="BlueTeam/malware-analysis.svg"><span>malware-analysis</span></div>
+    <div class="card" data-name="mem-forensics"><img src="BlueTeam/mem-forensics.svg"><span>mem-forensics</span></div>
+    <div class="card" data-name="mfa"><img src="BlueTeam/mfa.svg"><span>mfa</span></div>
+    <div class="card" data-name="mitre-attack"><img src="BlueTeam/mitre-attack.svg"><span>mitre-attack</span></div>
+    <div class="card" data-name="monitoring"><img src="BlueTeam/monitoring.svg"><span>monitoring</span></div>
+    <div class="card" data-name="net-segment"><img src="BlueTeam/net-segment.svg"><span>net-segment</span></div>
+    <div class="card" data-name="network-map"><img src="BlueTeam/network-map.svg"><span>network-map</span></div>
+    <div class="card" data-name="osint"><img src="BlueTeam/osint.svg"><span>osint</span></div>
+    <div class="card" data-name="packet-capture"><img src="BlueTeam/packet-capture.svg"><span>packet-capture</span></div>
+    <div class="card" data-name="patch-mgmt"><img src="BlueTeam/patch-mgmt.svg"><span>patch-mgmt</span></div>
+    <div class="card" data-name="pentest-report"><img src="BlueTeam/pentest-report.svg"><span>pentest-report</span></div>
+    <div class="card" data-name="phish-detect"><img src="BlueTeam/phish-detect.svg"><span>phish-detect</span></div>
+    <div class="card" data-name="pki"><img src="BlueTeam/pki.svg"><span>pki</span></div>
+    <div class="card" data-name="playbook"><img src="BlueTeam/playbook.svg"><span>playbook</span></div>
+    <div class="card" data-name="policy"><img src="BlueTeam/policy.svg"><span>policy</span></div>
+    <div class="card" data-name="privilege-audit"><img src="BlueTeam/privilege-audit.svg"><span>privilege-audit</span></div>
+    <div class="card" data-name="proxy"><img src="BlueTeam/proxy.svg"><span>proxy</span></div>
+    <div class="card" data-name="quarantine"><img src="BlueTeam/quarantine.svg"><span>quarantine</span></div>
+    <div class="card" data-name="rbac"><img src="BlueTeam/rbac.svg"><span>rbac</span></div>
+    <div class="card" data-name="recovery"><img src="BlueTeam/recovery.svg"><span>recovery</span></div>
+    <div class="card" data-name="report"><img src="BlueTeam/report.svg"><span>report</span></div>
+    <div class="card" data-name="risk-assess"><img src="BlueTeam/risk-assess.svg"><span>risk-assess</span></div>
+    <div class="card" data-name="rule-engine"><img src="BlueTeam/rule-engine.svg"><span>rule-engine</span></div>
+    <div class="card" data-name="sandbox"><img src="BlueTeam/sandbox.svg"><span>sandbox</span></div>
+    <div class="card" data-name="sandbox-detonate"><img src="BlueTeam/sandbox-detonate.svg"><span>sandbox-detonate</span></div>
+    <div class="card" data-name="sandbox-result"><img src="BlueTeam/sandbox-result.svg"><span>sandbox-result</span></div>
+    <div class="card" data-name="scan-report"><img src="BlueTeam/scan-report.svg"><span>scan-report</span></div>
+    <div class="card" data-name="secret-vault"><img src="BlueTeam/secret-vault.svg"><span>secret-vault</span></div>
+    <div class="card" data-name="security-audit"><img src="BlueTeam/security-audit.svg"><span>security-audit</span></div>
+    <div class="card" data-name="security-score"><img src="BlueTeam/security-score.svg"><span>security-score</span></div>
+    <div class="card" data-name="siem"><img src="BlueTeam/siem.svg"><span>siem</span></div>
+    <div class="card" data-name="sigma-rule"><img src="BlueTeam/sigma-rule.svg"><span>sigma-rule</span></div>
+    <div class="card" data-name="sla-timer"><img src="BlueTeam/sla-timer.svg"><span>sla-timer</span></div>
+    <div class="card" data-name="snort-rule"><img src="BlueTeam/snort-rule.svg"><span>snort-rule</span></div>
+    <div class="card" data-name="soar"><img src="BlueTeam/soar.svg"><span>soar</span></div>
+    <div class="card" data-name="soc"><img src="BlueTeam/soc.svg"><span>soc</span></div>
+    <div class="card" data-name="static-analysis"><img src="BlueTeam/static-analysis.svg"><span>static-analysis</span></div>
+    <div class="card" data-name="threat-feed"><img src="BlueTeam/threat-feed.svg"><span>threat-feed</span></div>
+    <div class="card" data-name="threat-hunt"><img src="BlueTeam/threat-hunt.svg"><span>threat-hunt</span></div>
+    <div class="card" data-name="threat-intel"><img src="BlueTeam/threat-intel.svg"><span>threat-intel</span></div>
+    <div class="card" data-name="threat-model"><img src="BlueTeam/threat-model.svg"><span>threat-model</span></div>
+    <div class="card" data-name="timeline"><img src="BlueTeam/timeline.svg"><span>timeline</span></div>
+    <div class="card" data-name="traffic-analysis"><img src="BlueTeam/traffic-analysis.svg"><span>traffic-analysis</span></div>
+    <div class="card" data-name="triage"><img src="BlueTeam/triage.svg"><span>triage</span></div>
+    <div class="card" data-name="uptime"><img src="BlueTeam/uptime.svg"><span>uptime</span></div>
+    <div class="card" data-name="vpn"><img src="BlueTeam/vpn.svg"><span>vpn</span></div>
+    <div class="card" data-name="vuln-mgmt"><img src="BlueTeam/vuln-mgmt.svg"><span>vuln-mgmt</span></div>
+    <div class="card" data-name="waf"><img src="BlueTeam/waf.svg"><span>waf</span></div>
+    <div class="card" data-name="whitelist"><img src="BlueTeam/whitelist.svg"><span>whitelist</span></div>
+    <div class="card" data-name="xdr"><img src="BlueTeam/xdr.svg"><span>xdr</span></div>
+    <div class="card" data-name="yara-rule"><img src="BlueTeam/yara-rule.svg"><span>yara-rule</span></div>
+    <div class="card" data-name="zero-trust"><img src="BlueTeam/zero-trust.svg"><span>zero-trust</span></div>
+  </div>
+  <div class="no-results">No matches</div>
+</div>
+</div>
+
+<script>
+var search = document.getElementById('search');
+var sections = document.querySelectorAll('.section');
+
+function updateCounts() {
+  sections.forEach(function(sec) {
+    var visible = sec.querySelectorAll('.card:not(.hidden)').length;
+    var total = sec.querySelectorAll('.card').length;
+    sec.querySelector('.count').textContent = '(' + visible + '/' + total + ')';
+    sec.querySelector('.no-results').style.display = visible === 0 ? 'block' : 'none';
+  });
+}
+
+search.addEventListener('input', function() {
+  var q = this.value.toLowerCase();
+  sections.forEach(function(sec) {
+    var cards = sec.querySelectorAll('.card');
+    cards.forEach(function(card) {
+      var name = card.getAttribute('data-name');
+      card.classList.toggle('hidden', name.indexOf(q) === -1);
+    });
+  });
+  updateCounts();
+});
+
+updateCounts();
+</script>
+</body>
+</html>

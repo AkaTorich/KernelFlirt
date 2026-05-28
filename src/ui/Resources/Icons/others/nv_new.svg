@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3FA9FF"/>
+      <stop offset="100%" stop-color="#003B7A"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.75"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <!-- Paper sheet body -->
+  <path d="M5 2 H15 L19 6 V22 H5 Z" fill="url(#body)" stroke="#001E40" stroke-width="0.5"/>
+  <!-- Folded corner -->
+  <path d="M15 2 V6 H19 Z" fill="#FFFFFF" fill-opacity="0.3"/>
+  <!-- Gloss highlight on top half -->
+  <path d="M5 2 H15 L19 6 V11 H5 Z" fill="url(#gloss)"/>
+  <!-- Plus sign -->
+  <rect x="10.5" y="11" width="3" height="9" fill="#FFFFFF"/>
+  <rect x="7.5" y="14" width="9" height="3" fill="#FFFFFF"/>
+</svg>

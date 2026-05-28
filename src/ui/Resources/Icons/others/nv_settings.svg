@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#C9D6E5"/>
+      <stop offset="50%" stop-color="#9FB3C8"/>
+      <stop offset="100%" stop-color="#2B405C"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="hub" cx="0.4" cy="0.4" r="0.6">
+      <stop offset="0%" stop-color="#E0EAF5"/>
+      <stop offset="100%" stop-color="#4A5E80"/>
+    </radialGradient>
+  </defs>
+  <!-- Detailed 10-tooth gear -->
+  <path d="M12 1 L13.3 3.5 L16 2.7 L17 5.4 L19.7 5.7 L19.6 8.5 L22 10 L20.8 12.4 L22 14.8 L19.6 16.3
+           L19.7 19.1 L17 19.4 L16 22.1 L13.3 21.3 L12 23.8 L10.7 21.3 L8 22.1 L7 19.4 L4.3 19.1
+           L4.4 16.3 L2 14.8 L3.2 12.4 L2 10 L4.4 8.5 L4.3 5.7 L7 5.4 L8 2.7 L10.7 3.5 Z"
+        transform="translate(0 -0.4)"
+        fill="url(#body)" stroke="#1A2A40" stroke-width="0.55" stroke-linejoin="round"/>
+  <!-- Outer hub -->
+  <circle cx="12" cy="12" r="5" fill="url(#hub)" stroke="#1A2A40" stroke-width="0.5"/>
+  <!-- Center hole -->
+  <circle cx="12" cy="12" r="2.4" fill="#1A2A40"/>
+  <circle cx="12" cy="12" r="1.6" fill="#5A6E88"/>
+  <!-- Gloss -->
+  <ellipse cx="12" cy="6" rx="7.5" ry="3" fill="url(#gloss)"/>
+</svg>

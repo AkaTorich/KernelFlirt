@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <defs>
+    <radialGradient id="gc" cx="35%" cy="28%" r="65%"><stop offset="0%" stop-color="#FFE840"/><stop offset="100%" stop-color="#BB6600"/></radialGradient>
+    <radialGradient id="gb" cx="35%" cy="28%" r="65%"><stop offset="0%" stop-color="#FFAA20"/><stop offset="100%" stop-color="#884400"/></radialGradient>
+  </defs>
+  <!-- Корона -->
+  <path fill="url(#gc)" d="M3 16 L5.5 8 L9.5 13 L12 6 L14.5 13 L18.5 8 L21 16 Z"/>
+  <circle fill="white" opacity=".25" cx="8" cy="10" r="2.5"/>
+  <!-- Основание короны -->
+  <rect fill="url(#gb)" x="3" y="16" width="18" height="3.5" rx="1.8"/>
+  <!-- Камушки -->
+  <circle fill="white" opacity=".7" cx="7"  cy="17.7" r=".9"/>
+  <circle fill="white" opacity=".7" cx="12" cy="17.7" r=".9"/>
+  <circle fill="white" opacity=".7" cx="17" cy="17.7" r=".9"/>
+</svg>

@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="siArrow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#9ED2FF"/>
+      <stop offset="45%" stop-color="#4A9FE8"/>
+      <stop offset="100%" stop-color="#1E5F9C"/>
+    </linearGradient>
+    <linearGradient id="siGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#FFFFFF" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="siBox" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#3A5A3A"/>
+      <stop offset="100%" stop-color="#1A3A1A"/>
+    </linearGradient>
+    <filter id="siShadow"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <!-- Function block (the thing we step INTO) -->
+  <rect x="4" y="9" width="9" height="5.5" rx="0.8"
+        fill="#000" opacity="0.3" filter="url(#siShadow)" transform="translate(0.2,0.3)"/>
+  <rect x="4" y="9" width="9" height="5.5" rx="0.8"
+        fill="url(#siBox)" stroke="#2A5A2A" stroke-width="0.5"/>
+  <!-- "f()" label inside box -->
+  <text x="8.5" y="13.2" text-anchor="middle" font-family="monospace" font-size="3.5"
+        fill="#7FD47F" font-weight="bold">f( )</text>
+  <!-- Vertical arrow shaft pointing DOWN into the box, shadow -->
+  <rect x="7.5" y="1" width="2" height="5.5" rx="0.4"
+        fill="#000" opacity="0.3" filter="url(#siShadow)" transform="translate(0.2,0.3)"/>
+  <!-- Arrowhead pointing DOWN, shadow -->
+  <path d="M5.5 7 L8.5 10.5 L11.5 7 Z"
+        fill="#000" opacity="0.3" filter="url(#siShadow)" transform="translate(0.2,0.3)"/>
+  <!-- Shaft -->
+  <rect x="7.5" y="1" width="2" height="5.5" rx="0.4"
+        fill="url(#siArrow)" stroke="#14487E" stroke-width="0.4"/>
+  <!-- Arrowhead -->
+  <path d="M5.5 7 L8.5 10.5 L11.5 7 Z"
+        fill="url(#siArrow)" stroke="#14487E" stroke-width="0.4" stroke-linejoin="round"/>
+  <!-- Gloss on shaft -->
+  <rect x="7.5" y="1" width="1" height="3.5" rx="0.3" fill="url(#siGloss)"/>
+</svg>

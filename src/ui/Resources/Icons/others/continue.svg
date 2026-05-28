@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="contBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#9ED2FF"/>
+      <stop offset="45%" stop-color="#4A9FE8"/>
+      <stop offset="100%" stop-color="#1E5F9C"/>
+    </linearGradient>
+    <linearGradient id="contGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#FFFFFF" stop-opacity="0.75"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="contClip">
+      <path d="M1.5 4.2 h3 V2.3 L10 8 L4.5 13.7 V11.8 H1.5 Z M8 4.2 h3 V2.3 L14.5 8 L11 13.7 V11.8 H8 Z"/>
+    </clipPath>
+    <filter id="contShadow"><feGaussianBlur stdDeviation="0.35"/></filter>
+  </defs>
+  <path d="M1.5 4.2 h3 V2.3 L10 8 L4.5 13.7 V11.8 H1.5 Z M8 4.2 h3 V2.3 L14.5 8 L11 13.7 V11.8 H8 Z"
+        fill="#000" opacity="0.35" filter="url(#contShadow)" transform="translate(0.3,0.4)"/>
+  <path d="M1.5 4.2 h3 V2.3 L10 8 L4.5 13.7 V11.8 H1.5 Z"
+        fill="url(#contBody)" stroke="#14487E" stroke-width="0.55" stroke-linejoin="round"/>
+  <path d="M8 4.2 h3 V2.3 L14.5 8 L11 13.7 V11.8 H8 Z"
+        fill="url(#contBody)" stroke="#14487E" stroke-width="0.55" stroke-linejoin="round"/>
+  <g clip-path="url(#contClip)"><ellipse cx="8" cy="3.5" rx="7.5" ry="3" fill="url(#contGloss)"/></g>
+</svg>

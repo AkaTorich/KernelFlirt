@@ -113,6 +113,7 @@
     <Resource Include="Resources\Icons\Plugins\vulnhunter.svg" />
     <Resource Include="Resources\Icons\Plugins\ai.svg" />
     <Resource Include="Resources\Icons\Plugins\sigdetect.svg" />
+    <Resource Include="Resources\Icons\Plugins\converter.svg" />
   </ItemGroup>
 
 

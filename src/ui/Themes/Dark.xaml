@@ -623,6 +623,45 @@
         </Setter>
     </Style>
 
+    <!-- RadioButton (тематический шаблон — иначе WPF рендерит системный чёрный кружок) -->
+    <Style TargetType="RadioButton">
+        <Setter Property="Foreground" Value="{DynamicResource FgBrush}" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RadioButton">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Grid Width="14" Height="14" VerticalAlignment="Center" Margin="0,0,6,0">
+                            <Ellipse x:Name="RadioOuter"
+                                     Fill="{DynamicResource BgBrush}"
+                                     Stroke="{DynamicResource BorderBrush}"
+                                     StrokeThickness="1" />
+                            <Ellipse x:Name="RadioDot" Width="6" Height="6"
+                                     Fill="{DynamicResource AccentBrush}"
+                                     Visibility="Collapsed" />
+                        </Grid>
+                        <ContentPresenter VerticalAlignment="Center" RecognizesAccessKey="True" />
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="RadioDot" Property="Visibility" Value="Visible" />
+                            <Setter TargetName="RadioOuter" Property="Stroke" Value="{DynamicResource AccentBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="RadioOuter" Property="Stroke" Value="{DynamicResource AccentBrush}" />
+                            <Setter TargetName="RadioOuter" Property="Fill" Value="{DynamicResource BgLightBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.4" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- GroupBox -->
     <Style TargetType="GroupBox">
         <Setter Property="Foreground" Value="{DynamicResource FgBrush}" />

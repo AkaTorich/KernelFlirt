@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FFE040"/><stop offset="100%" stop-color="#CC6600"/></linearGradient>
+  </defs>
+  <path fill="none" stroke="#FFE040" stroke-width="2.8" stroke-linecap="round"
+        d="M20.5 12a8.5 8.5 0 1 1-2.5-6"/>
+  <polygon fill="#FFE040" points="17.5,1.5 23.5,4.5 18.5,8.5"/>
+</svg>

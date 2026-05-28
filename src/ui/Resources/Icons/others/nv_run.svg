@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#B7FFB9"/>
+      <stop offset="40%" stop-color="#7CFF82"/>
+      <stop offset="100%" stop-color="#006A18"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <!-- Play triangle -->
+  <path d="M5 3 L21 12 L5 21 Z" fill="url(#body)" stroke="#003A0C" stroke-width="0.6" stroke-linejoin="round"/>
+  <!-- Strong gloss highlight on upper-left of triangle -->
+  <path d="M5 3 L18 10 L5 13 Z" fill="url(#gloss)"/>
+  <!-- Bright glow spot -->
+  <ellipse cx="9" cy="8" rx="3" ry="1.5" fill="url(#glow)"/>
+</svg>

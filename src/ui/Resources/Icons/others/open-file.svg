@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="ofFolder" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFE082"/>
+      <stop offset="50%" stop-color="#FFB300"/>
+      <stop offset="100%" stop-color="#795500"/>
+    </linearGradient>
+    <linearGradient id="ofFront" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFD54F"/>
+      <stop offset="100%" stop-color="#E65100"/>
+    </linearGradient>
+    <linearGradient id="ofGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="ofSh"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <!-- back panel -->
+  <path d="M1.5 3.5 H6 L7.5 5 H14.5 V13 Q14.5 13.5 14 13.5 H2 Q1.5 13.5 1.5 13 Z"
+        fill="#000" opacity="0.35" filter="url(#ofSh)" transform="translate(0.2,0.3)"/>
+  <path d="M1.5 3.5 H6 L7.5 5 H14.5 V13 Q14.5 13.5 14 13.5 H2 Q1.5 13.5 1.5 13 Z"
+        fill="url(#ofFolder)" stroke="#4A2900" stroke-width="0.5" stroke-linejoin="round"/>
+  <!-- open front flap (tilted toward viewer) -->
+  <path d="M2.5 13.5 L4 6.5 H15.5 L14 13.5 Z"
+        fill="url(#ofFront)" stroke="#4A2900" stroke-width="0.5" stroke-linejoin="round"/>
+  <!-- gloss on back -->
+  <path d="M1.8 3.8 H6 L7.3 4.8 H14.2 V6 Q8 5 1.8 5.5 Z" fill="url(#ofGloss)"/>
+  <!-- gloss on front -->
+  <path d="M2.7 13.2 L3.9 7 H15.3 L14.9 8.5 Q8 7.5 3 9 Z" fill="url(#ofGloss)" opacity="0.6"/>
+</svg>

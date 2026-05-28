@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <defs>
+    <radialGradient id="gn" cx="35%" cy="28%" r="65%"><stop offset="0%" stop-color="#80EEFF"/><stop offset="100%" stop-color="#006688"/></radialGradient>
+    <radialGradient id="gd" cx="35%" cy="28%" r="65%"><stop offset="0%" stop-color="#40BBDD"/><stop offset="100%" stop-color="#004466"/></radialGradient>
+  </defs>
+  <!-- Сервер-узел слева -->
+  <rect fill="url(#gn)" x="1" y="8" width="7" height="8" rx="2"/>
+  <circle fill="white" opacity=".30" cx="3.5" cy="10.5" r="1.8"/>
+  <rect fill="white" opacity=".5" x="2.5" y="13.5" width="4" height="1" rx=".5"/>
+  <!-- Линия-туннель -->
+  <line stroke="#40BBDD" stroke-width="2" stroke-linecap="round" stroke-dasharray="2,2" x1="8" y1="12" x2="16" y2="12"/>
+  <!-- Замок в центре -->
+  <rect fill="url(#gd)" x="9.5" y="10.5" width="5" height="4" rx="1"/>
+  <path fill="none" stroke="white" stroke-width="1.4" stroke-linecap="round" d="M11 10.5 Q11 8.5 12 8.5 Q13 8.5 13 10.5"/>
+  <circle fill="white" opacity=".9" cx="12" cy="12.5" r=".7"/>
+  <!-- Сервер-узел справа -->
+  <rect fill="url(#gn)" x="16" y="8" width="7" height="8" rx="2"/>
+  <circle fill="white" opacity=".30" cx="18.5" cy="10.5" r="1.8"/>
+  <rect fill="white" opacity=".5" x="17.5" y="13.5" width="4" height="1" rx=".5"/>
+</svg>

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <defs>
+    <linearGradient id="ga" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FF9040"/><stop offset="100%" stop-color="#CC3300"/></linearGradient>
+        <linearGradient id="gb" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#40EED8"/><stop offset="100%" stop-color="#008880"/></linearGradient>
+  </defs>
+  <line stroke="url(#ga)" stroke-width="3" stroke-linecap="round" x1="12" y1="22" x2="12" y2="9"/>
+  <polygon fill="url(#ga)" points="5,12 12,4 19,12"/>
+  <rect fill="url(#gb)" x="2" y="21" width="20" height="2.5" rx="1.25"/>
+</svg>

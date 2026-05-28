@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FF8AB8"/>
+      <stop offset="100%" stop-color="#9C2050"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <!-- Eraser block, tilted slightly -->
+  <g transform="rotate(-25 13 13)">
+    <rect x="8" y="9" width="14" height="6" rx="0.8" fill="url(#body)" stroke="#4A0A22" stroke-width="0.5"/>
+    <!-- Divider line on eraser -->
+    <line x1="13" y1="9" x2="13" y2="15" stroke="#4A0A22" stroke-width="0.6"/>
+    <!-- Gloss strip -->
+    <rect x="8" y="9" width="14" height="2.2" rx="0.8" fill="url(#gloss)"/>
+  </g>
+  <!-- Motion lines trailing left -->
+  <line x1="2" y1="9" x2="6" y2="9" stroke="#9C2050" stroke-width="1.2" stroke-linecap="round"/>
+  <line x1="1" y1="13" x2="5" y2="13" stroke="#9C2050" stroke-width="1.2" stroke-linecap="round"/>
+  <line x1="2" y1="17" x2="6" y2="17" stroke="#9C2050" stroke-width="1.2" stroke-linecap="round"/>
+</svg>

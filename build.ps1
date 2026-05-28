@@ -207,7 +207,8 @@ $pluginProjects = @(
     "samples\GraphViewPlugin\GraphViewPlugin.csproj",
     "samples\NetworkMonitorPlugin\NetworkMonitorPlugin.csproj",
     "samples\XrefsPlugin\XrefsPlugin.csproj",
-    "samples\SessionPlugin\SessionPlugin.csproj"
+    "samples\SessionPlugin\SessionPlugin.csproj",
+    "samples\ConverterPlugin\ConverterPlugin.csproj"
 )
 foreach ($pluginRelPath in $pluginProjects) {
     $pluginProj = Join-Path $Root $pluginRelPath

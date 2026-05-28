@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="cvBase" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1A1A1A"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </linearGradient>
+    <linearGradient id="cvGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="cvSh"><feGaussianBlur stdDeviation="0.3"/></filter>
+  </defs>
+  <!-- display body -->
+  <rect x="1.5" y="2.5" width="13" height="11" rx="1.2" fill="#000" opacity="0.35" filter="url(#cvSh)" transform="translate(0.2,0.3)"/>
+  <rect x="1.5" y="2.5" width="13" height="11" rx="1.2" fill="url(#cvBase)" stroke="#444" stroke-width="0.5"/>
+  <!-- hex (top) line — orange like immediates -->
+  <text x="3" y="7.1" font-family="monospace" font-size="3" fill="#FFB74D" font-weight="bold">0xFF</text>
+  <!-- separator line -->
+  <line x1="3" y1="8.3" x2="13" y2="8.3" stroke="#3A3A3A" stroke-width="0.4"/>
+  <!-- dec (bottom) line — green like ascii dumps -->
+  <text x="3" y="12" font-family="monospace" font-size="3" fill="#7FE87F" font-weight="bold">255</text>
+  <!-- conversion arrows on the right -->
+  <path d="M 12.3 6.2 L 13 7.0 L 11.6 7.0 Z" fill="#4FC3F7"/>
+  <path d="M 12.3 10.6 L 13 9.8 L 11.6 9.8 Z" fill="#4FC3F7" transform="rotate(180 12.3 10.2)"/>
+  <!-- gloss across the top -->
+  <rect x="1.8" y="3" width="12.4" height="2" rx="0.4" fill="url(#cvGloss)"/>
+</svg>

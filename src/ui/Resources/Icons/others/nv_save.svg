@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#B5C9DE"/>
+      <stop offset="100%" stop-color="#4F6680"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <!-- Floppy body -->
+  <path d="M3 3 H18 L21 6 V21 H3 Z" fill="url(#body)" stroke="#2A3A55" stroke-width="0.5"/>
+  <!-- Metal shutter at top -->
+  <rect x="6" y="3" width="11" height="6.5" fill="#7088A8" stroke="#2A3A55" stroke-width="0.4"/>
+  <rect x="13" y="4" width="2" height="4.5" fill="#1F2A3F"/>
+  <!-- Label at bottom -->
+  <rect x="5.5" y="13" width="13" height="7" fill="#F4F6FA" stroke="#2A3A55" stroke-width="0.4"/>
+  <!-- Label lines -->
+  <rect x="7" y="15" width="10" height="0.7" fill="#7088A8"/>
+  <rect x="7" y="17" width="10" height="0.7" fill="#7088A8"/>
+  <!-- Gloss on top -->
+  <path d="M3 3 H18 L21 6 V10 H3 Z" fill="url(#gloss)"/>
+</svg>

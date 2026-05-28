@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2020/svg" viewBox="0 0 24 24">
+  <defs>
+    <radialGradient id="gk" cx="35%" cy="28%" r="65%"><stop offset="0%" stop-color="#FF6060"/><stop offset="100%" stop-color="#990000"/></radialGradient>
+  </defs>
+  <circle fill="url(#gk)" cx="12" cy="12" r="10"/>
+  <circle fill="white" opacity=".22" cx="9.5" cy="9" r="4"/>
+  <line stroke="white" stroke-width="2.5" stroke-linecap="round" x1="8" y1="8" x2="16" y2="16"/>
+  <line stroke="white" stroke-width="2.5" stroke-linecap="round" x1="16" y1="8" x2="8" y2="16"/>
+</svg>

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <defs>
+    <radialGradient id="body" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#A6FAFD"/>
+      <stop offset="50%" stop-color="#39E0E6"/>
+      <stop offset="100%" stop-color="#06606B"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#39E0E6"/>
+      <stop offset="100%" stop-color="#06606B"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <!-- Concentric radar arcs (upper half) -->
+  <path d="M2 14 Q12 -2 22 14" fill="none" stroke="url(#ring)" stroke-width="1.4" stroke-linecap="round"/>
+  <path d="M5 14 Q12 3 19 14" fill="none" stroke="url(#ring)" stroke-width="1.4" stroke-linecap="round"/>
+  <path d="M8 14 Q12 8 16 14" fill="none" stroke="url(#ring)" stroke-width="1.4" stroke-linecap="round"/>
+  <!-- Sweep line -->
+  <line x1="12" y1="14" x2="20" y2="6" stroke="url(#ring)" stroke-width="1" stroke-linecap="round"/>
+  <!-- Center dot -->
+  <circle cx="12" cy="14" r="2" fill="url(#body)" stroke="#03333A" stroke-width="0.4"/>
+  <!-- Center dot gloss -->
+  <ellipse cx="11.5" cy="13.3" rx="0.9" ry="0.5" fill="url(#gloss)"/>
+  <!-- Base -->
+  <rect x="6" y="17" width="12" height="2.4" rx="0.6" fill="url(#body)" stroke="#03333A" stroke-width="0.4"/>
+  <rect x="6" y="17" width="12" height="1" rx="0.6" fill="url(#gloss)"/>
+</svg>

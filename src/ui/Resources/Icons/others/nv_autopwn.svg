@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <defs>
+    <radialGradient id="body" cx="0.5" cy="0.4" r="0.6">
+      <stop offset="0%" stop-color="#FF5050"/>
+      <stop offset="100%" stop-color="#8A0000"/>
+    </radialGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="bolt" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFF59A"/>
+      <stop offset="100%" stop-color="#FFB300"/>
+    </linearGradient>
+  </defs>
+  <!-- Crosshair outer ring -->
+  <circle cx="12" cy="12" r="9" fill="url(#body)" stroke="#4A0000" stroke-width="0.6"/>
+  <circle cx="12" cy="12" r="6.5" fill="none" stroke="#FFFFFF" stroke-width="0.8"/>
+  <!-- Crosshair lines -->
+  <rect x="11.4" y="1.5" width="1.2" height="5" fill="#FFFFFF"/>
+  <rect x="11.4" y="17.5" width="1.2" height="5" fill="#FFFFFF"/>
+  <rect x="1.5" y="11.4" width="5" height="1.2" fill="#FFFFFF"/>
+  <rect x="17.5" y="11.4" width="5" height="1.2" fill="#FFFFFF"/>
+  <!-- Lightning bolt -->
+  <path d="M13 7 L9 13 H11.5 L10.5 17 L14.5 11 H12 L13 7 Z" fill="url(#bolt)" stroke="#5A2D00" stroke-width="0.4"/>
+  <!-- Gloss highlight on top -->
+  <ellipse cx="12" cy="7" rx="7.5" ry="3.5" fill="url(#gloss)"/>
+</svg>

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#4FB6FF"/>
+      <stop offset="100%" stop-color="#0E4D8C"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <!-- Mirrored — clockwise curved arrow -->
+  <g transform="translate(24 0) scale(-1 1)">
+    <path d="M5 11 Q5 4 12 4 Q19 4 19 11 Q19 16 14 17.5 L14 14.5 Q16 13.5 16 11 Q16 7 12 7 Q8 7 8 11 L8 12 Z"
+          fill="url(#body)" stroke="#062A55" stroke-width="0.5" stroke-linejoin="round"/>
+    <path d="M8 12 L2 12 L8 18 Z" fill="url(#body)" stroke="#062A55" stroke-width="0.5" stroke-linejoin="round"/>
+    <path d="M5 11 Q5 4 12 4 Q19 4 19 11 L17 11 Q17 6 12 6 Q7 6 7 11 Z" fill="url(#gloss)"/>
+  </g>
+</svg>
